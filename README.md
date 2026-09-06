@@ -1,7 +1,7 @@
 # Taikor
 
 A real-time **physically modeled ensemble inspired by modern kumi-daiko**:
-VST3, Audio Unit and Standalone for macOS, plus Linux and Windows builds.
+VST3, CLAP and Standalone for macOS, Windows and Linux, plus Audio Unit on macOS.
 
 ![Taikor](Docs/screenshots/taikor-standalone.png)
 
@@ -1382,8 +1382,11 @@ The same build produces `TaikorValidateCalibrationCapture`, the inventory
 preflight for the controlled capture described under
 [Known gaps](#known-gaps).
 
-The full plug-in (JUCE 8.0.14 is fetched pinned at configure time, or pass
-`-DTAIKOR_JUCE_PATH=/path/to/JUCE`):
+The full plug-in requires CMake 3.22+, Git and a C++20 compiler. JUCE 8.0.14
+and clap-juce-extensions (including its CLAP submodules) are fetched at pinned
+commits during configuration. Local checkouts can be supplied with
+`-DTAIKOR_JUCE_PATH=/path/to/JUCE` and
+`-DTAIKOR_CLAP_JUCE_EXTENSIONS_PATH=/path/to/clap-juce-extensions`.
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
@@ -1393,7 +1396,38 @@ ctest --test-dir build --output-on-failure
 
 On macOS, `./scripts/build-macos.sh` drives the same build through Xcode as a
 universal binary and renders the committed editor screenshot while the suite
-runs.
+runs. `./scripts/sign-and-package-macos.sh` produces a ZIP and PKG containing
+VST3, Audio Unit, CLAP and the standalone app.
+
+On Windows, use a Visual Studio developer shell with C++ tools and Python 3:
+
+```powershell
+cmake -S . -B build-win -A x64 -DBUILD_TESTING=ON "-DCMAKE_EXE_LINKER_FLAGS=/STACK:33554432"
+cmake --build build-win --config Release --parallel
+ctest --test-dir build-win -C Release --output-on-failure
+python scripts/package-windows.py --build-dir build-win
+```
+
+The [Main build workflow](https://github.com/protocodus/virtual-instrument-taikor/actions/workflows/nightly.yml)
+builds every push to `main`, including merges, and also runs daily or manually.
+Download the `taikor-distribution-<commit SHA>` artifact from a completed run;
+it contains the macOS universal ZIP/PKG, Windows x64 ZIP, Linux x64 tarball,
+matching screenshot and audio demos under `previews/`, build provenance and
+SHA-256 checksums. Individual platform packages remain available if another
+platform fails. Distribution artifacts are retained for 30 days.
+
+After all builds and renders succeed, the same workflow refreshes the committed
+editor screenshot, all 27 numbered audio demos, and the README's generated
+level table together in one bot commit. If `main` has advanced during the build,
+that run keeps its downloads and leaves the committed-media refresh to the
+newer run. Historical listening previews are preserved.
+
+macOS packages contain both Apple Silicon and Intel binaries targeting macOS
+11 or later. CI uses ad-hoc bundle signatures; the installer is unsigned and
+not notarized. Windows binaries use the static Visual C++ runtime. Install
+Windows plug-ins by copying `VST3/Taikor.vst3` to
+`C:\Program Files\Common Files\VST3` and `CLAP/Taikor.clap` to
+`C:\Program Files\Common Files\CLAP`.
 
 ## Licensing
 

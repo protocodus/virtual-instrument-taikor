@@ -20,6 +20,14 @@ if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
     endif()
 endif()
 
+# Keep Windows distribution binaries independent of an installed Visual C++
+# redistributable. Set this before project() and dependency targets so every
+# static library uses the same runtime; callers may override it explicitly.
+if(NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        CACHE STRING "MSVC runtime library")
+endif()
+
 # C is required in addition to C++: JUCE's macOS plug-in wrappers (AU and
 # Standalone) compile C/Objective-C sources with non-Xcode generators too.
 project(Taikor VERSION 1.0.0 LANGUAGES C CXX)
@@ -32,6 +40,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(TAIKOR_BUILD_PLUGIN "Build the JUCE plug-in and standalone app" ON)
 set(TAIKOR_JUCE_PATH "" CACHE PATH
     "Optional path to a local JUCE 8.0.14 checkout (avoids downloading JUCE)")
+set(TAIKOR_CLAP_JUCE_EXTENSIONS_PATH "" CACHE PATH
+    "Optional path to a local clap-juce-extensions checkout with submodules")
 
 include(CTest)
 
@@ -65,6 +75,8 @@ else()
 endif()
 
 if(TAIKOR_BUILD_PLUGIN)
+    include(FetchContent)
+
     if(TAIKOR_JUCE_PATH)
         if(NOT EXISTS "${TAIKOR_JUCE_PATH}/CMakeLists.txt")
             message(FATAL_ERROR
@@ -73,7 +85,6 @@ if(TAIKOR_BUILD_PLUGIN)
         add_subdirectory("${TAIKOR_JUCE_PATH}"
                          "${CMAKE_CURRENT_BINARY_DIR}/JUCE" EXCLUDE_FROM_ALL)
     else()
-        include(FetchContent)
         FetchContent_Declare(
             JUCE
             # JUCE 8.0.14, pinned to its immutable release commit and archive
@@ -81,6 +92,31 @@ if(TAIKOR_BUILD_PLUGIN)
             URL https://github.com/juce-framework/JUCE/archive/2cdfca8feb300fb424002ba2c2751569e5bacb64.tar.gz
             URL_HASH SHA256=814019716960a16f8f850a1593eeb56e2f21910aff2d673f7d3513b4ebaf251d)
         FetchContent_MakeAvailable(JUCE)
+    endif()
+
+    if(TAIKOR_CLAP_JUCE_EXTENSIONS_PATH)
+        foreach(required_file IN ITEMS CMakeLists.txt
+                clap-libs/clap/CMakeLists.txt
+                clap-libs/clap-helpers/CMakeLists.txt)
+            if(NOT EXISTS "${TAIKOR_CLAP_JUCE_EXTENSIONS_PATH}/${required_file}")
+                message(FATAL_ERROR
+                    "TAIKOR_CLAP_JUCE_EXTENSIONS_PATH is missing ${required_file}; "
+                    "use a checkout with git submodule update --init --recursive")
+            endif()
+        endforeach()
+        add_subdirectory("${TAIKOR_CLAP_JUCE_EXTENSIONS_PATH}"
+                         "${CMAKE_CURRENT_BINARY_DIR}/clap-juce-extensions"
+                         EXCLUDE_FROM_ALL)
+    else()
+        FetchContent_Declare(
+            clap_juce_extensions
+            GIT_REPOSITORY https://github.com/free-audio/clap-juce-extensions.git
+            GIT_TAG c1a5ad025f95d01e03267857fa8276ebeed16500
+            # Archive downloads omit these gitlinks. Fetch both dependencies
+            # at the immutable revisions recorded by the wrapper commit.
+            GIT_SUBMODULES clap-libs/clap clap-libs/clap-helpers
+            GIT_SUBMODULES_RECURSE TRUE)
+        FetchContent_MakeAvailable(clap_juce_extensions)
     endif()
 
     if(APPLE)
@@ -107,6 +143,12 @@ if(TAIKOR_BUILD_PLUGIN)
         EDITOR_WANTS_KEYBOARD_FOCUS TRUE
         AU_SANDBOX_SAFE TRUE
         COPY_PLUGIN_AFTER_BUILD FALSE)
+
+    # CLAP is supplied by the JUCE extension, outside JUCE's FORMATS list. Its
+    # wrapper inherits Taikor's product name, version, and artefacts directory.
+    clap_juce_extensions_plugin(TARGET Taikor
+        CLAP_ID "audio.taikor.synth"
+        CLAP_FEATURES instrument synthesizer drum stereo)
 
     juce_generate_juce_header(Taikor)
 

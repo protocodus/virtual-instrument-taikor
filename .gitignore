@@ -12,6 +12,7 @@ DerivedData/
 
 # Generated plug-in bundles and packages
 *.vst3
+*.clap
 *.component
 *.app
 *.pkg

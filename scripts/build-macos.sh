@@ -46,6 +46,9 @@ fi
 if [[ -n "${JUCE_PATH:-}" ]]; then
     cmake_args+=("-DTAIKOR_JUCE_PATH=${JUCE_PATH}")
 fi
+if [[ -n "${CLAP_JUCE_EXTENSIONS_PATH:-}" ]]; then
+    cmake_args+=("-DTAIKOR_CLAP_JUCE_EXTENSIONS_PATH=${CLAP_JUCE_EXTENSIONS_PATH}")
+fi
 
 cmake "${cmake_args[@]}"
 cmake --build "${BUILD_DIR}" --config "${CONFIG}" --parallel
@@ -55,4 +58,5 @@ echo
 echo "Build complete. Artifacts:"
 echo "  ${BUILD_DIR}/Taikor_artefacts/${CONFIG}/VST3/Taikor.vst3"
 echo "  ${BUILD_DIR}/Taikor_artefacts/${CONFIG}/AU/Taikor.component"
+echo "  ${BUILD_DIR}/Taikor_artefacts/${CONFIG}/CLAP/Taikor.clap"
 echo "  ${BUILD_DIR}/Taikor_artefacts/${CONFIG}/Standalone/Taikor.app"

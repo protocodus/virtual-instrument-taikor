@@ -74,28 +74,28 @@ jobs:
             -DTAIKOR_BUILD_PLUGIN=ON \
             -DBUILD_TESTING=OFF
 
-      - name: Build Linux VST3 and standalone
+      - name: Build Linux VST3, CLAP and standalone
         run: |
           cmake --build build-dsp --parallel \
-            --target Taikor_VST3 Taikor_Standalone
+            --target Taikor_VST3 Taikor_CLAP Taikor_Standalone
 
-      - name: Package Linux VST3 and standalone
+      - name: Package Linux VST3, CLAP and standalone
         run: |
           set -euo pipefail
           artefacts="build-dsp/Taikor_artefacts/Release"
           test -d "$artefacts/VST3/Taikor.vst3"
+          test -s "$artefacts/CLAP/Taikor.clap"
           test -x "$artefacts/Standalone/Taikor"
           dist="build-dsp/dist"
           mkdir -p "$dist"
           archive="$dist/Taikor-Linux-x64.tar.gz"
           # Licence and notice files ship inside the binary archive (the MIT
           # licence requires the notice to accompany binaries).
-          contents=("VST3/Taikor.vst3" "Standalone/Taikor")
-          for notice in LICENSE THIRD_PARTY_NOTICES.md ThirdParty/JUCE-LICENSE.md; do
-            if [[ -f "$notice" ]]; then
-              cp "$notice" "$artefacts/$(basename "$notice")"
-              contents+=("$(basename "$notice")")
-            fi
+          contents=("VST3/Taikor.vst3" "CLAP/Taikor.clap" "Standalone/Taikor")
+          for notice in LICENSE THIRD_PARTY_NOTICES.md ThirdParty/*-LICENSE.md; do
+            test -s "$notice"
+            cp "$notice" "$artefacts/$(basename "$notice")"
+            contents+=("$(basename "$notice")")
           done
           tar -czf "$archive" -C "$artefacts" "${contents[@]}"
           test -s "$archive"
@@ -123,7 +123,7 @@ jobs:
       - name: Clear screenshot before rendering
         run: rm -f Docs/screenshots/taikor-standalone.png
 
-      # Native-arch only keeps per-push CI fast; the nightly workflow builds the
+      # Native-arch only keeps per-push CI fast; the main build workflow builds the
       # full arm64 + x86_64 universal binaries. Uses the same build script
       # developers run locally, and runs the project's tests.
       - name: Build plug-in and run tests
@@ -172,43 +172,17 @@ jobs:
         run: |
           cmake -S . -B build-win -DTAIKOR_BUILD_PLUGIN=ON -DBUILD_TESTING=OFF
 
-      - name: Build Windows VST3 and standalone
+      - name: Build Windows VST3, CLAP and standalone
         run: |
-          cmake --build build-win --config Release --parallel --target Taikor_VST3 Taikor_Standalone
+          cmake --build build-win --config Release --parallel --target Taikor_VST3 Taikor_CLAP Taikor_Standalone
 
-      - name: Package Windows VST3 and standalone
-        shell: pwsh
-        run: |
-          $artefacts = "build-win/Taikor_artefacts/Release"
-          $vst3 = Join-Path $artefacts "VST3/Taikor.vst3"
-          $standalone = Join-Path $artefacts "Standalone/Taikor.exe"
-          if (-not (Test-Path -LiteralPath $vst3 -PathType Container)) {
-            throw "expected VST3 bundle at $vst3"
-          }
-          if (-not (Test-Path -LiteralPath $standalone -PathType Leaf)) {
-            throw "expected standalone executable at $standalone"
-          }
-          $dist = "build-win/dist"
-          New-Item -ItemType Directory -Force -Path $dist | Out-Null
-          $zip = Join-Path $dist "Taikor-Windows-x64.zip"
-          # Licence and notice files ship inside the binary archive (the MIT
-          # licence requires the notice to accompany binaries).
-          $contents = @((Join-Path $artefacts "VST3"), (Join-Path $artefacts "Standalone"))
-          foreach ($notice in @("LICENSE", "THIRD_PARTY_NOTICES.md", "ThirdParty/JUCE-LICENSE.md")) {
-            if (Test-Path -LiteralPath $notice -PathType Leaf) {
-              $contents += $notice
-            }
-          }
-          Compress-Archive -LiteralPath $contents -DestinationPath $zip
-          if (-not (Test-Path -LiteralPath $zip -PathType Leaf) -or
-              (Get-Item -LiteralPath $zip).Length -eq 0) {
-            throw "expected package at $zip"
-          }
+      - name: Package Windows VST3, CLAP and standalone
+        run: python scripts/package-windows.py --build-dir build-win
 
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
         with:
           name: ci-windows
-          path: build-win/dist/Taikor-Windows-x64.zip
+          path: build-win/dist/Taikor-*-Windows-x64.zip
           if-no-files-found: error
           retention-days: 7

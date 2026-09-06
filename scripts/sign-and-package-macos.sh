@@ -27,9 +27,10 @@ done
 
 VST3="${ARTIFACT_DIR}/VST3/Taikor.vst3"
 AU="${ARTIFACT_DIR}/AU/Taikor.component"
+CLAP="${ARTIFACT_DIR}/CLAP/Taikor.clap"
 APP="${ARTIFACT_DIR}/Standalone/Taikor.app"
 
-for artifact in "${VST3}" "${AU}" "${APP}"; do
+for artifact in "${VST3}" "${AU}" "${CLAP}" "${APP}"; do
     if [[ ! -d "${artifact}" ]]; then
         echo "error: missing build artifact: ${artifact}" >&2
         echo "Run scripts/build-macos.sh first." >&2
@@ -50,12 +51,15 @@ bundle_version() {
 
 VST3_VERSION="$(bundle_version "${VST3}")"
 AU_VERSION="$(bundle_version "${AU}")"
+CLAP_VERSION="$(bundle_version "${CLAP}")"
 APP_VERSION="$(bundle_version "${APP}")"
 if [[ -z "${VST3_VERSION}" || "${VST3_VERSION}" != "${AU_VERSION}" \
+      || "${VST3_VERSION}" != "${CLAP_VERSION}" \
       || "${VST3_VERSION}" != "${APP_VERSION}" ]]; then
     echo "error: build artifact versions disagree" >&2
     echo "  VST3: ${VST3_VERSION:-missing}" >&2
     echo "  AU: ${AU_VERSION:-missing}" >&2
+    echo "  CLAP: ${CLAP_VERSION:-missing}" >&2
     echo "  App: ${APP_VERSION:-missing}" >&2
     exit 1
 fi
@@ -68,11 +72,14 @@ fi
 
 VST3_ARCHS="$(lipo -archs "${VST3}/Contents/MacOS/Taikor")"
 AU_ARCHS="$(lipo -archs "${AU}/Contents/MacOS/Taikor")"
+CLAP_ARCHS="$(lipo -archs "${CLAP}/Contents/MacOS/Taikor")"
 APP_ARCHS="$(lipo -archs "${APP}/Contents/MacOS/Taikor")"
-if [[ "${VST3_ARCHS}" != "${AU_ARCHS}" || "${VST3_ARCHS}" != "${APP_ARCHS}" ]]; then
+if [[ "${VST3_ARCHS}" != "${AU_ARCHS}" || "${VST3_ARCHS}" != "${CLAP_ARCHS}" \
+      || "${VST3_ARCHS}" != "${APP_ARCHS}" ]]; then
     echo "error: build artifact architectures disagree" >&2
     echo "  VST3: ${VST3_ARCHS}" >&2
     echo "  AU: ${AU_ARCHS}" >&2
+    echo "  CLAP: ${CLAP_ARCHS}" >&2
     echo "  App: ${APP_ARCHS}" >&2
     exit 1
 fi
@@ -92,17 +99,24 @@ rm -rf "${PACKAGE_ROOT}"
 mkdir -p \
     "${PACKAGE_ROOT}/Library/Audio/Plug-Ins/VST3" \
     "${PACKAGE_ROOT}/Library/Audio/Plug-Ins/Components" \
+    "${PACKAGE_ROOT}/Library/Audio/Plug-Ins/CLAP" \
     "${PACKAGE_ROOT}/Applications" \
     "${DIST_DIR}"
 
 ditto "${VST3}" "${PACKAGE_ROOT}/Library/Audio/Plug-Ins/VST3/Taikor.vst3"
 ditto "${AU}" "${PACKAGE_ROOT}/Library/Audio/Plug-Ins/Components/Taikor.component"
+ditto "${CLAP}" "${PACKAGE_ROOT}/Library/Audio/Plug-Ins/CLAP/Taikor.clap"
 ditto "${APP}" "${PACKAGE_ROOT}/Applications/Taikor.app"
 
 NOTICE_ROOT="${PACKAGE_ROOT}/Library/Application Support/Taikor/Documentation"
-JUCE_NOTICE="${PROJECT_DIR}/ThirdParty/JUCE-LICENSE.md"
+THIRD_PARTY_LICENSES=(
+    "${PROJECT_DIR}/ThirdParty/JUCE-LICENSE.md"
+    "${PROJECT_DIR}/ThirdParty/CLAP-JUCE-EXTENSIONS-LICENSE.md"
+    "${PROJECT_DIR}/ThirdParty/CLAP-LICENSE.md"
+    "${PROJECT_DIR}/ThirdParty/CLAP-HELPERS-LICENSE.md"
+)
 for notice in "${PROJECT_DIR}/LICENSE" "${PROJECT_DIR}/THIRD_PARTY_NOTICES.md" \
-              "${JUCE_NOTICE}"; do
+              "${THIRD_PARTY_LICENSES[@]}"; do
     if [[ ! -f "${notice}" ]]; then
         echo "error: missing distribution notice: ${notice}" >&2
         exit 1
@@ -113,20 +127,19 @@ mkdir -p "${NOTICE_ROOT}"
 ditto "${PROJECT_DIR}/LICENSE" "${NOTICE_ROOT}/Taikor-LICENSE.txt"
 ditto "${PROJECT_DIR}/THIRD_PARTY_NOTICES.md" \
     "${NOTICE_ROOT}/THIRD_PARTY_NOTICES.md"
-ditto "${JUCE_NOTICE}" "${NOTICE_ROOT}/JUCE-LICENSE.md"
+for notice in "${THIRD_PARTY_LICENSES[@]}"; do
+    ditto "${notice}" "${NOTICE_ROOT}/$(basename "${notice}")"
+done
 
 # Keep the same notices inside every independently copyable bundle. They are
 # installed before signing so the bundle signatures cover the documentation.
 for bundle in \
     "${PACKAGE_ROOT}/Library/Audio/Plug-Ins/VST3/Taikor.vst3" \
     "${PACKAGE_ROOT}/Library/Audio/Plug-Ins/Components/Taikor.component" \
+    "${PACKAGE_ROOT}/Library/Audio/Plug-Ins/CLAP/Taikor.clap" \
     "${PACKAGE_ROOT}/Applications/Taikor.app"; do
     bundle_notice_root="${bundle}/Contents/Resources/Documentation"
-    mkdir -p "${bundle_notice_root}"
-    ditto "${PROJECT_DIR}/LICENSE" "${bundle_notice_root}/Taikor-LICENSE.txt"
-    ditto "${PROJECT_DIR}/THIRD_PARTY_NOTICES.md" \
-        "${bundle_notice_root}/THIRD_PARTY_NOTICES.md"
-    ditto "${JUCE_NOTICE}" "${bundle_notice_root}/JUCE-LICENSE.md"
+    ditto "${NOTICE_ROOT}" "${bundle_notice_root}"
 done
 
 sign_bundle() {
@@ -142,6 +155,7 @@ sign_bundle() {
 
 sign_bundle "${PACKAGE_ROOT}/Library/Audio/Plug-Ins/VST3/Taikor.vst3"
 sign_bundle "${PACKAGE_ROOT}/Library/Audio/Plug-Ins/Components/Taikor.component"
+sign_bundle "${PACKAGE_ROOT}/Library/Audio/Plug-Ins/CLAP/Taikor.clap"
 sign_bundle "${PACKAGE_ROOT}/Applications/Taikor.app"
 
 ZIP_PATH="${DIST_DIR}/Taikor-${VERSION}-macOS-${ARTIFACT_ARCH}.zip"
