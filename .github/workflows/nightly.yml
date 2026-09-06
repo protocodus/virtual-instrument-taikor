@@ -281,9 +281,10 @@ jobs:
       - name: Commit refreshed media if main still matches this build
         env:
           GH_TOKEN: ${{ github.token }}
+          DISTRIBUTION_URL: ${{ needs.collect-packages.outputs.distribution-url }}
         run: |
           remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          ./scripts/commit-generated-assets.sh "$GITHUB_SHA" generated-media "$remote"
+          ./scripts/commit-generated-assets.sh "$GITHUB_SHA" generated-media "$remote" "$DISTRIBUTION_URL"
 
   # Keep one complete package set on the workflow run. A mutable rolling GitHub
   # release is deliberately not used: repository release immutability protects
@@ -293,6 +294,8 @@ jobs:
     name: Collect plugins, screenshot and audio demos
     needs: [build-macos, build-linux, build-windows, render-audio-demos]
     runs-on: ubuntu-latest
+    outputs:
+      distribution-url: ${{ steps.distribution.outputs.artifact-url }}
     permissions:
       contents: read
     steps:
@@ -369,6 +372,7 @@ jobs:
       # Retained on the workflow run itself, downloadable by anyone with repo
       # access, as one complete cross-platform set.
       - name: Upload workflow artifact
+        id: distribution
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: taikor-distribution-${{ github.sha }}

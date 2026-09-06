@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 2 || $# -gt 3 ]]; then
-    echo "usage: $0 source_sha generated_asset_dir [remote]" >&2
+if [[ $# -lt 2 || $# -gt 4 ]]; then
+    echo "usage: $0 source_sha generated_asset_dir [remote] [distribution_url]" >&2
     exit 1
 fi
 SOURCE_SHA="$1"
 ASSET_DIR="$(cd "$2" && pwd)"
 REMOTE="${3:-origin}"
+DISTRIBUTION_URL="${4:-}"
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "${REPO_ROOT}"
 
@@ -24,14 +25,18 @@ if [[ "${ASSET_DIR}" == "${REPO_ROOT}" ]]; then
     exit 1
 fi
 
-python3 - "${ASSET_DIR}" <<'PY'
+README_COPY="$(mktemp "${TMPDIR:-/tmp}/taikor-readme.XXXXXX")"
+trap 'rm -f "${README_COPY}"' EXIT
+python3 - "${ASSET_DIR}" "${README_COPY}" "${SOURCE_SHA}" "${DISTRIBUTION_URL}" "$#" <<'PY'
+import os
 import pathlib
 import re
 import sys
 import wave
 
 root = pathlib.Path(sys.argv[1])
-readme = (root / "README.md").read_text(encoding="utf-8")
+readme_bytes = (root / "README.md").read_bytes()
+readme = readme_bytes.decode("utf-8")
 begin = "<!-- peaks-table-begin:"
 end = "<!-- peaks-table-end -->"
 if readme.count(begin) != 1 or readme.count(end) != 1 or readme.index(begin) >= readme.index(end):
@@ -57,6 +62,30 @@ with png.open("rb") as screenshot:
     trailer = screenshot.read()
 if header != b"\x89PNG\r\n\x1a\n" or trailer != b"\0\0\0\0IEND\xaeB`\x82":
     sys.exit("error: screenshot is not a complete PNG")
+
+if sys.argv[5] == "4":
+    source_sha, url = sys.argv[3:5]
+    repository = os.environ.get("GITHUB_REPOSITORY", "protocodus/virtual-instrument-taikor")
+    pattern = rf"https://github\.com/{re.escape(repository)}/actions/runs/[0-9]+/artifacts/[0-9]+"
+    if not re.fullmatch(pattern, url):
+        sys.exit("error: distribution URL must be a GitHub Actions artifact URL for this repository")
+    link_begin = b"<!-- distribution-link-begin -->"
+    link_end = b"<!-- distribution-link-end -->"
+    if readme_bytes.count(link_begin) != 1 or readme_bytes.count(link_end) != 1:
+        sys.exit("error: generated README must have exactly one pair of distribution link markers")
+    start = readme_bytes.index(link_begin) + len(link_begin)
+    stop = readme_bytes.index(link_end)
+    peak_start = readme_bytes.index(begin.encode())
+    peak_stop = readme_bytes.index(end.encode()) + len(end)
+    if start > stop or (start < peak_stop and stop > peak_start):
+        sys.exit("error: distribution link markers are reversed or overlap the peaks table")
+    link = (f"\n**[Download latest distribution]({url})** — built from "
+            f"[`{source_sha[:12]}`](https://github.com/{repository}/commit/{source_sha}).\n")
+    readme_bytes = readme_bytes[:start] + link.encode("utf-8") + readme_bytes[stop:]
+
+# Keep every byte outside the link block, including the rendered peaks table.
+# This temporary copy is only installed after the source/main guard below.
+pathlib.Path(sys.argv[2]).write_bytes(readme_bytes)
 PY
 
 # Fetch immediately before staging so an older run cannot overwrite newer work.
@@ -70,7 +99,7 @@ fi
 # and manually named top-level WAVs must remain untouched.
 git rm -q --ignore-unmatch -- ':(top,glob)Docs/audio/[0-9][0-9]-*.wav'
 mkdir -p Docs/audio Docs/screenshots
-cp "${ASSET_DIR}/README.md" README.md
+cp "${README_COPY}" README.md
 cp "${ASSET_DIR}/Docs/screenshots/taikor-standalone.png" Docs/screenshots/taikor-standalone.png
 generated_paths=()
 for wav in "${ASSET_DIR}"/Docs/audio/[0-9][0-9]-*.wav; do

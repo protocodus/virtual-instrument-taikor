@@ -1,9 +1,209 @@
 # Taikor
 
-A real-time **physically modeled ensemble inspired by modern kumi-daiko**:
-VST3, CLAP and Standalone for macOS, Windows and Linux, plus Audio Unit on macOS.
+A **physically modeled taiko ensemble instrument** inspired by modern kumi-daiko.
+Play four drums and four strokes, with up to eight players per note. Every hit
+is synthesized from the drum model; no samples or recordings are loaded.
 
-![Taikor](Docs/screenshots/taikor-standalone.png)
+**VST3 · CLAP · Standalone** on macOS, Windows and Linux · **Audio Unit** on macOS.
+
+<!-- distribution-link-begin -->
+**[Download latest distribution](https://github.com/protocodus/virtual-instrument-taikor/actions/runs/34020270689/artifacts/9986460969)** — built from [`1670d31`](https://github.com/protocodus/virtual-instrument-taikor/commit/1670d3104695e5e7076062e4561823ddfcd7c89e).
+<!-- distribution-link-end -->
+
+![Taikor instrument editor](Docs/screenshots/taikor-standalone.png)
+
+## Download and install
+
+The download contains all platform packages, an editor screenshot, audio demos
+and SHA-256 checksums. Each successful `main` build updates the link above.
+GitHub sign-in is required; downloads are retained for 30 days.
+[Browse successful builds](https://github.com/protocodus/virtual-instrument-taikor/actions/workflows/nightly.yml?query=branch%3Amain+is%3Asuccess).
+
+| Platform | Formats | Package |
+| --- | --- | --- |
+| macOS 11+ · Apple Silicon and Intel | VST3, Audio Unit, CLAP, standalone | Universal ZIP and PKG installer |
+| Windows x64 | VST3, CLAP, standalone | ZIP |
+| Linux x64 | VST3, CLAP, standalone | Tarball |
+
+On macOS, use the PKG installer or copy the bundles from the ZIP. Bundles use
+ad-hoc signatures; the installer is unsigned and has no Apple notarization.
+On Windows, copy `VST3/Taikor.vst3` to `C:\Program Files\Common Files\VST3`
+and `CLAP/Taikor.clap` to `C:\Program Files\Common Files\CLAP`, or run the
+standalone executable. The Windows build includes the Visual C++ runtime.
+On Linux, copy the VST3 bundle to `~/.vst3` and the CLAP file to `~/.clap`.
+
+## Audio demos
+
+Listen to the instrument's own synthesized performances:
+
+- [The four drums](Docs/audio/02-the-four-drums.wav) — one Don on each drum.
+- [The four strokes](Docs/audio/01-stroke-vocabulary.wav) — open, edge, muted and rimshot.
+- [Ensemble piece](Docs/audio/25-ensemble-piece.wav) — a phrase across the playing grid.
+- [Performer ensemble](Docs/audio/27-performer-ensemble.wav) — repeated P1 layers, then P1–P4.
+
+[All 27 demos](Docs/audio) · [Playing guide](#how-it-is-played) ·
+[Controls](#controls) · [Technical details](#technical-details)
+
+## Release history
+
+### 2026-09-06
+
+- **Added CLAP for macOS, Windows and Linux**, alongside VST3, the macOS Audio
+  Unit and the standalone instrument.
+
+<details>
+<summary>Earlier changes</summary>
+
+### 2026-09-05
+
+- **The upper spectrum follows the solved strike force.** Causal modal-response
+  integration replaces nominal Hertz spectral shading and positive-only noise
+  injection. Sustained contact can now cancel high-mode excitation. The accepted
+  tension/bending weighting remains, while the attack and upper tail can change
+  in existing sessions. The reference impulse still anchors overall voicing.
+
+- **Removed the extra airborne click.** The hit now reaches the output through
+  the contact-driven drum, its statistical upper spectrum and the applicable
+  tack source. The separate differentiated-force layer and its unsupported
+  patch-size filter were removed after the user preferred the comparison
+  without them. This changes the attack of existing sessions.
+
+- **Corrected the high-mode statistical impulse response.** Relative band
+  levels now integrate modal population and force-to-displacement response
+  using each head's tension/bending dispersion. The original crossover band,
+  filter topology and output protection remain in place; higher bands change
+  level, so existing sessions can sound different above the resolved modes.
+  This is a model correction, not a recording-derived calibration.
+
+- **Added Ensemble Size and Ensemble Variation.** Each played row can trigger
+  1–8 independent drum models with up to 30 ms of companion timing spread and
+  bounded strike-placement scatter. The lead stays on the MIDI timestamp,
+  all members share one protected output stage, and Size 1 retains the solo
+  behavior. The two controls append host parameters without moving existing
+  automation; older sessions load with Size 1.
+
+- **Kept repeated hits alive at Humanise 0.** A small impact-speed and
+  contact-duration floor now varies successive strokes even with Stick Noise
+  at zero. Performer identities also vary this tightest gesture, contact noise
+  is reseeded on every hit, and the sequence uses both halves of its 64-bit
+  stroke counter. Reset still reproduces the same performance; Panic and
+  natural silence preserve the advancing sequence. Existing sessions that
+  relied on machine-identical Humanise-zero hits now receive this variation.
+  Selected as **B by ear** in the level-matched
+  [repeated-stroke comparison](Docs/decisions.md#2026-09-05--repeated-strokes-retain-contact-variation).
+
+### 2026-08-19
+
+- **Gave the wooden shell a perspective.** Mic Distance moved the head's near
+  field and the head's continuum but left the body at one fixed level, so
+  backing the pair off thinned the drum around a shell that never receded. A
+  ring mode is now read the way a membrane mode is — an evanescent term at its
+  own circumferential wavenumber `n/R` over the wall-to-capsule path, plus the
+  same proximity lift and propagating share — taken as a ratio against each
+  drum's own capsule distance at the factory Mic Distance, so every factory
+  preset renders exactly as it did. At 40 cm the ō-daiko's lowest ring mode is
+  3.6 dB down and the okedo's 16.0 dB, while the top of either bank moves under
+  a decibel. Chosen by ear from a six-way listening test; see
+  [Docs/decisions.md](Docs/decisions.md).
+- **Adjudicated fifteen proposed acoustic and performance mechanisms** against
+  the shipping engine; none was released. Two README claims were corrected in
+  the process: Body Depth *does* move the decay of the axisymmetric pair, so
+  what the model lacks is a loss belonging to the enclosed *air* rather than
+  authority over the tail; and that missing loss factor is 2.8e-4 to 6.6e-4 by
+  Kirchhoff's boundary-layer result, worth at worst 1.49 % of the decay over
+  four octaves, eleven Body Depths and three Air Couplings.
+
+### 2026-08-17
+
+- **Removed the unsupported one-way shell copy from head-only Don, Ka and Tsu.**
+  Their normal contact force already loses energy through the resolved
+  shell-dependent boundary, but it was also being sent after the reciprocal
+  solve into six shell oscillators that contributed no sensing or compliance.
+  On the light okedo that fixed 191 Hz ladder overwhelmed the head by 26.8 dB
+  on Ka. The wooden bank now belongs to Don Rim alone; okedo Ka falls by about
+  20 dB over 5–30 ms and Tsu by about 10 dB. No replacement EQ, radiation
+  scalar or fitted gain was added.
+- **Preserved the unresolved head's calibrated RMS** when live Pitch, Tension
+  Mod or a structural rebuild moves a continuum filter. Ordinary attack stretch
+  moves only 0.009–0.016 dB, while two-octave automation no longer inherits up
+  to several decibels of passband gain.
+- **Made the zero-azimuth analytic observer rank the detuned cosine pole** the
+  renderer actually builds rather than its unsplit parent. The four sounding
+  pitches now close on exact heard octaves at 59.747 / 119.495 / 238.990 /
+  477.979 Hz.
+
+### 2026-08-16
+
+- **Corrected the analytic `sin^1.5` Hertz reference impulse** from an
+  unrelated `sqrt(sin)` integral to 1.7480383695280799, then bounded each
+  contact's stochastic-continuum observation by the direct rigid-target
+  Hunt–Crossley squared-force integral. A factory chū Don remains uncapped at
+  about 0.953 of the limit; the hostile shime Don's roughly 446× request is
+  bounded, while 80–500 ms shime tails and dense-gesture onsets stay intact.
+- **Stopped treating the two heads as coincident radiators.** The axisymmetric
+  loss now includes their finite body-depth separation through
+  `b² + r² + 2br·sinc(ωL/c)`, preserving the former zero-depth limit and a
+  non-negative passive power. The factory shime's opposing lower branch moves
+  from 1.685 to 0.851 s T60 without changing its first-80-ms hit level.
+- **Gave each axisymmetric membrane pair its own finite-column cavity factor**
+  instead of reusing the (0,1) result. The factory higher upper branches move
+  down by 12.2 / 4.8 / 1.3 cents while the tuned pair is unchanged, and the
+  higher solves run once on the octave search's winning drum, adding no
+  per-sample work.
+- **Gave each unresolved-head octave a wavelength-dependent microphone-distance
+  law.** All five bands keep their exact factory-position level, while a
+  3–40 cm move now attenuates the factory ō-daiko's band targets by roughly
+  9.1 / 14.2 / 18.6 / 21.1 / 22.1 dB from low to high instead of one flat gain.
+- **Removed the scalar observer's false omnidirectional floor** from every
+  non-axisymmetric head mode: the angular factor now multiplies the propagating
+  term as well as the local field, so all 32 resolved multipole resonators and
+  the pitch readout go to zero on their nodal azimuths.
+- **Added explicit polar strike placement.** A ±180° Strike Azimuth parameter
+  reaches modal drive, reciprocal contact and the two-microphone observer, with
+  CC16/CC17 for sample-accurate absolute azimuth and radial overrides and CC121
+  to clear both. At the 0° default the former angle-jitter expression is
+  retained exactly.
+- **Removed Strike Position's clamped dead travel:** each articulation now
+  spends its full bipolar range moving continuously between its own written
+  position and the same centre/rim endpoints it already reached.
+- **Made structural automation continuous in physical two-head coordinates.**
+  Axisymmetric rebuilds preserve batter/rear displacement, velocity and pending
+  force while redistributing a live Tsu loss in the new eigenbasis; a bachi
+  still touching the head receives matching sensing and force projections.
+- **Removed two synthetic-noise shortcuts from the hit.** The unresolved head
+  now uses the same Hertz contact spectrum as the resolved modes instead of a
+  one-pole brightness law, and the direct airborne click differentiates only
+  the solved normal force rather than differentiating roughness a second time
+  into a flat Nyquist shelf.
+- **Removed three sources of cheap hit noise** without lowering the drum's
+  resonant object: rope-laced okedo and shime no longer emit byō tack chatter,
+  the remaining tacked drums confine it to 2.6–9 kHz with exact host-rate
+  normalisation, and Humanise scatters equal bounded radial and tangential
+  distances instead of swinging edge strokes through metre-scale arcs.
+- **Added four stable Performer identities** for honest multi-instance
+  ensembles. P2–P4 salt only the variation Humanise already owns — contact
+  point, speed and duration — so layered instances change the performed
+  resonant hit rather than merely adding noise. P1 preserves the established
+  sequence at introduction; no identity hides a
+  pitch, drum-size or gain offset.
+- **Appended the automatable Velocity Curve** as the 25th host slot, without
+  moving any established parameter ID or automation index. `pow(v, exp2(c))`
+  gives Soft 100 / Linear / Hard 100 controller response; Linear takes an exact
+  identity branch and is the default. It calibrates the player and controller
+  before Velocity Depth rather than inventing an acoustic effect.
+- **Added a dependency-free controlled-capture inventory preflight.** Its
+  strict TSV contract checks synchronized calibrated channels, one complete
+  3×3×2 mobility core, the low-speed Ka/Tsu/Rim strike matrix, held-palm and
+  simultaneous head/hoop metadata, repeated measured-speed bins, matching
+  fixture state, raw traction maps, and bachi identity, mass and tip
+  metrology. It validates acquisition coverage only — it neither reads samples
+  nor blesses the current contact discontinuities.
+
+</details>
+
+---
+
+## Technical details
 
 The panel uses an original Japanese woodblock-inspired illustration of aged
 washi, with ink and vermilion controls. **Performer** has four switch positions, **Drum Layout**
@@ -24,51 +224,9 @@ material and the drum gets heavier, darker, and more strongly loaded by the air.
 Seal the body and the fundamental splits in two. None of that is scripted — it
 falls out of the same solve.
 
-## Audio demos
+### How it works
 
-Twenty-seven takes, rendered by [`Tools/RenderDemos.cpp`](Tools/RenderDemos.cpp)
-from the same engine the plug-in runs: the four strokes, the four drums, the
-whole sixteen-note grid, and the physical controls swept across their ranges.
-They are synthesized by Taikor, not recorded. The nightly refreshes the
-committed set on `main`; render to a fresh directory to review an uncommitted
-working tree. Legacy ka/chudaiko filenames remain stable after the display
-labels changed; the current gestures are documented below.
-
-<!-- peaks-table-begin: regenerated by TaikorRenderDemos; edits between the markers are overwritten -->
-| File | What it is | Length | Rendered peak | Normalisation |
-| --- | --- | ---: | ---: | ---: |
-| `01-stroke-vocabulary.wav` | All four strokes on the o-daiko, in keyboard order | 4.2 s | −14.0 dBFS | +11.0 dB |
-| `02-the-four-drums.wav` | A Don on each of the four drums: o-daiko, nagado-daiko, okedo, shime | 6.3 s | −26.4 dBFS | +23.4 dB |
-| `03-the-playing-grid.wav` | The whole grid: four strokes on each of the four drums | 10.1 s | −11.5 dBFS | +8.5 dB |
-| `04-drums-ka.wav` | An edge-of-head stroke on each of the four drums | 3.9 s | −21.7 dBFS | +18.7 dB |
-| `05-drums-rim-shot.wav` | A rim shot on each of the four drums | 5.1 s | −11.1 dBFS | +8.1 dB |
-| `06-odaiko-phrase.wav` | A phrase on the o-daiko | 10.0 s | −14.2 dBFS | +11.2 dB |
-| `07-chudaiko-phrase.wav` | The same phrase on the nagado-daiko | 6.7 s | −16.7 dBFS | +13.7 dB |
-| `08-okedo-phrase.wav` | The same phrase on the okedo-daiko | 5.1 s | −10.1 dBFS | +7.1 dB |
-| `09-shime-phrase.wav` | The same phrase on the shime-daiko | 4.2 s | −23.7 dBFS | +20.7 dB |
-| `10-velocity-dynamics.wav` | One stroke from a ghost note to a full-arm hit | 5.9 s | −24.5 dBFS | +21.5 dB |
-| `11-rolls-and-presses.wav` | Press rolls, a played flam and a roll accelerating into a rim shot | 5.4 s | −7.9 dBFS | +4.9 dB |
-| `12-bachi-hardness.wav` | Felt beater through to a hard oak bachi | 4.8 s | −22.2 dBFS | +19.2 dB |
-| `13-strike-position.wav` | The same stroke walked from centre to rim | 4.6 s | −20.2 dBFS | +17.2 dB |
-| `14-head-tension.wav` | Slack head through to fully tacked | 5.5 s | −24.0 dBFS | +21.0 dB |
-| `15-head-material.wav` | Thin synthetic film through to thick cowhide | 5.5 s | −25.9 dBFS | +22.9 dB |
-| `16-shell-material.wav` | Light laminated staves through to dense carved zelkova, on a rim shot | 5.4 s | −8.1 dBFS | +5.1 dB |
-| `17-air-coupling.wav` | Open body through to a fully sealed one | 5.5 s | −22.7 dBFS | +19.7 dB |
-| `18-body-depth.wav` | Shallow body through to deep | 5.5 s | −26.5 dBFS | +23.5 dB |
-| `19-head-damping.wav` | Open head through to heavily damped | 6.3 s | −26.7 dBFS | +23.7 dB |
-| `20-octave-body.wav` | The keyboard as one drum retuned four times, then as the four drums | 7.8 s | −18.8 dBFS | +15.8 dB |
-| `21-mic-distance.wav` | The close pair from 3 cm out to 40 cm, on the head and then on the body | 8.5 s | −8.8 dBFS | +5.8 dB |
-| `22-mic-spread.wav` | The close pair from coincident to fully opened | 4.5 s | −23.4 dBFS | +20.4 dB |
-| `23-hand-damping.wav` | A hand laid on a ringing head, from MIDI CC1 | 6.0 s | −25.5 dBFS | +22.5 dB |
-| `24-pitch-wheel.wav` | The wheel pressing the head sharp and flat | 4.3 s | −27.1 dBFS | +24.1 dB |
-| `25-ensemble-piece.wav` | A longer piece moving between all four drums of the grid | 10.4 s | −12.8 dBFS | +9.8 dB |
-| `26-polar-strikes.wav` | Fixed left, centre and right strikes, then one circuit around the head | 8.6 s | −25.6 dBFS | +22.6 dB |
-| `27-performer-ensemble.wav` | Phase-locked P1 copies, then the same phrase layered as P1-P4 | 5.7 s | −13.0 dBFS | +10.0 dB |
-<!-- peaks-table-end -->
-
-## How it works
-
-### Cultural context and real recordings
+#### Cultural context and real recordings
 
 The drum families are traditional, while this combination is a **modern concert
 ensemble design**. Taiko Center dates Daihachi Oguchi's kumi-daiko approach to
@@ -109,7 +267,7 @@ identified drums and mounting, open/edge/rim/soft strokes, documented mic
 positions and gains, repeated dynamics and unprocessed captures. The existing
 capture validator checks metadata coverage, not the recorded waveforms or fit.
 
-### How it is played
+#### How it is played
 
 **Four drums, four strokes: a 4×4 grid. The octave chooses which drum, and the
 bottom four semitones of it choose what is done to that drum.**
@@ -124,7 +282,7 @@ Sixteen notes, C3 to D♯6, and everything else on the keyboard is silent.
 | **C4** Nagadō-daiko | 60 | 61 | 62 | 63 |
 | **C3** Ō-daiko | 48 | 49 | 50 | 51 |
 
-#### The four drums
+##### The four drums
 
 Each octave uses a different **modeled drum design**. The geometries and
 effective hide/shell properties are design values, not measurements of four
@@ -212,7 +370,7 @@ the okedo dies away soonest of the four in absolute time, not because it is
 small but because a light stave shell absorbs two and a half times as much at
 the rim as a solid zelkova log does.
 
-#### The four strokes
+##### The four strokes
 
 | Note | Stroke | Where the stick lands | What it is |
 | --- | --- | ---: | --- |
@@ -370,7 +528,7 @@ shrinks, keeping its proportions. **Drum Layout** switches between one design
 retuned over the keyboard and the four independently scaled family members —
 see below.
 
-### Controls
+#### Controls
 
 Twenty-five host parameters. Performer is a persisted, non-automatable
 performance identity; the other twenty-four are automatable and describe the
@@ -379,7 +537,7 @@ Velocity Curve is physically grouped with the stroke controls below but was
 appended after Performer as the last host slot, so no established parameter ID
 or automation index moved.
 
-#### The drum
+##### The drum
 
 | Control | Range | Default | What it changes |
 | --- | --- | --- | --- |
@@ -394,7 +552,7 @@ or automation index moved.
 | Shell Resonance | 0–100 % | 40 % | How much the wooden body rings when Rimshot catches the hoop |
 | Pitch | ±24 st | 0.0 | Musical transposition, applied as head tension |
 
-#### The stroke
+##### The stroke
 
 | Control | Range | Default | What it changes |
 | --- | --- | --- | --- |
@@ -411,7 +569,7 @@ or automation index moved.
 | Ensemble Variation | 0–100 % | 40 % | Additional timing and strike-placement spread among companions; inactive at Size 1 |
 | Drum Layout | 1 Drum / 4 Drums | 4 Drums | What a keyboard row represents: one design retuned, or an independently sized family member (see below) |
 
-#### The close pair and the output
+##### The close pair and the output
 
 | Control | Range | Default | What it changes |
 | --- | --- | --- | --- |
@@ -439,9 +597,9 @@ reset clear its state. This replaces the former independent full-scale hard
 clips; heavy overload still changes the dynamics. It is a sample-peak safety
 limiter, not an oversampled true-peak limiter.
 
-### The sound engine
+#### The sound engine
 
-#### The head
+##### The head
 
 A circular membrane of radius *a* under tension *T* with areal density *σ* has
 modes at *f(m,n) = c·λ(m,n) / 2πa*, where *c = √(T/σ)* and *λ(m,n)* is the *n*-th
@@ -492,7 +650,7 @@ the pair sits a fraction of a percent apart and beats. That asymmetry belongs to
 the hide rather than to the stroke, so it is seeded from a fixed constant: the
 same drum splits the same way every time it is hit.
 
-#### Published frequency comparison
+##### Published frequency comparison
 
 The stiffness hypothesis has an external check in
 [`Tools/BenchmarkPublishedModes.py`](Tools/BenchmarkPublishedModes.py).
@@ -513,7 +671,7 @@ frequencies and inferred inputs. Its tests check analytic limits and invariance
 to a common tuning change. This is an external reference, not a fitted factory
 profile or evidence of superiority to other instruments.
 
-#### The air on the head
+##### The air on the head
 
 The air a mode has to move rides along with it as added mass, and lowers it. How
 much depends on how much air the mode actually displaces, so the fundamental is
@@ -529,7 +687,7 @@ partial is heard. That complete migration is therefore kept behind the
 capture/revoicing boundary described under "Known gaps" rather than
 silently treating an unmeasured loading law as a calibrated mechanical mass.
 
-#### The air inside the body
+##### The air inside the body
 
 A taiko is a closed drum, and the enclosed air is a spring between its two heads.
 The current pressure approximation couples only axisymmetric head modes,
@@ -600,7 +758,7 @@ axisymmetric mode you can hear rather than two. It matters which one is named:
 with the resonant head slack, the far head's mode is the *lower* of the pair,
 so reading off the lower frequency reported a mode that nothing was driving.
 
-#### The shell
+##### The shell
 
 The wooden body's ring modes come from the standard thin-cylinder result, so
 the shell material moves their frequencies, their spacing and their Q together.
@@ -648,7 +806,7 @@ or an angular doublet. See the 2026-08-19 shell-perspective entry in
 [Docs/decisions.md](Docs/decisions.md), including why gating the shell's *level*
 on `radiationEfficiency` is the wrong term in the wrong place.
 
-#### Above the modes: the head's continuum
+##### Above the modes: the head's continuum
 
 A modal bank can only resolve so far. The mode table runs to the Bessel zeros
 around *λ = 13*, which on a large drum puts the highest resolved mode a couple
@@ -763,7 +921,7 @@ bachi [acceleration-noise model](https://www.cs.cornell.edu/projects/Sound/impac
 would need the stick's radiating geometry and motion. Stick/hide roughness still
 excites the resonant drum, and the tack source retains its airborne path.
 
-#### Where the body comes from
+##### Where the body comes from
 
 Four things take energy out of a struck head, and which of them dominates
 decides whether the drum has a body at all.
@@ -835,7 +993,7 @@ matters, rather than only in name — and the shime outlasts the okedo despite
 being smaller, because its dense carved body absorbs a third of what the okedo's
 staves do.
 
-#### The stick
+##### The stick
 
 A bachi is a moving mass, not a prescribed force envelope. MIDI velocity gives
 it an incoming speed; its compression against the moving head produces a
@@ -878,7 +1036,7 @@ dull soft strokes and leave hard ones alone rather than the other way about.
 `testTheContactPatchWouldNotBeAudibleOnTheResolvedBank` keeps all of that
 recomputed from the engine's own contact solve.
 
-#### The attack pitch glide
+##### The attack pitch glide
 
 A membrane clamped at its rim cannot move without getting longer, and a longer
 head is a tighter one. The tension it gains goes as the square of its
@@ -934,7 +1092,7 @@ the difference is heard as spray; measured with the continuum silenced, over
 rewrite leaves above 1.2 kHz sits 102 dB under the stroke that made it and does
 not move with Tension Mod at all.
 
-#### The tack line
+##### The tack line
 
 A nagado-daiko is *byō-uchi*: the head is not roped on, it is nailed to the
 shell with a ring of iron tacks. Each of them holds down the head's tension
@@ -961,7 +1119,7 @@ that physical band is retained. The former one-pole pair put about 55% of its
 power above 9 kHz at 48 kHz and moved its centroid with the host clock; that
 cheap Nyquist shelf is no longer part of the hit.
 
-#### One shared ringing state per drum
+##### One shared ringing state per drum
 
 A stroke lands on whatever the head is already doing. Each bachi senses the
 surface velocity made by all resolved membrane modes at its own strike point,
@@ -1001,7 +1159,7 @@ contacts adding energy in quadrature. Contact slots still reuse the old `Voice`
 storage type and therefore carry some unused arrays; that is storage debt, not a
 second physical drum.
 
-#### Two microphones, and where the stereo comes from
+##### Two microphones, and where the stereo comes from
 
 Taikor's output is a **close stereo pair**, and its image is a consequence of the
 model rather than a widener bolted onto it.
@@ -1048,7 +1206,7 @@ pair close in and fully opened that can push strokes out of phase — the same
 thing that happens when a real wide spaced pair is pushed through a widener, and
 worth a phase check if the mix has to fold down.
 
-#### Drum Layout
+##### Drum Layout
 
 **Drum Layout** is a two-position physical choice:
 
@@ -1081,7 +1239,7 @@ At the factory voicing, rendered Don and Muted strokes across the rows are withi
 become dominant; the tuning itself remains continuous, but a listener may then
 name another partial as the drum's pitch.
 
-## Known gaps
+### Known gaps
 
 **Shared-stage acoustics are not modeled.** Repeated hits share the ringing
 state of their own drum, and that drum's heads couple through its enclosed
@@ -1215,158 +1373,48 @@ modal states the engine has and the mean square slope the tension rise depends
 on. Everything about how those terms *vary* with size, material, position and
 stroke is computed.
 
-## Release history
+### Rendered demo levels
 
-A concise ledger of the changes that move what Taikor sounds like or how it is
-controlled. Pure refactors, deduplications and test-coverage additions are in
-git history rather than here.
+Twenty-seven takes are rendered by [`Tools/RenderDemos.cpp`](Tools/RenderDemos.cpp)
+from the same engine the plug-in runs: the four strokes, the four drums, the
+whole sixteen-note grid, and the physical controls swept across their ranges.
+The main build refreshes the committed set and this level table together.
+Render to a fresh directory to review an uncommitted working tree. Legacy
+ka/chudaiko filenames remain stable after the display labels changed.
 
-### 2026-09-05
+<!-- peaks-table-begin: regenerated by TaikorRenderDemos; edits between the markers are overwritten -->
+| File | What it is | Length | Rendered peak | Normalisation |
+| --- | --- | ---: | ---: | ---: |
+| `01-stroke-vocabulary.wav` | All four strokes on the o-daiko, in keyboard order | 4.2 s | −14.0 dBFS | +11.0 dB |
+| `02-the-four-drums.wav` | A Don on each of the four drums: o-daiko, nagado-daiko, okedo, shime | 6.3 s | −26.4 dBFS | +23.4 dB |
+| `03-the-playing-grid.wav` | The whole grid: four strokes on each of the four drums | 10.1 s | −11.5 dBFS | +8.5 dB |
+| `04-drums-ka.wav` | An edge-of-head stroke on each of the four drums | 3.9 s | −21.7 dBFS | +18.7 dB |
+| `05-drums-rim-shot.wav` | A rim shot on each of the four drums | 5.1 s | −11.1 dBFS | +8.1 dB |
+| `06-odaiko-phrase.wav` | A phrase on the o-daiko | 10.0 s | −14.2 dBFS | +11.2 dB |
+| `07-chudaiko-phrase.wav` | The same phrase on the nagado-daiko | 6.7 s | −16.7 dBFS | +13.7 dB |
+| `08-okedo-phrase.wav` | The same phrase on the okedo-daiko | 5.1 s | −10.1 dBFS | +7.1 dB |
+| `09-shime-phrase.wav` | The same phrase on the shime-daiko | 4.2 s | −23.7 dBFS | +20.7 dB |
+| `10-velocity-dynamics.wav` | One stroke from a ghost note to a full-arm hit | 5.9 s | −24.5 dBFS | +21.5 dB |
+| `11-rolls-and-presses.wav` | Press rolls, a played flam and a roll accelerating into a rim shot | 5.4 s | −7.9 dBFS | +4.9 dB |
+| `12-bachi-hardness.wav` | Felt beater through to a hard oak bachi | 4.8 s | −22.2 dBFS | +19.2 dB |
+| `13-strike-position.wav` | The same stroke walked from centre to rim | 4.6 s | −20.2 dBFS | +17.2 dB |
+| `14-head-tension.wav` | Slack head through to fully tacked | 5.5 s | −24.0 dBFS | +21.0 dB |
+| `15-head-material.wav` | Thin synthetic film through to thick cowhide | 5.5 s | −25.9 dBFS | +22.9 dB |
+| `16-shell-material.wav` | Light laminated staves through to dense carved zelkova, on a rim shot | 5.4 s | −8.1 dBFS | +5.1 dB |
+| `17-air-coupling.wav` | Open body through to a fully sealed one | 5.5 s | −22.7 dBFS | +19.7 dB |
+| `18-body-depth.wav` | Shallow body through to deep | 5.5 s | −26.5 dBFS | +23.5 dB |
+| `19-head-damping.wav` | Open head through to heavily damped | 6.3 s | −26.7 dBFS | +23.7 dB |
+| `20-octave-body.wav` | The keyboard as one drum retuned four times, then as the four drums | 7.8 s | −18.8 dBFS | +15.8 dB |
+| `21-mic-distance.wav` | The close pair from 3 cm out to 40 cm, on the head and then on the body | 8.5 s | −8.8 dBFS | +5.8 dB |
+| `22-mic-spread.wav` | The close pair from coincident to fully opened | 4.5 s | −23.4 dBFS | +20.4 dB |
+| `23-hand-damping.wav` | A hand laid on a ringing head, from MIDI CC1 | 6.0 s | −25.5 dBFS | +22.5 dB |
+| `24-pitch-wheel.wav` | The wheel pressing the head sharp and flat | 4.3 s | −27.1 dBFS | +24.1 dB |
+| `25-ensemble-piece.wav` | A longer piece moving between all four drums of the grid | 10.4 s | −12.8 dBFS | +9.8 dB |
+| `26-polar-strikes.wav` | Fixed left, centre and right strikes, then one circuit around the head | 8.6 s | −25.6 dBFS | +22.6 dB |
+| `27-performer-ensemble.wav` | Phase-locked P1 copies, then the same phrase layered as P1-P4 | 5.7 s | −13.0 dBFS | +10.0 dB |
+<!-- peaks-table-end -->
 
-- **The upper spectrum follows the solved strike force.** Causal modal-response
-  integration replaces nominal Hertz spectral shading and positive-only noise
-  injection. Sustained contact can now cancel high-mode excitation. The accepted
-  tension/bending weighting remains, while the attack and upper tail can change
-  in existing sessions. The reference impulse still anchors overall voicing.
-
-- **Removed the extra airborne click.** The hit now reaches the output through
-  the contact-driven drum, its statistical upper spectrum and the applicable
-  tack source. The separate differentiated-force layer and its unsupported
-  patch-size filter were removed after the user preferred the comparison
-  without them. This changes the attack of existing sessions.
-
-- **Corrected the high-mode statistical impulse response.** Relative band
-  levels now integrate modal population and force-to-displacement response
-  using each head's tension/bending dispersion. The original crossover band,
-  filter topology and output protection remain in place; higher bands change
-  level, so existing sessions can sound different above the resolved modes.
-  This is a model correction, not a recording-derived calibration.
-
-- **Added Ensemble Size and Ensemble Variation.** Each played row can trigger
-  1–8 independent drum models with up to 30 ms of companion timing spread and
-  bounded strike-placement scatter. The lead stays on the MIDI timestamp,
-  all members share one protected output stage, and Size 1 retains the solo
-  behavior. The two controls append host parameters without moving existing
-  automation; older sessions load with Size 1.
-
-- **Kept repeated hits alive at Humanise 0.** A small impact-speed and
-  contact-duration floor now varies successive strokes even with Stick Noise
-  at zero. Performer identities also vary this tightest gesture, contact noise
-  is reseeded on every hit, and the sequence uses both halves of its 64-bit
-  stroke counter. Reset still reproduces the same performance; Panic and
-  natural silence preserve the advancing sequence. Existing sessions that
-  relied on machine-identical Humanise-zero hits now receive this variation.
-  Selected as **B by ear** in the level-matched
-  [repeated-stroke comparison](Docs/decisions.md#2026-09-05--repeated-strokes-retain-contact-variation).
-
-### 2026-08-19
-
-- **Gave the wooden shell a perspective.** Mic Distance moved the head's near
-  field and the head's continuum but left the body at one fixed level, so
-  backing the pair off thinned the drum around a shell that never receded. A
-  ring mode is now read the way a membrane mode is — an evanescent term at its
-  own circumferential wavenumber `n/R` over the wall-to-capsule path, plus the
-  same proximity lift and propagating share — taken as a ratio against each
-  drum's own capsule distance at the factory Mic Distance, so every factory
-  preset renders exactly as it did. At 40 cm the ō-daiko's lowest ring mode is
-  3.6 dB down and the okedo's 16.0 dB, while the top of either bank moves under
-  a decibel. Chosen by ear from a six-way listening test; see
-  [Docs/decisions.md](Docs/decisions.md).
-- **Adjudicated fifteen proposed acoustic and performance mechanisms** against
-  the shipping engine; none was released. Two README claims were corrected in
-  the process: Body Depth *does* move the decay of the axisymmetric pair, so
-  what the model lacks is a loss belonging to the enclosed *air* rather than
-  authority over the tail; and that missing loss factor is 2.8e-4 to 6.6e-4 by
-  Kirchhoff's boundary-layer result, worth at worst 1.49 % of the decay over
-  four octaves, eleven Body Depths and three Air Couplings.
-
-### 2026-08-17
-
-- **Removed the unsupported one-way shell copy from head-only Don, Ka and Tsu.**
-  Their normal contact force already loses energy through the resolved
-  shell-dependent boundary, but it was also being sent after the reciprocal
-  solve into six shell oscillators that contributed no sensing or compliance.
-  On the light okedo that fixed 191 Hz ladder overwhelmed the head by 26.8 dB
-  on Ka. The wooden bank now belongs to Don Rim alone; okedo Ka falls by about
-  20 dB over 5–30 ms and Tsu by about 10 dB. No replacement EQ, radiation
-  scalar or fitted gain was added.
-- **Preserved the unresolved head's calibrated RMS** when live Pitch, Tension
-  Mod or a structural rebuild moves a continuum filter. Ordinary attack stretch
-  moves only 0.009–0.016 dB, while two-octave automation no longer inherits up
-  to several decibels of passband gain.
-- **Made the zero-azimuth analytic observer rank the detuned cosine pole** the
-  renderer actually builds rather than its unsplit parent. The four sounding
-  pitches now close on exact heard octaves at 59.747 / 119.495 / 238.990 /
-  477.979 Hz.
-
-### 2026-08-16
-
-- **Corrected the analytic `sin^1.5` Hertz reference impulse** from an
-  unrelated `sqrt(sin)` integral to 1.7480383695280799, then bounded each
-  contact's stochastic-continuum observation by the direct rigid-target
-  Hunt–Crossley squared-force integral. A factory chū Don remains uncapped at
-  about 0.953 of the limit; the hostile shime Don's roughly 446× request is
-  bounded, while 80–500 ms shime tails and dense-gesture onsets stay intact.
-- **Stopped treating the two heads as coincident radiators.** The axisymmetric
-  loss now includes their finite body-depth separation through
-  `b² + r² + 2br·sinc(ωL/c)`, preserving the former zero-depth limit and a
-  non-negative passive power. The factory shime's opposing lower branch moves
-  from 1.685 to 0.851 s T60 without changing its first-80-ms hit level.
-- **Gave each axisymmetric membrane pair its own finite-column cavity factor**
-  instead of reusing the (0,1) result. The factory higher upper branches move
-  down by 12.2 / 4.8 / 1.3 cents while the tuned pair is unchanged, and the
-  higher solves run once on the octave search's winning drum, adding no
-  per-sample work.
-- **Gave each unresolved-head octave a wavelength-dependent microphone-distance
-  law.** All five bands keep their exact factory-position level, while a
-  3–40 cm move now attenuates the factory ō-daiko's band targets by roughly
-  9.1 / 14.2 / 18.6 / 21.1 / 22.1 dB from low to high instead of one flat gain.
-- **Removed the scalar observer's false omnidirectional floor** from every
-  non-axisymmetric head mode: the angular factor now multiplies the propagating
-  term as well as the local field, so all 32 resolved multipole resonators and
-  the pitch readout go to zero on their nodal azimuths.
-- **Added explicit polar strike placement.** A ±180° Strike Azimuth parameter
-  reaches modal drive, reciprocal contact and the two-microphone observer, with
-  CC16/CC17 for sample-accurate absolute azimuth and radial overrides and CC121
-  to clear both. At the 0° default the former angle-jitter expression is
-  retained exactly.
-- **Removed Strike Position's clamped dead travel:** each articulation now
-  spends its full bipolar range moving continuously between its own written
-  position and the same centre/rim endpoints it already reached.
-- **Made structural automation continuous in physical two-head coordinates.**
-  Axisymmetric rebuilds preserve batter/rear displacement, velocity and pending
-  force while redistributing a live Tsu loss in the new eigenbasis; a bachi
-  still touching the head receives matching sensing and force projections.
-- **Removed two synthetic-noise shortcuts from the hit.** The unresolved head
-  now uses the same Hertz contact spectrum as the resolved modes instead of a
-  one-pole brightness law, and the direct airborne click differentiates only
-  the solved normal force rather than differentiating roughness a second time
-  into a flat Nyquist shelf.
-- **Removed three sources of cheap hit noise** without lowering the drum's
-  resonant object: rope-laced okedo and shime no longer emit byō tack chatter,
-  the remaining tacked drums confine it to 2.6–9 kHz with exact host-rate
-  normalisation, and Humanise scatters equal bounded radial and tangential
-  distances instead of swinging edge strokes through metre-scale arcs.
-- **Added four stable Performer identities** for honest multi-instance
-  ensembles. P2–P4 salt only the variation Humanise already owns — contact
-  point, speed and duration — so layered instances change the performed
-  resonant hit rather than merely adding noise. P1 preserves the established
-  sequence at introduction; no identity hides a
-  pitch, drum-size or gain offset.
-- **Appended the automatable Velocity Curve** as the 25th host slot, without
-  moving any established parameter ID or automation index. `pow(v, exp2(c))`
-  gives Soft 100 / Linear / Hard 100 controller response; Linear takes an exact
-  identity branch and is the default. It calibrates the player and controller
-  before Velocity Depth rather than inventing an acoustic effect.
-- **Added a dependency-free controlled-capture inventory preflight.** Its
-  strict TSV contract checks synchronized calibrated channels, one complete
-  3×3×2 mobility core, the low-speed Ka/Tsu/Rim strike matrix, held-palm and
-  simultaneous head/hoop metadata, repeated measured-speed bins, matching
-  fixture state, raw traction maps, and bachi identity, mass and tip
-  metrology. It validates acquisition coverage only — it neither reads samples
-  nor blesses the current contact discontinuities.
-
-## Build
+### Build
 
 The JUCE-free DSP core, tests and demo renderer:
 
@@ -1422,14 +1470,7 @@ level table together in one bot commit. If `main` has advanced during the build,
 that run keeps its downloads and leaves the committed-media refresh to the
 newer run. Historical listening previews are preserved.
 
-macOS packages contain both Apple Silicon and Intel binaries targeting macOS
-11 or later. CI uses ad-hoc bundle signatures; the installer is unsigned and
-not notarized. Windows binaries use the static Visual C++ runtime. Install
-Windows plug-ins by copying `VST3/Taikor.vst3` to
-`C:\Program Files\Common Files\VST3` and `CLAP/Taikor.clap` to
-`C:\Program Files\Common Files\CLAP`.
-
-## Licensing
+### Licensing
 
 Original code under the MIT license (`LICENSE`). JUCE is used under its own
 terms — see `THIRD_PARTY_NOTICES.md`. No samples, impulse responses,
