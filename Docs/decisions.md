@@ -150,12 +150,12 @@ the instrument rather than merely change it. Which ship on?
 | Letter | What it was | Outcome |
 | --- | --- | --- |
 | A | Shipping engine, every review switch off — sample-identical to the previous release | baseline |
-| B | Extended bank: 76 resolved entries as 152 resonators, the 56 new ones driven one-way under the unchanged continuum | verdict pending |
-| C | Felt contact law: exponent 1.5 → 2.5 below Bachi Hardness 50 %, pinned at the neutral stroke | verdict pending |
-| D | Rear-head path: the far head's share reaches the pair down the body and round the rim, later and more spread | verdict pending |
-| E | Per-entry tension ripple: each resolved entry stiffened by its own squared slope | verdict pending |
-| F | Distinct ensemble drums: companions get their own tension, hide, shell and damping | verdict pending |
-| G | All five together | verdict pending |
+| B | Extended bank: 76 resolved entries as 152 resonators, the 56 new ones driven one-way under the unchanged continuum | not chosen alone |
+| C | Felt contact law: exponent 1.5 → 2.5 below Bachi Hardness 50 %, pinned at the neutral stroke | not chosen alone |
+| D | Rear-head path: the far head's share reaches the pair down the body and round the rim, later and more spread | not chosen alone |
+| E | Per-entry tension ripple: each resolved entry stiffened by its own squared slope | not chosen alone |
+| F | Distinct ensemble drums: companions get their own tension, hide, shell and damping | not chosen alone |
+| G | All five together | **chosen** |
 
 **The comparison.** Identical 12.9-second scores rendered through the
 shipping `EnsembleEngine` path at 48 kHz in 256-sample blocks from one reset
@@ -170,9 +170,17 @@ Whole-file stereo RMS was matched to −30 dBFS with constant gain only:
 were rendered to the session's working directory and sent to the user; it
 is not committed.
 
-**Verdict: pending.** The five ship on behind `TaikoEngine::setRealismFeatures`
-until the user has listened; whichever letters are not preferred are to be
-switched off there, not removed, and this entry updated with the choice.
+**Verdict: G, by ear.** The user chose G, all five together, and added that
+the drums still sound "white-noisey" and cheap. All five stay on; the
+switches remain for review. A feature comparison of the same set against
+real captures (43 isolated stage strokes and 45 library hits, gain-independent
+descriptors) could not separate B to G from A: every switch moves those
+descriptors by under a tenth of the real spread, so this choice rests on the
+ear alone. The noise complaint was triaged separately by silencing each noise
+source in turn: the statistical continuum carries about three quarters of the
+ō-daiko's ring from 200 ms on and half of the nagadō's, and the contact
+texture doubles the attack's noise share against real captures; that is the
+next decision, not this one.
 
 **What the measurements already settled.** A uniform Berger ripple across
 the bank was tried before E and rejected by measurement, not by ear: it

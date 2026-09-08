@@ -72,8 +72,8 @@ Listen to the instrument's own synthesized performances:
   seat.
 - **Every one of the five sits behind a review switch**
   (`TaikoEngine::setRealismFeatures`); with all five off the engine renders
-  sample-identically to the previous release. They ship on, pending the
-  listening test recorded in `Docs/decisions.md`.
+  sample-identically to the previous release. They ship on: the listening
+  test recorded in `Docs/decisions.md` chose all five together.
 - **The panel is readable and shorter.** The control decks sit on a
   translucent washi wash, every label and readout is larger, Velocity Curve
   is a three-position Curve switch, Ensemble Size an eight-position Players
