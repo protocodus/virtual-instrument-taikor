@@ -600,7 +600,8 @@ TaikoEngine::membraneModes() noexcept
 
 void TaikoEngine::setRealismFeatures (std::uint32_t mask) noexcept
 {
-    realismFeatureMask.store (mask & allRealismFeatures, std::memory_order_relaxed);
+    realismFeatureMask.store (mask & (allRealismFeatures | reviewCandidates),
+                              std::memory_order_relaxed);
 }
 
 std::uint32_t TaikoEngine::realismFeatures() noexcept
@@ -3360,8 +3361,11 @@ float TaikoEngine::contactCollisionMass (const DrumState& drum,
 
     // Over the twenty entries the contact is solved against - see the note
     // on contactShape in buildVoiceModes for why the bank's extension does
-    // not load the stick.
-    for (int entryIndex = 0; entryIndex < legacyModeEntryCount; ++entryIndex)
+    // not load the stick - or over the whole bank for the candidate under
+    // review that lets it.
+    const int contactEntries =
+        hasRealismFeature (fullBankContact) ? modeEntryCount : legacyModeEntryCount;
+    for (int entryIndex = 0; entryIndex < contactEntries; ++entryIndex)
     {
         const auto& entry = membraneModes()[static_cast<std::size_t> (entryIndex)];
         const int order = entry.circumferentialOrder;
@@ -3997,6 +4001,7 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
                 mode.handDampingRate = 0.0f;
                 mode.inverseModalMass = 1.0f / std::max (geometricMass, 1.0e-9f);
                 mode.contactShape = entryIndex < legacyModeEntryCount
+                                        || hasRealismFeature (fullBankContact)
                     ? shapeStrike * batterShare
                           * profile.membraneGain * profile.levelScale
                     : 0.0f;
@@ -4147,6 +4152,7 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
                 mode.handDampingRate = 0.0f;
                 mode.inverseModalMass = 1.0f / std::max (geometricMass, 1.0e-9f);
                 mode.contactShape = entryIndex < legacyModeEntryCount
+                                        || hasRealismFeature (fullBankContact)
                     ? shapeStrike * strikeAngular
                           * profile.membraneGain * profile.levelScale
                     : 0.0f;
@@ -4311,19 +4317,31 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
         // partials a noise band cannot carry - underneath the same statistical
         // layer as before.
         float highestResolved = 0.0f;
+        float highestInBank = 0.0f;
         for (int index = 0; index < count; ++index)
         {
             const auto& mode = voice.modes[static_cast<std::size_t> (index)];
-            if (mode.membrane && mode.modeEntry < legacyModeEntryCount)
-                highestResolved = std::max (highestResolved,
-                                            mode.omega / (2.0f * piFloat));
+            if (! mode.membrane)
+                continue;
+            const float frequency = mode.omega / (2.0f * piFloat);
+            highestInBank = std::max (highestInBank, frequency);
+            if (mode.modeEntry < legacyModeEntryCount)
+                highestResolved = std::max (highestResolved, frequency);
         }
 
         // The selected handoff tracks the highest resolved mode; this is not
         // a measured modal-overlap threshold (which also depends on linewidth).
         // The low guard allows the handoff to follow large, low-tuned drums
         // while keeping the band construction defined for an empty bank.
-        const float first = std::max (highestResolved * 1.25f, 20.0f);
+        //
+        // The candidate under review hands off above the whole bank instead,
+        // so the bands carry only what no resonator does. Its first band is
+        // then levelled by the same impulse-power law as every band above it,
+        // measured from the legacy handoff where the calibration was pinned,
+        // rather than being handed that calibration at unity.
+        const float legacyFirst = std::max (highestResolved * 1.25f, 20.0f);
+        const float first = hasRealismFeature (continuumAboveBank)
+            ? std::max (highestInBank * 1.25f, 20.0f) : legacyFirst;
 
         // Weyl's leading area term counts N = lambda^2 / 4 modes on a disc.
         // A membrane has N proportional to f^2, while a bending plate has N
@@ -4354,7 +4372,7 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
             const double high = squaredWavenumber (centre * continuumBandwidth);
             return std::log1p ((high - low) / (low * (1.0 + stiffness * high)));
         };
-        const double referenceImpulsePower = bandImpulsePower (first);
+        const double referenceImpulsePower = bandImpulsePower (legacyFirst);
 
         // Short wavelengths live at the edge. The high-order mode shapes pile
         // up against the rim, so a stroke out there couples into the continuum
@@ -4474,8 +4492,10 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
             // count nor an additional 1/omega. This is a statistical observed
             // displacement continuation, not a calibrated pressure PSD or a
             // reciprocal high-mode mobility. First-band gain is exactly unity.
-            const float tilt = band == 0 ? 1.0f : static_cast<float> (
-                std::sqrt (bandImpulsePower (centre) / referenceImpulsePower));
+            const float tilt = band == 0 && ! hasRealismFeature (continuumAboveBank)
+                ? 1.0f
+                : static_cast<float> (std::sqrt (bandImpulsePower (centre)
+                                                 / referenceImpulsePower));
             // Most of a white-noise input lies outside one octave and is thrown
             // away. Exact state-space normalisation makes the physical level
             // below independent of filter geometry and sample rate.
@@ -6841,10 +6861,11 @@ float TaikoEngine::renderVoice (Voice& voice, Voice* physical,
                 // above the shell bank in buildVoiceModes.
                 constexpr auto firstOneWayIndex =
                     static_cast<std::size_t> (2 * legacyModeEntryCount);
+                const bool oneWay = ! hasRealismFeature (fullBankContact);
                 for (std::size_t index = 0; index < voice.modeProjection.size(); ++index)
                 {
                     float input = noise * voice.modeProjection[index];
-                    if (index >= firstOneWayIndex)
+                    if (oneWay && index >= firstOneWayIndex)
                         input += force * voice.modeProjection[index];
                     physical->modalInput[index] += input;
                 }

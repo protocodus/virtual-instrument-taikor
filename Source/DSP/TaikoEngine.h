@@ -278,7 +278,8 @@ public:
     // listening set can render each one alone against the engine as it
     // shipped: with every bit clear the render is sample-identical to the
     // previous release. Process-wide and read at build and render time; the
-    // plug-in never touches them and every bit ships set.
+    // plug-in never touches them; the five mechanisms ship set and the review
+    // candidates below ship clear.
     enum RealismFeature : std::uint32_t
     {
         extendedBank = 1u << 0,
@@ -286,7 +287,14 @@ public:
         rearHeadPath = 1u << 2,
         parametricRipple = 1u << 3,
         distinctEnsembleDrums = 1u << 4,
-        allRealismFeatures = 0x1fu
+        allRealismFeatures = 0x1fu,
+        // Candidates under review, off by default: the continuum handed off
+        // above the whole resolved bank rather than above the calibrated
+        // twenty entries, and the bachi contact solved against every resolved
+        // entry rather than the calibrated twenty. Neither is re-pinned.
+        continuumAboveBank = 1u << 5,
+        fullBankContact = 1u << 6,
+        reviewCandidates = 0x60u
     };
     static void setRealismFeatures (std::uint32_t mask) noexcept;
     [[nodiscard]] static std::uint32_t realismFeatures() noexcept;

@@ -680,7 +680,11 @@ Each of the five mechanisms added in the 2026-09-08 release — this extension,
 the felt contact law, the far head's own path to the pair, the per-mode
 tension ripple and the ensemble's distinct drums — sits behind a review
 switch in `TaikoEngine::setRealismFeatures`, and with every switch off the
-engine renders sample-identically to the release before. They ship on.
+engine renders sample-identically to the release before. They ship on. Two
+further switches are candidates under review and ship off: the continuum
+handed off above the whole resolved bank rather than above the calibrated
+twenty entries, and the bachi contact solved against every resolved entry.
+The listening test that decides them is recorded in `Docs/decisions.md`.
 
 A treated cowhide head can also resist bending. A
 [Japanese-drum diaphragm study](https://doi.org/10.1250/ast.30.348) measured a

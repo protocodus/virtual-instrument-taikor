@@ -190,3 +190,40 @@ contact against the full 76-entry bank was likewise measured and rejected: it
 takes the ō-daiko's momentum transfer from 13 % to 3 % of the stick's and
 folds the velocity law, because the calibrated contact is a modal-truncation
 artefact. Neither is a candidate here.
+
+## 2026-09-08 — the noise complaint: where the continuum hands off, and what the contact loads
+
+**The question.** With G chosen, the user found the drums still "white-noisey"
+and cheap. Triage by silencing each noise source in turn put the cause in one
+place: the statistical continuum carries about three quarters of the
+ō-daiko's ring from 200 ms on, nearly all of an ō-daiko Edge stroke, and half
+the nagadō's; the contact texture sits 42 dB or more under the stroke and the
+tack rattle lower still. Two derivable changes bear on it. Which ships?
+
+| Letter | What it was | Outcome |
+| --- | --- | --- |
+| A | Shipping engine, the five mechanisms chosen as G | baseline |
+| B | Continuum handed off above the whole resolved bank, first band levelled by the impulse-power law from the legacy handoff | verdict pending |
+| C | Bachi contact solved against every resolved entry, nothing re-pinned | verdict pending |
+| D | B and C together | verdict pending |
+
+**The comparison.** Identical 16.8-second scores through the shipping
+`EnsembleEngine` path at 48 kHz in 256-sample blocks from one reset state at
+the factory controls: the ō-daiko and nagadō at three velocities with long
+gaps and an Edge stroke each, a five-stroke ō-daiko phrase, an eight-stroke
+nagadō roll into a rim shot, then the okedo and shime for balance. Whole-file
+stereo RMS was matched to −35 dBFS with constant gain only: +8.1727 dB for A, +9.1931 dB for B, +16.5348 dB for C, +18.2438 dB for D. The set
+and its key were rendered to the session's working directory and sent to the
+user; it is not committed.
+
+**What the measurements say before the ear does.** B takes the continuum's
+share of the ō-daiko Don's ring from 74 % to 3 % and the nagadō's from 46 % to
+nothing, at 3 to 6 dB less level on those drums; the small drums, which the
+continuum barely touched, are unchanged. C is the raw physics the Known gaps
+entry describes: it drops the big drums' modal energy by 8 dB, raises the
+okedo's by 11 dB and leaves the continuum standing, because the modes above
+the calibrated twenty hand the stick its energy back within the contact.
+Preferring C or D would license the re-pinning, not the change as rendered.
+
+**Verdict: pending.** Both switches exist in `TaikoEngine::setRealismFeatures`
+as review candidates and ship off.
