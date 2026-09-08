@@ -78,7 +78,8 @@ Listen to the instrument's own synthesized performances:
   translucent washi wash, every label and readout is larger, Velocity Curve
   is a three-position Curve switch, Ensemble Size an eight-position Players
   switch, and Resonant Head, Air Coupling and Shell Resonance stay host
-  parameters without a knob.
+  parameters without a knob. Each grid pad shows its strike map beside its
+  note name, both sized to the pad.
 
 ### 2026-09-06
 

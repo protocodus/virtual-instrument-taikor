@@ -332,14 +332,17 @@ void TaikorPad::paintButton (juce::Graphics& g, bool isMouseOver, bool isButtonD
         g.drawRect (bounds.reduced (2.0f), 1.5f);
     }
 
-    // A tiny head map replaces three repeated lines of copy. The mark is the
-    // actual strike geometry: centre, rim, muted centre, or head-and-hoop.
-    const auto mapSize = juce::jlimit (18.0f, 27.0f, bounds.getHeight() * 0.34f);
+    // The pad reads as two things side by side: the strike geometry on the
+    // left - centre, rim, muted centre, or head-and-hoop - and the note it
+    // plays on the right, both sized by the pad so they stay legible at any
+    // window size. The map is the actual strike position, not an icon.
+    const auto inner = bounds.reduced (6.0f, 4.0f);
+    const auto mapSize = juce::jlimit (22.0f, 48.0f, inner.getHeight() * 0.74f);
     auto headMap = juce::Rectangle<float> (mapSize, mapSize)
-                       .withCentre ({ bounds.getCentreX(),
-                                      bounds.getY() + bounds.getHeight() * 0.33f });
-    g.setColour (mutedText.withAlpha (selected ? 0.70f : 0.45f));
-    g.drawEllipse (headMap, 1.0f);
+                       .withCentre ({ inner.getX() + mapSize * 0.5f + 2.0f,
+                                      inner.getCentreY() });
+    g.setColour (mutedText.withAlpha (selected ? 0.75f : 0.50f));
+    g.drawEllipse (headMap, 1.4f);
 
     const auto centre = headMap.getCentre();
     auto strikePoint = centre;
@@ -350,16 +353,16 @@ void TaikorPad::paintButton (juce::Graphics& g, bool isMouseOver, bool isButtonD
     else
         strikePoint.x -= mapSize * 0.08f;
 
-    g.setColour (selected ? accentColour : brassColour.withAlpha (0.76f));
-    const auto dot = juce::jmax (3.0f, mapSize * 0.17f);
+    g.setColour (selected ? accentColour : brassColour.withAlpha (0.80f));
+    const auto dot = juce::jmax (4.0f, mapSize * 0.19f);
     g.fillEllipse (strikePoint.x - dot * 0.5f, strikePoint.y - dot * 0.5f,
                    dot, dot);
 
     if (articulation == taikor::Articulation::Tsu)
     {
         g.setColour (textColour.withAlpha (0.72f));
-        g.drawLine (headMap.getX() + 3.0f, headMap.getBottom() - 4.0f,
-                    headMap.getRight() - 3.0f, headMap.getY() + 4.0f, 1.4f);
+        g.drawLine (headMap.getX() + 4.0f, headMap.getBottom() - 5.0f,
+                    headMap.getRight() - 4.0f, headMap.getY() + 5.0f, 1.8f);
     }
     else if (articulation == taikor::Articulation::DonRim)
     {
@@ -367,15 +370,15 @@ void TaikorPad::paintButton (juce::Graphics& g, bool isMouseOver, bool isButtonD
         juce::Path rim;
         rim.addCentredArc (centre.x, centre.y, mapSize * 0.59f, mapSize * 0.59f,
                            0.0f, -0.5f, 1.55f, true);
-        g.strokePath (rim, juce::PathStrokeType (1.5f));
+        g.strokePath (rim, juce::PathStrokeType (2.0f));
     }
 
     g.setColour (selected ? textColour : mutedText.brighter (0.08f));
     g.setFont (displayFont (
-        juce::jlimit (14.0f, 20.0f, bounds.getHeight() * 0.27f),
+        juce::jlimit (18.0f, 30.0f, inner.getHeight() * 0.50f),
         juce::Font::bold));
-    g.drawText (keyText, bounds.withTrimmedTop (bounds.getHeight() * 0.56f)
-                               .reduced (4.0f, 1.0f),
+    g.drawText (keyText,
+                inner.withTrimmedLeft (mapSize + 10.0f),
                 juce::Justification::centred, false);
 
     if (selected)
