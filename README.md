@@ -80,6 +80,11 @@ Listen to the instrument's own synthesized performances:
   switch, and Resonant Head, Air Coupling and Shell Resonance stay host
   parameters without a knob. Each grid pad shows its strike map beside its
   note name, both sized to the pad.
+- **Two candidates for the head's noise character were rendered and rejected
+  by ear**, and stay in `TaikoEngine::setRealismFeatures` switched off: the
+  continuum handed off above the whole resolved bank, and the bachi contact
+  solved against every resolved entry. See `Docs/decisions.md` for what the
+  measurements said and why the listening test overruled them.
 
 ### 2026-09-06
 
@@ -681,10 +686,13 @@ the felt contact law, the far head's own path to the pair, the per-mode
 tension ripple and the ensemble's distinct drums — sits behind a review
 switch in `TaikoEngine::setRealismFeatures`, and with every switch off the
 engine renders sample-identically to the release before. They ship on. Two
-further switches are candidates under review and ship off: the continuum
-handed off above the whole resolved bank rather than above the calibrated
-twenty entries, and the bachi contact solved against every resolved entry.
-The listening test that decides them is recorded in `Docs/decisions.md`.
+further switches were rendered as candidates and rejected by ear, and ship
+off: the continuum handed off above the whole resolved bank rather than above
+the calibrated twenty entries, and the bachi contact solved against every
+resolved entry. Removing the noise bed measured closer to real captures on
+every partial-balance descriptor and sounded like a struck string, because
+the resolved bank underneath it is too sparse to stand alone. The listening
+test and its numbers are recorded in `Docs/decisions.md`.
 
 A treated cowhide head can also resist bending. A
 [Japanese-drum diaphragm study](https://doi.org/10.1250/ast.30.348) measured a
@@ -1469,6 +1477,20 @@ the upper spectrum, since truncating the later force would also remove its
 physical phase cancellation. The retained exposure calculation is diagnostic
 only, and its per-unit-length `Z` does not make it a mechanical energy measure.
 Output protection remains downstream of the complete instrument.
+
+The continuum is also carrying more of the drum than it should. On the factory
+ō-daiko its lowest bands are louder than the head's own modes in the pitch
+region: the strongest partial below 500 Hz measures 119 Hz with the bands
+present and 59.5 Hz without them, while the model's own readout puts that
+drum's sounding pitch at 59.7 Hz and real ō-daiko-class captures sit at 61 Hz.
+Handing the bands off above the whole resolved bank was rendered as a
+candidate and measured: it moves spectral flatness, tail balance and partial
+count onto the real distribution, and it was rejected by ear because what it
+leaves behind is a sparse set of long-ringing partials over empty space, which
+reads as a struck string rather than a drum. Both facts point the same way.
+The bands are standing in for resolved modes that are too few and too quiet,
+so the level of the extended bank and the losses that thin it are what need
+the captures, not the handoff frequency. See `Docs/decisions.md`.
 
 The continuum's absolute level and spatial weighting still need controlled
 driving-point mobility and pressure captures. Its first bands on the large

@@ -202,10 +202,10 @@ tack rattle lower still. Two derivable changes bear on it. Which ships?
 
 | Letter | What it was | Outcome |
 | --- | --- | --- |
-| A | Shipping engine, the five mechanisms chosen as G | baseline |
-| B | Continuum handed off above the whole resolved bank, first band levelled by the impulse-power law from the legacy handoff | verdict pending |
-| C | Bachi contact solved against every resolved entry, nothing re-pinned | verdict pending |
-| D | B and C together | verdict pending |
+| A | Shipping engine, the five mechanisms chosen as G | **chosen** |
+| B | Continuum handed off above the whole resolved bank, first band levelled by the impulse-power law from the legacy handoff | not chosen |
+| C | Bachi contact solved against every resolved entry, nothing re-pinned | not chosen |
+| D | B and C together | not chosen |
 
 **The comparison.** Identical 16.8-second scores through the shipping
 `EnsembleEngine` path at 48 kHz in 256-sample blocks from one reset state at
@@ -225,5 +225,36 @@ okedo's by 11 dB and leaves the continuum standing, because the modes above
 the calibrated twenty hand the stick its energy back within the contact.
 Preferring C or D would license the re-pinning, not the change as rendered.
 
-**Verdict: pending.** Both switches exist in `TaikoEngine::setRealismFeatures`
-as review candidates and ship off.
+**Verdict: A, by ear.** The user chose A and said the others have "weird
+resonance like a string". Both switches stay in
+`TaikoEngine::setRealismFeatures` as review candidates and ship off; nothing
+about the released sound changes.
+
+**What it licensed, and what it teaches.** Nothing ships. The result is worth
+recording because the ear and the descriptors disagreed, and the disagreement
+is informative. Measured against the same real captures as the earlier set, B
+closed the two headline gaps outright: spectral flatness from 200 Hz to 2 kHz
+moved from −22.0 dB to −14.5 dB against a real −15.7, the tail's energy above
+1.3 times the pitch from +6.0 dB to −2.4 against a real −0.7, and the count of
+prominent partials from 15 to 19.5 against a real 23. It also revealed that on
+the factory 150 cm ō-daiko the strongest partial below 500 Hz measures 119 Hz
+with the continuum and 59.5 Hz without it, while the engine's own readout says
+that drum sounds at 59.7 Hz and the real ō-daiko-class captures sit at 61 Hz:
+the noise layer was louder than the head's own modes in the pitch region.
+
+None of that survived listening, and the reason is in the same tables. With
+the bed removed the pitch region holds fifteen to twenty discrete,
+long-ringing partials with almost nothing between them; the mid drums'
+flatness falls from −35.7 dB to −46.4 against a real −18.9, and the 1.5–5 kHz
+tail from −53.4 dB to −54.9 against a real −31.0. A sparse set of long
+partials over empty space is a string, which is what the listener heard. The
+continuum is therefore doing two jobs at once, and only one of them is its
+own: it adds the unresolved head, and it conceals how thin the resolved bank
+is. Removing it is not the fix. Making the bank dense and correctly damped
+enough that its removal leaves a drum is, and that is a change to the modal
+bank rather than to the handoff.
+
+C is separately ruled out on its own terms: it leaves every noise descriptor
+where A had them (flatness −22 dB, tail +5.9 dB above the pitch band) while
+moving levels by 8 dB down on the large drums and 11 dB up on the okedo. It
+does not address the complaint it was rendered for.
