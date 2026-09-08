@@ -46,6 +46,40 @@ Listen to the instrument's own synthesized performances:
 
 ## Release history
 
+### 2026-09-08
+
+- **Resolved the head to seventy-six modes** — 152 resonators against the
+  former 40 — with the bachi contact still solved against the calibrated
+  twenty entries and the further fifty-six driven one-way beneath the
+  unchanged statistical continuum. Their share sits 20–25 dB under a Don on
+  the ō-daiko; the sample peak of a full Don moves by 0.7 dB and the 500 ms
+  RMS by under 0.1 dB.
+- **Gave soft bachi a felt contact law.** Below Bachi Hardness 50 % the
+  contact exponent rises from the Hertz 1.5 to 2.5, with the stiffness pinned
+  so a neutral stroke keeps its contact time; a felt beater's contact now
+  shortens as *v^−0.43* rather than *v^−0.2*. The hard bachi the family is
+  played with is untouched.
+- **The far head reaches the pair by its own path.** On every cavity-coupled
+  axisymmetric branch the resonant head's share arrives down the body and
+  round the rim, later and more spread, carried as the mode's quadrature
+  residue.
+- **Each resolved entry carries its own tension ripple** beside the shared
+  follower, so a mode is stiffened by its own motion. A uniform ripple was
+  measured to pump the nagadō-daiko's (0,1) and (2,1) modes parametrically
+  and was not kept.
+- **Ensemble companions are distinct drums.** Above Variation 0 each player
+  gets its own head tension, hide, shell and damping offsets, hashed from its
+  seat.
+- **Every one of the five sits behind a review switch**
+  (`TaikoEngine::setRealismFeatures`); with all five off the engine renders
+  sample-identically to the previous release. They ship on, pending the
+  listening test recorded in `Docs/decisions.md`.
+- **The panel is readable and shorter.** The control decks sit on a
+  translucent washi wash, every label and readout is larger, Velocity Curve
+  is a three-position Curve switch, Ensemble Size an eight-position Players
+  switch, and Resonant Head, Air Coupling and Shell Resonance stay host
+  parameters without a knob.
+
 ### 2026-09-06
 
 - **Added CLAP for macOS, Windows and Linux**, alongside VST3, the macOS Audio
@@ -206,9 +240,16 @@ Listen to the instrument's own synthesized performances:
 ## Technical details
 
 The panel uses an original Japanese woodblock-inspired illustration of aged
-washi, with ink and vermilion controls. **Performer** has four switch positions, **Drum Layout**
-has two, and continuous physical settings retain their knobs. The background
-was generated with imagegen; its [generation prompt](Assets/taikor-woodblock-background.prompt.md)
+washi, with ink and vermilion controls. Settings with a handful of meaningful
+values are switches — **Performer** has four positions, **Drum Layout** two,
+**Curve** three and **Players** eight — and continuous physical settings keep
+their knobs, grouped into decks for the drum, the stroke, the player, the
+microphones and the ensemble. The lower half of the panel sits on a
+translucent washi wash that deepens towards the foot, so every label reads
+over the illustration. Resonant Head, Air Coupling and Shell Resonance stay
+host parameters but have left the panel: each is a fine physical trim rather
+than something a player reaches for. The background was generated with
+imagegen; its [generation prompt](Assets/taikor-woodblock-background.prompt.md)
 is included with the asset.
 
 Taikor loads no samples, replays no recording, and emulates no particular
@@ -495,6 +536,15 @@ contact variation still apply. The default is 40%, and the control has no
 effect at Size 1. These are expressive control ranges, not measured ensemble
 performance statistics.
 
+Above zero, each companion is also a slightly different drum. Its head
+tension moves by up to ±1.8 % of the control, its head and shell material
+by ±3 % and its head damping by ±4 %, scaled by Variation and hashed from
+the player's seat, so the same seat always plays the same drum. Eight
+players of one design used to be one design eight times, phase-locked in
+everything but timing; now their partials beat against one another the way
+a row of drums does. The offsets are voicing ranges — a quarter-tone of
+tension at full Variation — not measured spreads across a real ensemble.
+
 Size sets how many players new notes trigger, and Variation applies to new
 notes. Scheduled companion hits retain their captured timing and placement,
 and existing tails finish when Size decreases.
@@ -535,7 +585,8 @@ performance identity; the other twenty-four are automatable and describe the
 drum, stroke, close pair or output rather than adding preset voicing offsets.
 Velocity Curve is physically grouped with the stroke controls below but was
 appended after Performer as the last host slot, so no established parameter ID
-or automation index moved.
+or automation index moved. Resonant Head, Air Coupling and Shell Resonance are
+reachable from the host only; the panel no longer carries them.
 
 ##### The drum
 
@@ -546,10 +597,10 @@ or automation index moved.
 | Head Tension | 0–100 % | 62 % | 1.2–22 kN/m. Wave speed is √(T/σ), and the tension is also what the head's stiffness has to compete with, so a slack head is more inharmonic than a tight one |
 | Head Material | 0–100 % | 75 % | Thin synthetic film → thick cowhide. Sets areal density, internal loss *and* bending stiffness, because all three come from the same piece of material |
 | Shell Material | 0–100 % | 80 % | Light laminated ply → dense carved zelkova. Moves the body's ring modes, their Q, and how much the rim absorbs |
-| Resonant Head | 0–100 % | 50 % | Far head's tension relative to the batter head, 0.85×–1.15× |
-| Air Coupling | 0–100 % | 85 % | How strongly the enclosed air ties the two heads together |
+| Resonant Head | 0–100 % | 50 % | Far head's tension relative to the batter head, 0.85×–1.15×. Host only |
+| Air Coupling | 0–100 % | 85 % | How strongly the enclosed air ties the two heads together. Host only |
 | Head Damping | 0–100 % | 50 % | Extra loss on top of the material's own, in the hide and at the rim. At zero the hoop is left free and a large drum will ring for seconds |
-| Shell Resonance | 0–100 % | 40 % | How much the wooden body rings when Rimshot catches the hoop |
+| Shell Resonance | 0–100 % | 40 % | How much the wooden body rings when Rimshot catches the hoop. Host only |
 | Pitch | ±24 st | 0.0 | Musical transposition, applied as head tension |
 
 ##### The stroke
@@ -561,12 +612,12 @@ or automation index moved.
 | Strike Azimuth | −180° → +180° | 0° | Rotates the authored strike point around the head. It changes the cosine/sine modal drive, reciprocal contact projection and close-pair image; Humanise scatters around it |
 | Performer | P1–P4 | P1 | Persisted, non-automatable gesture identity for layering instances, including at Humanise 0; choose it before playback. It adds no pitch, drum-size or output-gain offset |
 | Velocity Depth | 0–100 % | 75 % | How far MIDI velocity moves the impact speed |
-| Velocity Curve | Soft 100 → Hard 100 | Linear | Controller-response calibration applied before Velocity Depth: Soft 100 uses `sqrt(v)`, Linear leaves MIDI velocity unchanged, and Hard 100 uses `v²` |
+| Velocity Curve | Soft 100 → Hard 100 | Linear | Controller-response calibration applied before Velocity Depth: Soft 100 uses `sqrt(v)`, Linear leaves MIDI velocity unchanged, and Hard 100 uses `v²`. On the panel it is the three-position **Curve** switch at those anchors; a session holding a value between them lights the nearest |
 | Tension Mod | 0–100 % | 40 % | Depth of the attack pitch glide, which is the head stretching itself: a hard stroke displaces the hide, a displaced hide is a longer and therefore tighter one, and the drum starts sharp. At 0 the head is treated as linear |
 | Stick Noise | 0–100 % | 35 % | Contact texture on the hide, plus tack rattle when a stroke beats the preload on a byō-uchi head |
 | Humanise | 0–100 % | 40 % | Per-stroke variation in 2-D hand position, speed and contact time. At 0, position is exact while subtle speed, contact-time and texture differences remain |
-| Ensemble Size | 1–8 players | 1 | Number of independently ringing copies of each played drum; 1 preserves the solo sound |
-| Ensemble Variation | 0–100 % | 40 % | Additional timing and strike-placement spread among companions; inactive at Size 1 |
+| Ensemble Size | 1–8 players | 1 | The eight-position **Players** switch: number of independently ringing copies of each played drum; 1 preserves the solo sound |
+| Ensemble Variation | 0–100 % | 40 % | Timing and strike-placement spread among companions, and how far each companion's own hide, tension, shell and damping sit from the lead's; inactive at Size 1 |
 | Drum Layout | 1 Drum / 4 Drums | 4 Drums | What a keyboard row represents: one design retuned, or an independently sized family member (see below) |
 
 ##### The close pair and the output
@@ -603,8 +654,32 @@ limiter, not an oversampled true-peak limiter.
 
 A circular membrane of radius *a* under tension *T* with areal density *σ* has
 modes at *f(m,n) = c·λ(m,n) / 2πa*, where *c = √(T/σ)* and *λ(m,n)* is the *n*-th
-zero of the Bessel function *J(m)*. Taikor runs twenty such modes — four
-axisymmetric and sixteen with a circumferential order.
+zero of the Bessel function *J(m)*. Taikor resolves seventy-six such modes —
+eight axisymmetric and sixty-eight with a circumferential order of up to
+nineteen — as a hundred and fifty-two resonators, every degenerate pair and
+every cavity-coupled axisymmetric pair taking two.
+
+The first twenty entries — four axisymmetric, sixteen with an order — are the
+bank the instrument was calibrated on, and they are the only ones the bachi
+contact is solved against. The further fifty-six are driven one-way by the
+solved contact force and never load the stick. That split is deliberate.
+Solving the contact against the whole bank is the more complete physics, and
+it was measured: it moves the ō-daiko from passing 13 % of the stick's
+momentum into the head to passing 3 %, folds the velocity law and takes the
+attack glide with it — because the contact as calibrated is a
+modal-truncation artefact. The head under the stick is exactly as compliant
+as twenty modes make it, and every constant that was pinned by ear was pinned
+against that. So the extended entries add what a noise band cannot carry, the
+individually audible partials, underneath a statistical continuum that stays
+where it was voiced, and the contact keeps the load it was tuned with. Their
+own contribution sits 20–25 dB under a Don on the ō-daiko. What closing the
+split properly would need is under Known gaps.
+
+Each of the five mechanisms added in the 2026-09-08 release — this extension,
+the felt contact law, the far head's own path to the pair, the per-mode
+tension ripple and the ensemble's distinct drums — sits behind a review
+switch in `TaikoEngine::setRealismFeatures`, and with every switch off the
+engine renders sample-identically to the release before. They ship on.
 
 A treated cowhide head can also resist bending. A
 [Japanese-drum diaphragm study](https://doi.org/10.1250/ast.30.348) measured a
@@ -1001,6 +1076,21 @@ Hertzian *δ^1.5* force with constrained Hunt–Crossley loss, and contact ends
 when stick and hide actually separate. Duration, peak force and rebound all
 emerge from that coupled motion.
 
+Below Bachi Hardness 50 % the contact stops being Hertzian. A felt or
+wound beater compresses as a power law whose exponent sits well above the
+1.5 of two elastic solids — [Chaigne and Doutaut's](https://doi.org/10.1121/1.418117)
+xylophone mallets and [Stulov's](https://doi.org/10.1121/1.412299) piano
+hammers both fall between 2 and 3 — so the exponent rises linearly from 1.5
+at the half-way point to 2.5 at the softest setting. The stiffness for each
+exponent is pinned so that a neutral stroke at 72 % velocity keeps the
+contact time the Hertz law gave it, and the duration then goes as
+*v^((1−α)/(1+α))*: −0.2 for Hertz, −0.43 for felt. A soft beater's contact
+therefore shortens far more between a ghost note and a full blow, which is
+the brightening a felt bachi actually has, while the hard bachi the family
+is played with is untouched. Everything downstream — the pulse's impulse
+integral and mean square, the momentum bookkeeping — is evaluated for the
+exponent in force rather than for 1.5.
+
 The analytic reference pulse is `sin(πt/τ)^1.5`. Its exact impulse integral
 is `sqrt(π)·Γ(5/4)/Γ(7/4) = 1.7480383695280799`; the former 2.3963 is
 the integral of `sqrt(sin(x))` and understated the reference peak force. This
@@ -1026,10 +1116,13 @@ out for two reasons, both measured. The engine carries only the Hertz product
 *K = (4/3)E\*√R*, never the tip radius on its own, so *a_c* cannot be formed
 without drawing one — and halving the assumed tip halves the answer. And with
 the 12 mm dowel radius of the retired stick model standing in for the tip's
-curvature, the factor is worth **0.033 dB**
-at most on the four family instruments at full velocity (0.0025 dB on the
-ō-daiko, 0.0122 dB for a Don on the shime). It reaches 2.9 dB only on a 3 cm
-head struck with the softest beater, which the controls reach and no taiko is.
+curvature, the factor is worth **0.12 dB** at most on the four family
+instruments at full velocity, at the top of the seventy-six-entry bank under
+a Rimshot on the shime (0.009 dB for a Don on the ō-daiko, 0.045 dB for a Don
+on the shime; it was 0.033 dB when the bank stopped at twenty entries). It
+reaches 23 dB only on a 3 cm head struck with the softest beater, whose
+highest entries have wavelengths of a few millimetres on that head — which the
+controls reach and no taiko is.
 Note also which way it runs: a *softer* stick makes a *larger* patch, because
 contact stiffness falls far faster than peak force rises, so the mechanism would
 dull soft strokes and leave hard ones alone rather than the other way about.
@@ -1081,6 +1174,19 @@ continuum in the mechanical strain. Strong nonlinear intermodal coupling and
 absolute acoustic calibration require measured head displacement and pitch
 glide; improved equations alone do not establish perceptual equivalence to a
 recorded taiko.
+
+One shared tension rise is the Berger approximation: the strain is averaged
+over the head and every mode feels the same stretch. The head's real strain
+is local, and a mode is stiffened most by its own displacement. Each resolved
+entry therefore also carries its own ripple — the squared slope of its own
+motion, smoothed with the follower's constant, applied as an implicit
+per-sample stiffness factor on that entry's resonators so it cannot run away.
+A uniform ripple was tried first and rejected by measurement rather than by
+ear: on the nagadō-daiko the (0,1) and (2,1) modes sit almost exactly at
+twice the (1,1) mode, and a common tension ripple at the (1,1) frequency
+pumped them parametrically until the heard pitch of the pad climbed from
+119 to 171 Hz. A mode's own ripple has no such partner, and the pad still
+measures where the engine says it sounds.
 
 The glide carries the head's continuum with it as well as its resolved modes,
 because the continuum is the same head. That is the whole of what Tension Mod
@@ -1172,6 +1278,20 @@ two different points with a different sign and amplitude, the pair genuinely
 decorrelates. A hand's width back, only what the drum radiates survives, and the
 image closes towards mono. That narrowing is a mechanism rather than a width
 control, and it is the whole of what Mic Distance does to the image.
+
+The two heads are two monopoles a body apart, and the pair stands in front
+of one of them. On every cavity-coupled axisymmetric branch the batter head's
+propagating share arrives across the capsule distance as it always did, while
+the far head's has to come down the body and round the rim: its path is the
+body depth plus the diagonal from the rim to the capsule, so it reaches the
+pair later and more spread, through the same one-pole spreading law. The
+delay puts the two shares out of phase by the mode's frequency times the
+extra path, and the mode's quadrature residue carries that phase exactly, in
+the convention the complex observer established. What that changes is not a
+level but a comb across the breathing branches that moves with Body Depth and
+Mic Distance — which is what a real far head does to a close pair. The
+continuum's anchor is still measured with both heads in phase at the factory
+position, so the statistical layer keeps its level.
 
 It is also a physically bounded softening above the resolved bank. The dense
 high modes no longer inherit one loud partial's flat distance gain. Each of the
@@ -1323,11 +1443,22 @@ approximation fixed and does not establish calibrated taiko pressure or decay.
 An independent-pair inertia shortcut was checked and rejected: it differs from
 the shared model by up to about 86 cents on the factory pairs.
 
-The statistical continuum is not yet a mechanical load in the bachi solve.
-Contact sees the forty resolved membrane coordinates; afterwards its force
-history excites the higher stochastic bands, but those bands exert no reciprocal
-force on the stick. Causal force-history integration fixes temporal and spectral
-consistency in that observation; it does not complete the missing mechanical
+Neither the bank's extension nor the statistical continuum is a mechanical
+load in the bachi solve. Contact sees the forty coordinates of the calibrated
+twenty entries; afterwards its force history drives the further hundred and
+twelve resonators and the higher stochastic bands, and none of them exerts a
+reciprocal force on the stick. Letting the full bank load the contact is the
+right physics, and it was measured: it takes the ō-daiko's momentum transfer
+from 13 % to 3 % of the stick's, folds the velocity law and removes the attack
+glide, because the shipping contact stiffness and every level pinned by ear
+were pinned against a head only as compliant as twenty modes make it. The
+ideal membrane's real driving-point mobility is *ω/4T*, and the truncated
+solve behaves instead like the resistive *1/(8√(Tσ))*. Closing the split
+needs the contact re-calibrated against the full bank with driving-point
+mobility captures, and then every by-ear constant re-pinned — a listening
+exercise rather than a derivation. Causal force-history integration fixes
+temporal and spectral consistency in that observation; it does not complete
+the missing mechanical
 coupling. The former positive-only `∫F²/Z dt` exposure ceiling no longer gates
 the upper spectrum, since truncating the later force would also remove its
 physical phase cancellation. The retained exposure calculation is diagnostic
@@ -1348,9 +1479,12 @@ propagating terms rather than acquiring a false mono floor. They still lack a
 complex propagation phase and a complete finite-disk radiation pattern. The
 continuum now has a frequency-dependent distance law, but its coherent-patch
 radius is a bounded physical approximation rather than a solved spatial field;
-it does not yet include capsule directivity, the room or a separately radiating
-rear head. A complex Rayleigh observer exists as a tested prototype, but stays
-out of the release signal path until controlled force, head-motion and near/far
+it does not yet include capsule directivity or the room. The far head now
+reaches the pair by its own longer path on the axisymmetric branches, but only
+as a delayed monopole: it has no directivity of its own and no path around
+the outside of the shell. A complex Rayleigh observer exists as a tested
+prototype, but stays out of the release signal path until controlled force,
+head-motion and near/far
 pressure captures can calibrate it without silently changing the keyboard's
 tuning anchor.
 
@@ -1385,32 +1519,32 @@ ka/chudaiko filenames remain stable after the display labels changed.
 <!-- peaks-table-begin: regenerated by TaikorRenderDemos; edits between the markers are overwritten -->
 | File | What it is | Length | Rendered peak | Normalisation |
 | --- | --- | ---: | ---: | ---: |
-| `01-stroke-vocabulary.wav` | All four strokes on the o-daiko, in keyboard order | 4.2 s | −14.0 dBFS | +11.0 dB |
-| `02-the-four-drums.wav` | A Don on each of the four drums: o-daiko, nagado-daiko, okedo, shime | 6.3 s | −26.4 dBFS | +23.4 dB |
-| `03-the-playing-grid.wav` | The whole grid: four strokes on each of the four drums | 10.1 s | −11.5 dBFS | +8.5 dB |
-| `04-drums-ka.wav` | An edge-of-head stroke on each of the four drums | 3.9 s | −21.7 dBFS | +18.7 dB |
-| `05-drums-rim-shot.wav` | A rim shot on each of the four drums | 5.1 s | −11.1 dBFS | +8.1 dB |
-| `06-odaiko-phrase.wav` | A phrase on the o-daiko | 10.0 s | −14.2 dBFS | +11.2 dB |
-| `07-chudaiko-phrase.wav` | The same phrase on the nagado-daiko | 6.7 s | −16.7 dBFS | +13.7 dB |
-| `08-okedo-phrase.wav` | The same phrase on the okedo-daiko | 5.1 s | −10.1 dBFS | +7.1 dB |
-| `09-shime-phrase.wav` | The same phrase on the shime-daiko | 4.2 s | −23.7 dBFS | +20.7 dB |
-| `10-velocity-dynamics.wav` | One stroke from a ghost note to a full-arm hit | 5.9 s | −24.5 dBFS | +21.5 dB |
-| `11-rolls-and-presses.wav` | Press rolls, a played flam and a roll accelerating into a rim shot | 5.4 s | −7.9 dBFS | +4.9 dB |
-| `12-bachi-hardness.wav` | Felt beater through to a hard oak bachi | 4.8 s | −22.2 dBFS | +19.2 dB |
-| `13-strike-position.wav` | The same stroke walked from centre to rim | 4.6 s | −20.2 dBFS | +17.2 dB |
-| `14-head-tension.wav` | Slack head through to fully tacked | 5.5 s | −24.0 dBFS | +21.0 dB |
-| `15-head-material.wav` | Thin synthetic film through to thick cowhide | 5.5 s | −25.9 dBFS | +22.9 dB |
+| `01-stroke-vocabulary.wav` | All four strokes on the o-daiko, in keyboard order | 4.2 s | −13.6 dBFS | +10.6 dB |
+| `02-the-four-drums.wav` | A Don on each of the four drums: o-daiko, nagado-daiko, okedo, shime | 6.3 s | −24.6 dBFS | +21.6 dB |
+| `03-the-playing-grid.wav` | The whole grid: four strokes on each of the four drums | 10.1 s | −11.3 dBFS | +8.3 dB |
+| `04-drums-ka.wav` | An edge-of-head stroke on each of the four drums | 3.9 s | −21.5 dBFS | +18.5 dB |
+| `05-drums-rim-shot.wav` | A rim shot on each of the four drums | 5.1 s | −10.9 dBFS | +7.9 dB |
+| `06-odaiko-phrase.wav` | A phrase on the o-daiko | 10.0 s | −13.3 dBFS | +10.3 dB |
+| `07-chudaiko-phrase.wav` | The same phrase on the nagado-daiko | 6.7 s | −15.4 dBFS | +12.4 dB |
+| `08-okedo-phrase.wav` | The same phrase on the okedo-daiko | 5.1 s | −10.2 dBFS | +7.2 dB |
+| `09-shime-phrase.wav` | The same phrase on the shime-daiko | 4.2 s | −21.9 dBFS | +18.9 dB |
+| `10-velocity-dynamics.wav` | One stroke from a ghost note to a full-arm hit | 5.9 s | −22.9 dBFS | +19.9 dB |
+| `11-rolls-and-presses.wav` | Press rolls, a played flam and a roll accelerating into a rim shot | 5.4 s | −7.4 dBFS | +4.4 dB |
+| `12-bachi-hardness.wav` | Felt beater through to a hard oak bachi | 4.8 s | −22.3 dBFS | +19.3 dB |
+| `13-strike-position.wav` | The same stroke walked from centre to rim | 4.6 s | −20.9 dBFS | +17.9 dB |
+| `14-head-tension.wav` | Slack head through to fully tacked | 5.5 s | −23.8 dBFS | +20.8 dB |
+| `15-head-material.wav` | Thin synthetic film through to thick cowhide | 5.5 s | −25.7 dBFS | +22.7 dB |
 | `16-shell-material.wav` | Light laminated staves through to dense carved zelkova, on a rim shot | 5.4 s | −8.1 dBFS | +5.1 dB |
 | `17-air-coupling.wav` | Open body through to a fully sealed one | 5.5 s | −22.7 dBFS | +19.7 dB |
-| `18-body-depth.wav` | Shallow body through to deep | 5.5 s | −26.5 dBFS | +23.5 dB |
-| `19-head-damping.wav` | Open head through to heavily damped | 6.3 s | −26.7 dBFS | +23.7 dB |
-| `20-octave-body.wav` | The keyboard as one drum retuned four times, then as the four drums | 7.8 s | −18.8 dBFS | +15.8 dB |
+| `18-body-depth.wav` | Shallow body through to deep | 5.5 s | −25.0 dBFS | +22.0 dB |
+| `19-head-damping.wav` | Open head through to heavily damped | 6.3 s | −27.0 dBFS | +24.0 dB |
+| `20-octave-body.wav` | The keyboard as one drum retuned four times, then as the four drums | 7.8 s | −18.4 dBFS | +15.4 dB |
 | `21-mic-distance.wav` | The close pair from 3 cm out to 40 cm, on the head and then on the body | 8.5 s | −8.8 dBFS | +5.8 dB |
-| `22-mic-spread.wav` | The close pair from coincident to fully opened | 4.5 s | −23.4 dBFS | +20.4 dB |
-| `23-hand-damping.wav` | A hand laid on a ringing head, from MIDI CC1 | 6.0 s | −25.5 dBFS | +22.5 dB |
-| `24-pitch-wheel.wav` | The wheel pressing the head sharp and flat | 4.3 s | −27.1 dBFS | +24.1 dB |
-| `25-ensemble-piece.wav` | A longer piece moving between all four drums of the grid | 10.4 s | −12.8 dBFS | +9.8 dB |
-| `26-polar-strikes.wav` | Fixed left, centre and right strikes, then one circuit around the head | 8.6 s | −25.6 dBFS | +22.6 dB |
+| `22-mic-spread.wav` | The close pair from coincident to fully opened | 4.5 s | −21.6 dBFS | +18.6 dB |
+| `23-hand-damping.wav` | A hand laid on a ringing head, from MIDI CC1 | 6.0 s | −26.1 dBFS | +23.1 dB |
+| `24-pitch-wheel.wav` | The wheel pressing the head sharp and flat | 4.3 s | −27.0 dBFS | +24.0 dB |
+| `25-ensemble-piece.wav` | A longer piece moving between all four drums of the grid | 10.4 s | −12.6 dBFS | +9.6 dB |
+| `26-polar-strikes.wav` | Fixed left, centre and right strikes, then one circuit around the head | 8.6 s | −27.0 dBFS | +24.0 dB |
 | `27-performer-ensemble.wav` | Phase-locked P1 copies, then the same phrase layered as P1-P4 | 5.7 s | −13.0 dBFS | +10.0 dB |
 <!-- peaks-table-end -->
 

@@ -21,6 +21,10 @@ public:
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&,
                                bool isHighlighted, bool isDown) override;
     juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
+    // A knob's value box: larger type on its own translucent pill, so the
+    // number stays readable wherever the printed landscape sits behind it.
+    juce::Label* createSliderTextBox (juce::Slider&) override;
+    void drawLabel (juce::Graphics&, juce::Label&) override;
 };
 
 // One stroke of the vocabulary. The pad shows the stroke's name, the spoken
@@ -101,17 +105,33 @@ private:
     VisualRole role;
 };
 
-// Indexed parameters use real radio buttons, so their choices are visible and
-// announced individually, while ParameterAttachment preserves host/state sync.
+// A row of radio buttons standing in for a parameter with few useful
+// positions, so every choice is visible and announced individually while
+// ParameterAttachment preserves host/state sync. An indexed parameter lists
+// its own choices; a continuous or integer one is given the positions the
+// panel offers, each with the parameter value it selects. Host automation may
+// still land between positions, and the row then shows the nearest.
 class TaikorChoiceSwitch final : public juce::Component
 {
 public:
+    struct Choice
+    {
+        juce::String label;
+        float value { 0.0f };
+    };
+
     TaikorChoiceSwitch (juce::String name, juce::RangedAudioParameter& parameter,
                         const juce::String& description);
+    TaikorChoiceSwitch (juce::String name, juce::RangedAudioParameter& parameter,
+                        const juce::String& description,
+                        std::vector<Choice> choices);
     void resized() override;
 
 private:
+    void selectNearest (float value);
+
     juce::Label label;
+    std::vector<Choice> choices;
     juce::OwnedArray<juce::TextButton> buttons;
     juce::ParameterAttachment attachment;
 };
@@ -207,10 +227,14 @@ private:
         juce::Rectangle<int> header;
         juce::Rectangle<int> gridArea;
         juce::Rectangle<int> head;
+        // Everything under the playing surface, where the printed landscape
+        // is faded out behind the controls.
+        juce::Rectangle<int> lowerPanel;
         juce::Rectangle<int> drumDeck;
         juce::Rectangle<int> strokeDeck;
+        juce::Rectangle<int> playerDeck;
         juce::Rectangle<int> microphoneDeck;
-        juce::Rectangle<int> switchDeck;
+        juce::Rectangle<int> ensembleDeck;
     };
 
     void timerCallback() override;
@@ -246,7 +270,9 @@ private:
 
     juce::Label drumDeckLabel;
     juce::Label strokeDeckLabel;
+    juce::Label playerDeckLabel;
     juce::Label microphoneDeckLabel;
+    juce::Label ensembleDeckLabel;
 
     TaikorKnob sizeKnob { "DIAMETER", TaikorKnob::ValueStyle::Centimetres,
                           TaikorKnob::VisualRole::Drum };
@@ -258,14 +284,8 @@ private:
                                   TaikorKnob::VisualRole::Drum };
     TaikorKnob shellMaterialKnob { "SHELL", TaikorKnob::ValueStyle::Percent,
                                    TaikorKnob::VisualRole::Drum };
-    TaikorKnob resonantKnob { "RESONANT", TaikorKnob::ValueStyle::Percent,
-                              TaikorKnob::VisualRole::Drum };
-    TaikorKnob cavityKnob { "AIR COUPLING", TaikorKnob::ValueStyle::Percent,
-                            TaikorKnob::VisualRole::Drum };
     TaikorKnob headDampingKnob { "DAMPING", TaikorKnob::ValueStyle::Percent,
                                  TaikorKnob::VisualRole::Drum };
-    TaikorKnob shellResonanceKnob { "SHELL RING", TaikorKnob::ValueStyle::Percent,
-                                    TaikorKnob::VisualRole::Drum };
     TaikorKnob pitchKnob { "PITCH", TaikorKnob::ValueStyle::Semitones,
                            TaikorKnob::VisualRole::Drum };
 
@@ -277,17 +297,13 @@ private:
                                    TaikorKnob::VisualRole::Stroke };
     TaikorKnob velocityDepthKnob { "VELOCITY", TaikorKnob::ValueStyle::Percent,
                                    TaikorKnob::VisualRole::Stroke };
-    TaikorKnob velocityCurveKnob { "CURVE", TaikorKnob::ValueStyle::Plain,
-                                   TaikorKnob::VisualRole::Stroke };
     TaikorKnob tensionModKnob { "TENSION MOD", TaikorKnob::ValueStyle::Percent,
                                 TaikorKnob::VisualRole::Stroke };
     TaikorKnob strikeNoiseKnob { "STICK NOISE", TaikorKnob::ValueStyle::Percent,
                                  TaikorKnob::VisualRole::Stroke };
     TaikorKnob humaniseKnob { "HUMANISE", TaikorKnob::ValueStyle::Percent,
                               TaikorKnob::VisualRole::Stroke };
-    TaikorKnob ensembleSizeKnob { "ENSEMBLE SIZE", TaikorKnob::ValueStyle::Plain,
-                                  TaikorKnob::VisualRole::Stroke };
-    TaikorKnob ensembleVariationKnob { "ENSEMBLE VAR", TaikorKnob::ValueStyle::Percent,
+    TaikorKnob ensembleVariationKnob { "VARIATION", TaikorKnob::ValueStyle::Percent,
                                        TaikorKnob::VisualRole::Stroke };
 
     TaikorKnob micDistanceKnob { "MIC DISTANCE", TaikorKnob::ValueStyle::Centimetres,
@@ -305,6 +321,8 @@ private:
 
     std::unique_ptr<TaikorChoiceSwitch> performerSwitch;
     std::unique_ptr<TaikorChoiceSwitch> drumLayoutSwitch;
+    std::unique_ptr<TaikorChoiceSwitch> velocityCurveSwitch;
+    std::unique_ptr<TaikorChoiceSwitch> ensembleSizeSwitch;
     std::vector<std::unique_ptr<SliderAttachment>> attachments;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TaikorAudioProcessorEditor)

@@ -51,6 +51,41 @@ void EnsembleEngine::allSoundsOff() noexcept
     publishVoices();
 }
 
+EngineParameters EnsembleEngine::memberParameters (int member) const noexcept
+{
+    // The lead plays the drum the controls describe. Every companion plays a
+    // physically distinct instrument: no two drums of a real ensemble share
+    // one hide, one tension or one shell, and eight copies of one solve read
+    // as one drum sampled eight times rather than as eight drums. Each
+    // companion therefore carries a stable, per-member offset on the four
+    // construction controls, scaled by Ensemble Variation so that zero still
+    // means identical instruments. The ranges are expressive control ranges
+    // in control units - a few per cent of hide density and shell, a tension
+    // spread worth about a quarter-tone at full variation - not measured
+    // ensemble statistics, and every member still keeps the family's own
+    // geometry, so the four rows stay the four drums.
+    auto result = parameters;
+    if (member <= 0 || parameters.ensembleVariation <= 0.0f
+        || ! TaikoEngine::hasRealismFeature (TaikoEngine::distinctEnsembleDrums))
+        return result;
+    const float spread = parameters.ensembleVariation;
+    const auto unit = [member] (std::uint32_t salt) noexcept
+    {
+        const auto seed = hash (static_cast<std::uint32_t> (member) * 0x9e3779b9u
+                                ^ salt);
+        return 2.0f * static_cast<float> (seed) / 4294967295.0f - 1.0f;
+    };
+    result.tension = std::clamp (
+        parameters.tension + 0.018f * spread * unit (0x1b873593u), 0.0f, 1.0f);
+    result.headMaterial = std::clamp (
+        parameters.headMaterial + 0.03f * spread * unit (0x85ebca6bu), 0.0f, 1.0f);
+    result.shellMaterial = std::clamp (
+        parameters.shellMaterial + 0.03f * spread * unit (0xc2b2ae35u), 0.0f, 1.0f);
+    result.headDamping = std::clamp (
+        parameters.headDamping + 0.04f * spread * unit (0x27d4eb2fu), 0.0f, 1.0f);
+    return result;
+}
+
 void EnsembleEngine::setParameters (const EngineParameters& next) noexcept
 {
     const int previousSize = parameters.ensembleSize;
@@ -58,8 +93,8 @@ void EnsembleEngine::setParameters (const EngineParameters& next) noexcept
     parameters.ensembleSize = std::clamp (next.ensembleSize, 1, maximumEnsembleSize);
     parameters.ensembleVariation = std::isnan (next.ensembleVariation)
         ? 0.0f : std::clamp (next.ensembleVariation, 0.0f, 1.0f);
-    for (auto& player : players)
-        player->setParameters (parameters);
+    for (int member = 0; member < maximumEnsembleSize; ++member)
+        players[member]->setParameters (memberParameters (member));
     const bool silent = pendingCount == 0 && getActiveVoiceCount() == 0;
     if (silent)
         gain = 1.0f / std::sqrt (static_cast<float> (parameters.ensembleSize));

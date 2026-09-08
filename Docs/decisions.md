@@ -140,3 +140,45 @@ wooden bank at all.
 Note that gating the shell's *level* on `radiationEfficiency` — once named as
 the missing term — is the wrong term in the wrong place: it is a far-field
 power law and the pair is in the shell's near field.
+
+## 2026-09-08 — five realism mechanisms, one switch each
+
+**The question.** Five mechanisms were added across all four drums, each
+derivable and each audible, and the model cannot say which of them improve
+the instrument rather than merely change it. Which ship on?
+
+| Letter | What it was | Outcome |
+| --- | --- | --- |
+| A | Shipping engine, every review switch off — sample-identical to the previous release | baseline |
+| B | Extended bank: 76 resolved entries as 152 resonators, the 56 new ones driven one-way under the unchanged continuum | verdict pending |
+| C | Felt contact law: exponent 1.5 → 2.5 below Bachi Hardness 50 %, pinned at the neutral stroke | verdict pending |
+| D | Rear-head path: the far head's share reaches the pair down the body and round the rim, later and more spread | verdict pending |
+| E | Per-entry tension ripple: each resolved entry stiffened by its own squared slope | verdict pending |
+| F | Distinct ensemble drums: companions get their own tension, hide, shell and damping | verdict pending |
+| G | All five together | verdict pending |
+
+**The comparison.** Identical 12.9-second scores rendered through the
+shipping `EnsembleEngine` path at 48 kHz in 256-sample blocks from one reset
+state: every drum struck Don at velocities 0.5 and 1.0 and Edge at 0.85 with
+the factory bachi; then Don at 0.6 and 1.0 on the ō-daiko, nagadō and shime
+with Bachi Hardness 0.3, which is the only passage that exercises C; then a
+short four-player phrase at Variation 0.4, the only passage that exercises
+F. Humanise was 0, Stick Noise 0.35, Drive 0, Low Cut off, Performer P1.
+Whole-file stereo RMS was matched to −30 dBFS with constant gain only:
++13.1759 dB for A, +12.9714 for B, +13.1538 for C, +12.9440 for D,
++13.1725 for E, +13.1937 for F and +12.7587 for G. The set and its key
+were rendered to the session's working directory and sent to the user; it
+is not committed.
+
+**Verdict: pending.** The five ship on behind `TaikoEngine::setRealismFeatures`
+until the user has listened; whichever letters are not preferred are to be
+switched off there, not removed, and this entry updated with the choice.
+
+**What the measurements already settled.** A uniform Berger ripple across
+the bank was tried before E and rejected by measurement, not by ear: it
+pumped the nagadō-daiko's (0,1) and (2,1) modes parametrically from the
+(1,1) mode and moved the pad's heard pitch from 119 to 171 Hz. Solving the
+contact against the full 76-entry bank was likewise measured and rejected: it
+takes the ō-daiko's momentum transfer from 13 % to 3 % of the stick's and
+folds the velocity law, because the calibrated contact is a modal-truncation
+artefact. Neither is a candidate here.

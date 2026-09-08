@@ -1334,28 +1334,40 @@ void testEditorRendering()
         checkSelected (*control, parameter->getText (1.0f, 64));
     }
 
-    TaikorKnob* velocityCurveKnob = nullptr;
-    for (int index = 0; index < editor->getNumChildComponents(); ++index)
-        if (auto* child = editor->getChildComponent (index);
-            child != nullptr && child->getName() == "CURVE")
-            velocityCurveKnob = dynamic_cast<TaikorKnob*> (child);
-    expect (velocityCurveKnob != nullptr && velocityCurveKnob->isVisible()
-                && ! velocityCurveKnob->getBounds().isEmpty(),
-            "the Velocity Curve parameter has no laid-out editor knob");
-    if (velocityCurveKnob != nullptr)
+    // Parameters with a handful of meaningful values are switches, with the
+    // choice values spelt out rather than read from the parameter's steps.
+    const auto clickChoice = [] (TaikorChoiceSwitch& control, const juce::String& name)
     {
-        const auto curveValue = velocityCurveKnob->slider.getValue();
-        const auto curveText = velocityCurveKnob->slider.getTextFromValue (curveValue);
-        expect (std::abs (curveValue) < 1.0e-7 && curveText == "Linear",
-                "the Velocity Curve editor control does not open on Linear: "
-                    + std::to_string (curveValue) + " / " + curveText.toStdString());
-        velocityCurveKnob->slider.setValue (-1.0, juce::sendNotificationSync);
-        expect (std::abs (parameterValue (
-                             processor, taikor::parameters::velocityCurve) + 1.0f)
-                           < 1.0e-7f
-                    && velocityCurveKnob->slider.getTextFromValue (-1.0)
-                           == "Soft 100",
-                "the Velocity Curve editor control is not attached through Soft 100");
+        for (auto* child : control.getChildren())
+            if (auto* button = dynamic_cast<juce::TextButton*> (child);
+                button != nullptr && button->getName() == name && button->onClick != nullptr)
+            {
+                button->onClick();
+                return true;
+            }
+        return false;
+    };
+    auto* curveSwitch = findSwitch ("CURVE");
+    expect (curveSwitch != nullptr && curveSwitch->isVisible()
+                && ! curveSwitch->getBounds().isEmpty(),
+            "the Velocity Curve parameter has no laid-out choice switch");
+    if (curveSwitch != nullptr)
+    {
+        checkSelected (*curveSwitch, "Linear");
+        expect (clickChoice (*curveSwitch, "Soft")
+                    && std::abs (parameterValue (processor, taikor::parameters::velocityCurve)
+                                 + 1.0f) < 1.0e-6f,
+                "the Velocity Curve switch does not reach Soft through its attachment");
+        checkSelected (*curveSwitch, "Soft");
+        expect (clickChoice (*curveSwitch, "Hard")
+                    && std::abs (parameterValue (processor, taikor::parameters::velocityCurve)
+                                 - 1.0f) < 1.0e-6f,
+                "the Velocity Curve switch does not reach Hard through its attachment");
+        // A host value between the switch positions lights the nearest one.
+        setParameterValue (processor, taikor::parameters::velocityCurve, 0.4f);
+        checkSelected (*curveSwitch, "Linear");
+        setParameterValue (processor, taikor::parameters::velocityCurve, 0.0f);
+        checkSelected (*curveSwitch, "Linear");
     }
 
     TaikorKnob* highPassKnob = nullptr;
@@ -1382,40 +1394,54 @@ void testEditorRendering()
                 "LOW CUT cannot bypass the filter");
     }
 
-    std::array<TaikorKnob*, 2> ensembleKnobs {};
-    const std::array ensembleIds { taikor::parameters::ensembleSize,
-                                  taikor::parameters::ensembleVariation };
-    const std::array ensembleNames { "ENSEMBLE SIZE", "ENSEMBLE VAR" };
-    for (std::size_t index = 0; index < ensembleKnobs.size(); ++index)
+    auto* playersSwitch = findSwitch ("PLAYERS");
+    expect (playersSwitch != nullptr && playersSwitch->isVisible()
+                && ! playersSwitch->getBounds().isEmpty(),
+            "Ensemble Size has no laid-out PLAYERS switch");
+    if (playersSwitch != nullptr)
     {
-        for (auto* child : editor->getChildren())
-            if (child->getName() == ensembleNames[index])
-                ensembleKnobs[index] = dynamic_cast<TaikorKnob*> (child);
-        auto* knob = ensembleKnobs[index];
-        expect (knob != nullptr && knob->isVisible() && ! knob->getBounds().isEmpty(),
-                std::string ("missing laid-out ensemble knob: ") + ensembleNames[index]);
-        if (knob == nullptr)
-            continue;
-        auto* parameter = processor.parameters.getParameter (ensembleIds[index]);
-        expect (parameter != nullptr, "ensemble knob has no host parameter");
-        if (parameter == nullptr)
-            continue;
-        const auto initial = parameter->convertFrom0to1 (parameter->getDefaultValue());
-        expect (std::abs (knob->slider.getValue() - initial) < 1.0e-4,
-                "ensemble editor knob does not open on its factory value");
-        const auto maximum = parameter->convertFrom0to1 (1.0f);
-        knob->slider.setValue (maximum, juce::sendNotificationSync);
-        expect (std::abs (parameterValue (processor, ensembleIds[index]) - maximum) < 1.0e-6f,
-                "ensemble editor knob does not control its attached parameter");
-        setParameterValue (processor, ensembleIds[index], initial);
-        expect (std::abs (knob->slider.getValue() - initial) < 1.0e-4,
-                "ensemble editor knob does not follow restored host values");
+        int buttons = 0;
+        for (auto* child : playersSwitch->getChildren())
+            buttons += dynamic_cast<juce::TextButton*> (child) != nullptr ? 1 : 0;
+        expect (buttons == taikor::maximumEnsembleSize,
+                "the PLAYERS switch does not offer every player count");
+        checkSelected (*playersSwitch, "1");
+        expect (clickChoice (*playersSwitch, "8")
+                    && parameterValue (processor, taikor::parameters::ensembleSize) == 8.0f,
+                "the PLAYERS switch does not control Ensemble Size");
+        setParameterValue (processor, taikor::parameters::ensembleSize, 3.0f);
+        checkSelected (*playersSwitch, "3");
+        setParameterValue (processor, taikor::parameters::ensembleSize, 1.0f);
+        checkSelected (*playersSwitch, "1");
     }
-    if (ensembleKnobs[0] != nullptr)
-        expect (ensembleKnobs[0]->slider.getInterval() == 1.0
-                    && ensembleKnobs[0]->slider.getTextFromValue (1.0) == "1 player"
-                    && ensembleKnobs[0]->slider.getTextFromValue (8.0) == "8 players",
-                "Ensemble Size knob must show and select whole player counts");
+
+    TaikorKnob* variationKnob = nullptr;
+    for (auto* child : editor->getChildren())
+        if (child->getName() == "VARIATION")
+            variationKnob = dynamic_cast<TaikorKnob*> (child);
+    expect (variationKnob != nullptr && variationKnob->isVisible()
+                && ! variationKnob->getBounds().isEmpty(),
+            "Ensemble Variation has no laid-out VARIATION knob");
+    if (variationKnob != nullptr)
+    {
+        auto* parameter = processor.parameters.getParameter (
+            taikor::parameters::ensembleVariation);
+        expect (parameter != nullptr, "the VARIATION knob has no host parameter");
+        if (parameter != nullptr)
+        {
+            const auto initial = parameter->convertFrom0to1 (parameter->getDefaultValue());
+            expect (std::abs (variationKnob->slider.getValue() - initial) < 1.0e-4,
+                    "the VARIATION knob does not open on its factory value");
+            const auto maximum = parameter->convertFrom0to1 (1.0f);
+            variationKnob->slider.setValue (maximum, juce::sendNotificationSync);
+            expect (std::abs (parameterValue (processor, taikor::parameters::ensembleVariation)
+                              - maximum) < 1.0e-6f,
+                    "the VARIATION knob does not control its attached parameter");
+            setParameterValue (processor, taikor::parameters::ensembleVariation, initial);
+            expect (std::abs (variationKnob->slider.getValue() - initial) < 1.0e-4,
+                    "the VARIATION knob does not follow restored host values");
+        }
+    }
 
     if (auto* constrainer = editor->getConstrainer())
     {
@@ -1497,17 +1523,16 @@ void testEditorRendering()
                         && highPassKnob->getLocalBounds().contains (
                             highPassKnob->slider.getBounds()),
                     "a resized LOW CUT knob escaped its control row");
-        for (auto* knob : ensembleKnobs)
-            if (knob != nullptr)
-                expect (editor->getLocalBounds().contains (knob->getBounds())
-                            && ! knob->slider.getBounds().isEmpty()
-                            && knob->getLocalBounds().contains (knob->slider.getBounds()),
-                        "a resized ensemble knob escaped its control row");
-        if (ensembleKnobs[0] != nullptr && ensembleKnobs[1] != nullptr)
-            expect (! ensembleKnobs[0]->getBounds().intersects (
-                         ensembleKnobs[1]->getBounds()),
-                    "the ensemble editor knobs overlap after resizing");
-        for (const auto* name : { "PERFORMER", "DRUM LAYOUT" })
+        if (variationKnob != nullptr)
+            expect (editor->getLocalBounds().contains (variationKnob->getBounds())
+                        && ! variationKnob->slider.getBounds().isEmpty()
+                        && variationKnob->getLocalBounds().contains (
+                            variationKnob->slider.getBounds()),
+                    "a resized VARIATION knob escaped its control row");
+        if (playersSwitch != nullptr && variationKnob != nullptr)
+            expect (! playersSwitch->getBounds().intersects (variationKnob->getBounds()),
+                    "the ensemble controls overlap after resizing");
+        for (const auto* name : { "PERFORMER", "DRUM LAYOUT", "CURVE", "PLAYERS" })
             if (auto* control = findSwitch (name))
             {
                 expect (editor->getLocalBounds().contains (
@@ -1576,7 +1601,9 @@ void testEditorRendering()
     {
         for (const auto& [name, selected] : std::array {
                  std::pair { "PERFORMER", "P4" },
-                 std::pair { "DRUM LAYOUT", "4 Drums" } })
+                 std::pair { "DRUM LAYOUT", "4 Drums" },
+                 std::pair { "CURVE", "Linear" },
+                 std::pair { "PLAYERS", "1" } })
         {
             if (auto* control = findSwitch (name))
                 checkSelected (*control, selected);

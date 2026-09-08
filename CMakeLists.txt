@@ -248,8 +248,9 @@ if(BUILD_TESTING)
 
     add_test(NAME Taikor.TaikoEngine COMMAND TaikorTaikoEngineTests)
     # Includes broad physical-control scans and voice-bank builds at four sample
-    # rates; keep a generous ceiling for slower CI workers.
-    set_tests_properties(Taikor.TaikoEngine PROPERTIES TIMEOUT 240)
+    # rates through a 152-resonator membrane bank; keep a generous ceiling for
+    # slower CI workers.
+    set_tests_properties(Taikor.TaikoEngine PROPERTIES TIMEOUT 600)
 
     if(TAIKOR_BUILD_TOOLS)
         add_test(NAME Taikor.CavityStudy COMMAND TaikorCavityStudy)

@@ -53,6 +53,7 @@ private:
     static bool later (const Hit& a, const Hit& b) noexcept;
     static std::uint32_t hash (std::uint32_t) noexcept;
     static float stagePosition (int member, int size) noexcept;
+    [[nodiscard]] EngineParameters memberParameters (int member) const noexcept;
     void updateStage (bool snap) noexcept;
     void fire (const Hit&) noexcept;
     void dispatchDue() noexcept;

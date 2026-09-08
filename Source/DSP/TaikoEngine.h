@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string_view>
 
@@ -270,7 +271,26 @@ struct DrumVisualState
 class TaikoEngine
 {
 public:
-    TaikoEngine() noexcept;
+    // Allocates the voice pool once; nothing after construction allocates.
+    TaikoEngine();
+
+    // Review switches for the mechanisms added in September 2026, so an A-Z
+    // listening set can render each one alone against the engine as it
+    // shipped: with every bit clear the render is sample-identical to the
+    // previous release. Process-wide and read at build and render time; the
+    // plug-in never touches them and every bit ships set.
+    enum RealismFeature : std::uint32_t
+    {
+        extendedBank = 1u << 0,
+        feltContact = 1u << 1,
+        rearHeadPath = 1u << 2,
+        parametricRipple = 1u << 3,
+        distinctEnsembleDrums = 1u << 4,
+        allRealismFeatures = 0x1fu
+    };
+    static void setRealismFeatures (std::uint32_t mask) noexcept;
+    [[nodiscard]] static std::uint32_t realismFeatures() noexcept;
+    [[nodiscard]] static bool hasRealismFeature (RealismFeature feature) noexcept;
 
     void prepare (double sampleRate, int maxBlockSize) noexcept;
     void reset() noexcept;
@@ -424,12 +444,25 @@ private:
     friend struct CavityStudyAccess;
 
     static constexpr int maxVoices = 16;
-    // Twenty membrane modes (m, n). The four axisymmetric modes are split in
-    // two by the cavity, the other sixteen in two by orientation: forty
-    // resonators before the shell bank.
-    static constexpr int modeEntryCount = 20;
+    // Seventy-six membrane modes (m, n), every Bessel zero up to about 25.
+    // Each axisymmetric entry is split in two by the cavity and every other
+    // entry in two by orientation: 152 resonators before the shell bank.
+    //
+    // The first twenty entries are the bank the instrument shipped with, in
+    // their original order, so every latched tuning identity, every fixed
+    // per-head pair split and every test that names an entry by index still
+    // means the same mode. The remaining fifty-six are appended in ascending
+    // order of their zero. The four leading entries are still the only
+    // contiguous axisymmetric group; the four higher axisymmetric entries sit
+    // among the appended ones and are found through their axisymmetricSlot.
+    static constexpr int modeEntryCount = 76;
+    static constexpr int legacyModeEntryCount = 20;
+    // The leading contiguous axisymmetric entries, (0,1)..(0,4).
     static constexpr int axisymmetricEntryCount = 4;
-    static constexpr int membraneResonatorCount = 40;
+    // Every axisymmetric entry, (0,1)..(0,8): the size of each per-slot cavity
+    // and palm table. Slots 0..3 are entries 0..3.
+    static constexpr int axisymmetricSlotCount = 8;
+    static constexpr int membraneResonatorCount = 152;
     static constexpr int shellResonatorCount = 6;
     static constexpr int resonatorCount =
         membraneResonatorCount + shellResonatorCount;
@@ -473,6 +506,9 @@ private:
     {
         int circumferentialOrder { 0 };
         double besselZero { 2.4048255576957728 };
+        // Index into the per-slot cavity and palm tables for an axisymmetric
+        // entry, -1 for every entry with a circumferential order.
+        int axisymmetricSlot { -1 };
     };
 
     // A single damped resonator. Coefficients are recomputed only when the
@@ -712,7 +748,11 @@ private:
         double stickPosition { 0.0 };
         double stickPrevious { 0.0 };
         double stickMass { 0.1 };
+        // F = K delta^alpha (1 + lambda delta'), with K in N/m^alpha. Bare
+        // wood is Hertz's 3/2; a felt-wrapped tip follows a steeper power law
+        // - see contactLawFor.
         double contactStiffness { 0.0 };
+        double contactExponent { 1.5 };
         double contactDamping { 0.0 };
         double residualImpedance { 1.0 };
         double referenceContactExposure { 1.0 };
@@ -870,6 +910,10 @@ private:
         float tensionEnvelope { 0.0f };
         float tensionDecay { 0.999f };
         float tensionDepth { 0.0f };
+        // Running mean of each entry's own squared slope, per sample, about
+        // which that entry's twice-per-cycle tension ripple is taken - see
+        // renderVoice.
+        std::array<float, modeEntryCount> parametricMeanStrain {};
         // Ideal batter frequency multiplier, also used for the continuum.
         float appliedTensionShift { 1.0f };
         float appliedTensionRise { 0.0f };
@@ -901,7 +945,7 @@ private:
         // a hostile low sample rate the only in-band member can be rear-only,
         // then structural automation can bring its batter partner back while
         // the same palm is still held.
-        std::array<float, axisymmetricEntryCount> localMuteBaseDampingRates {};
+        std::array<float, axisymmetricSlotCount> localMuteBaseDampingRates {};
         float continuumMuteDampingRate { 0.0f };
         bool palmDampingActive { false };
         // Full-pressure CC1 velocity-loss rate for unresolved modal energy.
@@ -1003,14 +1047,14 @@ private:
         // that entry's 4/lambda^2 volume-efficiency weighting. Zero on an
         // uncoupled (open) body. Each is the lumped rho c^2 / L multiplied by
         // its matching finite-column factor below.
-        std::array<float, axisymmetricEntryCount> cavityStiffnesses {};
+        std::array<float, axisymmetricSlotCount> cavityStiffnesses {};
         // How much of the lumped air spring the finite column presents at each
         // axisymmetric mode's own frequency, x cot x with x = omega L / 2c.
         // One at the low-frequency limit and falling as the body gets deep
-        // against the wavelength. Entry zero is the public (0,1) readout. See
+        // against the wavelength. Slot zero is the public (0,1) readout. See
         // resolveDrumFor.
-        std::array<float, axisymmetricEntryCount> cavityColumnFactors {
-            1.0f, 1.0f, 1.0f, 1.0f
+        std::array<float, axisymmetricSlotCount> cavityColumnFactors {
+            1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f
         };
         float radiationScale { 0.10f };
         // Close-pair geometry, resolved once so every stroke places the mics
@@ -1161,6 +1205,15 @@ private:
     // baffled front half-space. The capsule is evaluated on the mode's zero-
     // angle axis; rotating it only multiplies this complex value by
     // cos(m theta) or sin(m theta), which buildVoiceModes does exactly.
+    // What one axisymmetric branch is worth to a capsule at this distance:
+    // the batter head's local field plus both heads' net-volume radiation,
+    // the rear head's share arriving down the body and round the rim as a
+    // delayed, spread copy carried in quadrature. Shared by the render path
+    // and the readout so the two cannot disagree about the drum.
+    [[nodiscard]] static ComplexObservation axisymmetricObservation (
+        const DrumState& drum, float lambda, float omega, float efficiency,
+        float besselAtZero, float shapeMic, float batterShare,
+        float resonantShare, float micDistanceMetres) noexcept;
     [[nodiscard]] static ComplexObservation baffledModeObservation (
         float radius, float micRadius, float micDistanceMetres,
         int circumferentialOrder, float lambda, float omega,
@@ -1439,8 +1492,12 @@ private:
                                      DrumState& drum,
                                      bool includeHigherCavityModes = true) noexcept;
     static void resolveCavityStiffnesses (const EngineParameters& applied,
-                                           DrumState& drum, int firstEntry,
-                                           int endEntry) noexcept;
+                                           DrumState& drum, int firstSlot,
+                                           int endSlot) noexcept;
+    // The mode-table entry an axisymmetric slot names, and the slot an entry
+    // occupies (-1 for a mode with a circumferential order).
+    [[nodiscard]] static int axisymmetricEntryForSlot (int slot) noexcept;
+    [[nodiscard]] static int axisymmetricSlotOf (int entryIndex) noexcept;
     [[nodiscard]] DrumState resolveDrum (int octaveOffset) const noexcept;
     // Hertz impact, returning the contact duration in seconds and the peak
     // force. Contact time follows impact speed as v^(-1/5) and is floored by
@@ -1456,6 +1513,26 @@ private:
                                               float velocityCurve) noexcept;
     [[nodiscard]] static float contactStiffnessFor (
         const StrikeProfile& profile, float bachiHardness) noexcept;
+    // The power-law contact the tip actually obeys: Hertz's K delta^1.5 for
+    // bare wood, a steeper delta^alpha for a felt-wrapped beater, with the
+    // felt's constant pinned so the neutral stroke keeps its Hertz contact
+    // time on this drum and only the departure from it changes.
+    struct ContactLaw
+    {
+        double stiffness { 0.0 };
+        double exponent { 1.5 };
+    };
+    [[nodiscard]] static double contactExponentFor (float bachiHardness) noexcept;
+    [[nodiscard]] static ContactLaw contactLawFor (const StrikeProfile& profile,
+                                                   float bachiHardness,
+                                                   float stiffnessScale,
+                                                   float collisionMass) noexcept;
+    // Exact constants of a power-law collision, F = K delta^alpha: the
+    // duration prefactor, the impulse of the sin^alpha reference arch and the
+    // mean of its square. Each reduces to the Hertz value at alpha = 3/2.
+    [[nodiscard]] static double powerLawDurationConstant (double alpha) noexcept;
+    [[nodiscard]] static double pulseImpulseIntegral (double alpha) noexcept;
+    [[nodiscard]] static double pulseMeanSquare (double alpha) noexcept;
     // The striking mass and the head's resistive impedance for a drum stroke.
     static void drumContactTerms (const DrumState& drum, float& strikerMass,
                                   float& impedance) noexcept;
@@ -1494,6 +1571,16 @@ private:
     void applyTensionShift (Voice& voice, float shift,
                             float tensionRise = 0.0f) noexcept;
     void updateVoiceControl (Voice& voice) noexcept;
+    // The batter head's area-mean squared slope from the resolved membrane
+    // states, and the fractional tension rise Berger's term makes of it.
+    [[nodiscard]] static double membraneSquaredSlope (const Voice& voice) noexcept;
+    [[nodiscard]] static float tensionRiseFor (float strain) noexcept;
+    // The same strain split by mode-table entry, so each entry's own swing
+    // can be told from the head's mean. Entries beyond the contact's twenty
+    // are left at zero: the glide's one chosen constant was pinned against the
+    // strain of that bank, and the one-way entries stay outside it.
+    static void membraneSquaredSlopePerEntry (
+        const Voice& voice, std::array<float, modeEntryCount>& strain) noexcept;
     void advancePhysicalContacts (Voice& physical) noexcept;
     static void configureContinuumForce (Voice::ContinuumBand& band,
                                          double rate, float shift = 1.0f) noexcept;
@@ -1581,10 +1668,22 @@ private:
     // enough and no atomics are needed here.
     EngineParameters applied_ {};
 
-    std::array<Voice, maxVoices> voices_ {};
+    // The voice pool lives on the heap: twenty voices of a 158-resonator bank
+    // with their airborne delay lines and continuum states come to well over a
+    // megabyte, and the tests, the readout audit and any host that holds an
+    // engine by value would otherwise carry that on the stack. The two arrays
+    // below are references into it, so every reader keeps its plain array
+    // syntax; a TaikoEngine is neither copyable nor movable in any case.
+    struct VoiceStorage
+    {
+        std::array<Voice, maxVoices> voices {};
+        std::array<Voice, drumCount> physicalDrums {};
+    };
+    std::unique_ptr<VoiceStorage> storage_;
+    std::array<Voice, maxVoices>& voices_;
     // The four keyboard octaves are four physical instruments. Strikes are
     // transient contacts routed into these banks; they never own resonators.
-    std::array<Voice, drumCount> physicalDrums_ {};
+    std::array<Voice, drumCount>& physicalDrums_;
     // Incremented only by controls that alter the physical bank. Pitch-bend
     // smoothing deliberately does not touch it: a wheel retunes the live poles
     // instead of rebuilding forty-six modes at audio rate.
@@ -1628,6 +1727,7 @@ private:
     float handDampingTarget_ { 0.0f };
     float handDamping_ { 0.0f };
     float handDampingCoefficient_ { 0.05f };
+    float parametricMeanCoefficient_ { 0.0005f };
     float strikeAzimuthOverride_ { 0.0f };
     float strikePositionOverride_ { 0.0f };
     bool strikeAzimuthOverrideActive_ { false };
