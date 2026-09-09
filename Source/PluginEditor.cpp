@@ -40,6 +40,21 @@ juce::Font controlFont (float height, bool bold = false)
     return juce::Font (juce::FontOptions (height).withStyle (bold ? "Bold" : "Regular"));
 }
 
+float editorScale (const juce::Component& component)
+{
+    if (const auto* editor = component.findParentComponentOfClass<juce::AudioProcessorEditor>())
+        return static_cast<float> (editor->getWidth()) / designWidth;
+    return 1.0f;
+}
+
+juce::Font fitFont (juce::Font font, const juce::String& text, float width)
+{
+    const auto textWidth = juce::GlyphArrangement::getStringWidth (font, text);
+    if (textWidth > width && width > 0.0f)
+        font.setHeight (font.getHeight() * width / textWidth);
+    return font;
+}
+
 juce::Colour roleColour (TaikorKnob::VisualRole role) noexcept
 {
     switch (role)
@@ -119,7 +134,8 @@ void TaikorLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w
                                           float rotaryStartAngle, float rotaryEndAngle,
                                           juce::Slider& slider)
 {
-    const auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat().reduced (5.0f);
+    const auto scale = editorScale (slider);
+    const auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat().reduced (3.0f * scale);
     const auto radius = juce::jmin (29.0f, juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f);
     const auto centre = bounds.getCentre();
     const auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
@@ -132,8 +148,8 @@ void TaikorLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w
     {
         const auto a = rotaryStartAngle + static_cast<float> (tick) / 10.0f
                                             * (rotaryEndAngle - rotaryStartAngle);
-        const auto inner = radius + 2.0f;
-        const auto outer = inner + (tick % 5 == 0 ? 3.0f : 1.5f);
+        const auto outer = radius + 2.0f * scale;
+        const auto inner = outer - (tick % 5 == 0 ? 3.0f : 1.5f) * scale;
         g.drawLine (centre.x + std::sin (a) * inner, centre.y - std::cos (a) * inner,
                     centre.x + std::sin (a) * outer, centre.y - std::cos (a) * outer, 0.8f);
     }
@@ -194,22 +210,59 @@ void TaikorLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
     }
 }
 
-juce::Font TaikorLookAndFeel::getTextButtonFont (juce::TextButton&, int buttonHeight)
+juce::Font TaikorLookAndFeel::getTextButtonFont (juce::TextButton& button, int buttonHeight)
 {
-    return controlFont (juce::jlimit (11.0f, 13.0f,
-                                     static_cast<float> (buttonHeight) * 0.44f), true);
+    auto font = controlFont (juce::jmin (24.0f * editorScale (button),
+                                        static_cast<float> (buttonHeight) * 0.82f), true);
+    auto widest = button.getButtonText();
+    if (const auto* choices = dynamic_cast<TaikorChoiceSwitch*> (button.getParentComponent()))
+        for (const auto* child : choices->getChildren())
+            if (const auto* choice = dynamic_cast<const juce::TextButton*> (child))
+                if (juce::GlyphArrangement::getStringWidth (font, choice->getButtonText())
+                    > juce::GlyphArrangement::getStringWidth (font, widest))
+                    widest = choice->getButtonText();
+    return fitFont (font, widest, static_cast<float> (button.getWidth()) - 8.0f);
+}
+
+void TaikorLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button,
+                                        bool, bool)
+{
+    g.setFont (getTextButtonFont (button, button.getHeight()));
+    g.setColour (button.findColour (button.getToggleState()
+                                        ? juce::TextButton::textColourOnId
+                                        : juce::TextButton::textColourOffId)
+                     .withMultipliedAlpha (button.isEnabled() ? 1.0f : 0.5f));
+    g.drawText (button.getButtonText(), button.getLocalBounds().reduced (4, 2),
+                juce::Justification::centred, false);
 }
 
 juce::Label* TaikorLookAndFeel::createSliderTextBox (juce::Slider& slider)
 {
     auto* label = juce::LookAndFeel_V4::createSliderTextBox (slider);
-    label->setFont (controlFont (13.0f));
+    label->setFont (controlFont (24.0f));
+    label->setBorderSize (juce::BorderSize<int> (0));
+    label->setMinimumHorizontalScale (1.0f);
     label->setColour (juce::Label::textWhenEditingColourId, textColour);
     label->setColour (juce::Label::backgroundWhenEditingColourId, panelRaised);
     label->setColour (juce::Label::outlineWhenEditingColourId, accentColour);
     label->setColour (juce::TextEditor::highlightColourId, textColour);
     label->setColour (juce::TextEditor::highlightedTextColourId, washiColour);
+    label->onEditorShow = [label]
+    {
+        if (auto* editor = label->getCurrentTextEditor())
+            editor->applyFontToAllText (fitFont (
+                label->getLookAndFeel().getLabelFont (*label), label->getText(),
+                static_cast<float> (editor->getWidth()) - 10.0f));
+    };
     return label;
+}
+
+juce::Font TaikorLookAndFeel::getLabelFont (juce::Label& label)
+{
+    if (const auto* slider = dynamic_cast<juce::Slider*> (label.getParentComponent()))
+        return fitFont (controlFont (24.0f * editorScale (*slider)), label.getText(),
+                        static_cast<float> (label.getWidth()) - 2.0f);
+    return juce::LookAndFeel_V4::getLabelFont (label);
 }
 
 // ---------------------------------------------------------------------------
@@ -324,7 +377,7 @@ void TaikorPad::paintButton (juce::Graphics& g, bool isMouseOver, bool isButtonD
         g.strokePath (rim, juce::PathStrokeType (1.5f));
     }
     g.setColour (ink);
-    g.setFont (controlFont (juce::jlimit (14.0f, 17.0f, bounds.getHeight() * 0.34f), true));
+    g.setFont (controlFont (32.0f * editorScale (*this), true));
     g.drawText (keyText, bounds.withTrimmedLeft (bounds.getWidth() * 0.47f),
                 juce::Justification::centredLeft, false);
     if (hasKeyboardFocus (true))
@@ -417,18 +470,20 @@ void TaikorDrumButton::paintButton (juce::Graphics& g, bool isMouseOver,
         g.setColour (accentColour);
         g.fillRect (bounds.withWidth (3.0f));
     }
-    const auto art = bounds.withWidth (bounds.getWidth() * 0.35f).reduced (5.0f, 2.0f);
+    const auto art = bounds.withWidth (bounds.getWidth() * 0.23f).reduced (5.0f, 2.0f);
     if (drumPainting.isValid())
         g.drawImage (drumPainting, art, juce::RectanglePlacement::centred);
 
-    auto copy = bounds.withTrimmedLeft (bounds.getWidth() * 0.36f).reduced (3.0f, 3.0f);
+    const auto scale = editorScale (*this);
+    auto copy = bounds.withTrimmedLeft (bounds.getWidth() * 0.24f).reduced (3.0f, 0.0f);
+    copy = copy.withHeight (44.0f * scale).withCentre (copy.getCentre());
     g.setColour (accentColour);
-    g.setFont (controlFont (10.0f, true));
-    g.drawText (noteName, copy.removeFromTop (copy.getHeight() * 0.35f),
+    g.setFont (controlFont (18.0f * scale, true));
+    g.drawText (noteName, copy.removeFromTop (18.0f * scale),
                 juce::Justification::centredLeft, false);
     g.setColour (textColour);
-    g.setFont (displayFont (juce::jlimit (12.0f, 15.0f, bounds.getHeight() * 0.29f), juce::Font::bold));
-    g.drawFittedText (drumName, copy.toNearestInt(), juce::Justification::centredLeft, 1, 0.90f);
+    g.setFont (fitFont (displayFont (26.0f * scale, juce::Font::bold), drumName, copy.getWidth()));
+    g.drawText (drumName, copy, juce::Justification::centredLeft, false);
     if (hasKeyboardFocus (true))
     {
         g.setColour (accentColour);
@@ -476,9 +531,7 @@ TaikorKnob::TaikorKnob (juce::String name, ValueStyle style, VisualRole roleToUs
 
 void TaikorKnob::setLabelText (const juce::String& text, const juce::String& description)
 {
-    const auto caption = text == "ENSEMBLE SIZE" ? juce::String ("PLAYERS")
-                       : text == "ENSEMBLE VAR" ? juce::String ("VARIATION") : text;
-    label.setText (caption, juce::dontSendNotification);
+    label.setText (text, juce::dontSendNotification);
     setTooltip (description);
     slider.setTooltip (description);
     slider.setTitle (text);
@@ -490,8 +543,12 @@ void TaikorKnob::resized()
     auto bounds = getLocalBounds().reduced (1, 0);
     label.setFont (controlFont (10.5f, true));
     label.setBounds (bounds.removeFromTop (16));
-    slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false,
-                            juce::jmin (92, bounds.getWidth()), 20);
+    const auto valueHeight = juce::roundToInt (30.0f * editorScale (*this));
+    const bool wide = static_cast<float> (bounds.getWidth())
+                    > static_cast<float> (bounds.getHeight()) * 1.6f;
+    slider.setTextBoxStyle (wide ? juce::Slider::TextBoxRight : juce::Slider::TextBoxBelow,
+                            false, wide ? juce::roundToInt (static_cast<float> (bounds.getWidth()) * 0.58f)
+                                        : bounds.getWidth(), valueHeight);
     slider.setBounds (bounds);
 }
 
@@ -580,16 +637,26 @@ void TaikorChoiceSwitch::selectNearest (float value)
 
 void TaikorChoiceSwitch::resized()
 {
+    const auto scale = editorScale (*this);
     auto bounds = getLocalBounds();
-    label.setBounds (bounds.removeFromTop (18));
-    bounds.removeFromTop (4);
-    const auto layout = taikor::ui::rowLayout (bounds.getWidth(), buttons.size(),
-                                                3, buttons.size());
+    label.setBounds (bounds.removeFromTop (16));
+    bounds.removeFromTop (juce::roundToInt (4.0f * scale));
+    auto buttonHeight = juce::jmin (juce::roundToInt (36.0f * scale), bounds.getHeight());
+    auto centreY = bounds.getCentreY();
+    if (getHeight() > juce::roundToInt (70.0f * scale))
+    {
+        // Beside knobs, center the choices on the dial, leaving the same
+        // caption and value clearance as the neighboring continuous controls.
+        const auto dial = getLocalBounds().withTrimmedTop (16)
+                              .withTrimmedBottom (juce::roundToInt (30.0f * scale));
+        buttonHeight = juce::jmin (buttonHeight, dial.getHeight());
+        centreY = dial.getCentreY();
+    }
+    bounds = bounds.withHeight (buttonHeight).withCentre ({ bounds.getCentreX(), centreY });
+    const auto layout = taikor::ui::rowLayout (bounds.getWidth(), buttons.size(), 3, buttons.size());
     for (int index = 0; index < buttons.size(); ++index)
-        buttons[index]->setBounds (bounds.getX()
-                                       + taikor::ui::cellOffset (layout, 3, index),
-                                    bounds.getY(), layout.cellSize,
-                                    juce::jmin (36, bounds.getHeight()));
+        buttons[index]->setBounds (bounds.getX() + taikor::ui::cellOffset (layout, 3, index),
+                                    bounds.getY(), layout.cellSize, bounds.getHeight());
 }
 
 // ---------------------------------------------------------------------------
@@ -637,18 +704,6 @@ void TaikorHeadDisplay::setMicrophones (float spread, float normalisedDistance)
     repaint();
 }
 
-// The engine reports zero when no membrane mode of the drum survives the
-// renderer's Nyquist cutoff, which is a drum with no pitch rather than a drum at
-// nought hertz - a 15 cm head at the tension ceiling, taken to the top of the
-// keyboard, has its own fundamental above 25 kHz. Printing "0.0 Hz" there would
-// be the same untruth in the other direction. See
-// TaikoEngine::DrumMeasurements::soundingHz.
-static juce::String describeSoundingPitch (float soundingHz)
-{
-    return soundingHz > 0.0f ? juce::String (soundingHz, 1) + " Hz"
-                             : juce::String ("No pitch");
-}
-
 void TaikorHeadDisplay::setMeasurements (float fundamentalHz, float breathingHz,
                                          float diameterCentimetres, float tailSeconds)
 {
@@ -667,11 +722,8 @@ void TaikorHeadDisplay::setMeasurements (float fundamentalHz, float breathingHz,
 void TaikorHeadDisplay::paint (juce::Graphics& g)
 {
     const auto bounds = getLocalBounds().toFloat();
-    const auto readoutHeight = juce::jmin (58.0f, bounds.getHeight() * 0.22f);
-    const auto drumArea = bounds.withTrimmedBottom (readoutHeight);
-    const auto centre = drumArea.getCentre();
-    const auto headRadius =
-        juce::jmin (drumArea.getWidth(), drumArea.getHeight()) * 0.42f;
+    const auto centre = bounds.getCentre();
+    const auto headRadius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.37f;
 
     // An incomplete ink circle gives the technical head map a place in the
     // same visual world as the row paintings, without obscuring live data.
@@ -767,24 +819,7 @@ void TaikorHeadDisplay::paint (juce::Graphics& g)
                     juce::Justification::centred, false);
     }
 
-    // What the model says this drum is.
-    auto readout = bounds.withTop (bounds.getBottom() - readoutHeight)
-                       .reduced (8.0f, 4.0f);
-    g.setColour (mutedText);
-    g.setFont (juce::Font (juce::FontOptions (10.5f)));
 
-    const auto line = readout.getHeight() / 2.0f;
-    g.drawText (juce::String (diameter, 1) + " cm head  "
-                    + juce::String::fromUTF8 ("\xc2\xb7") + "  "
-                    + juce::String (tail, 2) + " s tail",
-                readout.removeFromTop (line), juce::Justification::centred, false);
-
-    g.setColour (textColour);
-    g.setFont (displayFont (12.0f, juce::Font::bold));
-    g.drawText (describeSoundingPitch (fundamental) + "  "
-                    + juce::String::fromUTF8 ("\xc2\xb7") + "  breath "
-                    + juce::String (breathing, 1) + " Hz",
-                readout, juce::Justification::centred, false);
 }
 
 std::unique_ptr<juce::AccessibilityHandler>
@@ -853,15 +888,15 @@ void TaikorStatusDisplay::paint (juce::Graphics& g)
     g.fillEllipse (bounds.getX(), bounds.getCentreY() - statusDot * 0.5f,
                    statusDot, statusDot);
     bounds.removeFromLeft (statusDot + 7.0f);
-    g.setFont (juce::Font (juce::FontOptions (11.0f)));
     g.setColour (isReady ? textColour : mutedText);
 
     const juce::String rateText = rate > 0.0
         ? juce::String (rate / 1000.0, 1) + " kHz"
         : juce::String ("- kHz");
-    g.drawText (juce::String (juce::jmax (0, voices)) + " voices  "
-                    + juce::String::fromUTF8 ("\xc2\xb7") + "  " + rateText,
-                bounds, juce::Justification::centredLeft, false);
+    const auto status = juce::String (juce::jmax (0, voices)) + " voices  "
+                      + juce::String::fromUTF8 ("\xc2\xb7") + "  " + rateText;
+    g.setFont (fitFont (controlFont (20.0f * editorScale (*this)), status, bounds.getWidth()));
+    g.drawText (status, bounds, juce::Justification::centredLeft, false);
 }
 
 std::unique_ptr<juce::AccessibilityHandler>
@@ -940,7 +975,7 @@ void TaikorMeter::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat();
     bounds = bounds.reduced (1.0f, 3.0f);
-    auto channelLabels = bounds.removeFromLeft (13.0f);
+    auto channelLabels = bounds.removeFromLeft (22.0f * editorScale (*this));
     const auto barHeight = (bounds.getHeight() - 3.0f) * 0.5f;
 
     const auto drawBar = [&] (juce::Rectangle<float> area,
@@ -962,7 +997,7 @@ void TaikorMeter::paint (juce::Graphics& g)
     };
 
     g.setColour (mutedText);
-    g.setFont (controlFont (9.0f, true));
+    g.setFont (controlFont (16.0f * editorScale (*this), true));
     g.drawText ("L", channelLabels.removeFromTop (barHeight), juce::Justification::centredLeft, false);
     channelLabels.removeFromTop (3.0f);
     g.drawText ("R", channelLabels, juce::Justification::centredLeft, false);
@@ -1027,7 +1062,7 @@ TaikorAudioProcessorEditor::TaikorAudioProcessorEditor (TaikorAudioProcessor& pr
     logoLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (logoLabel);
 
-    editionLabel.setText ("P H Y S I C A L L Y   M O D E L E D   T A I K O", juce::dontSendNotification);
+    editionLabel.setText ("PHYSICALLY\nMODELED TAIKO", juce::dontSendNotification);
     editionLabel.setFont (juce::Font (juce::FontOptions (10.5f)));
     editionLabel.setColour (juce::Label::textColourId, mutedText);
     editionLabel.setJustificationType (juce::Justification::centredLeft);
@@ -1297,8 +1332,8 @@ TaikorAudioProcessorEditor::calculateLayout() const
     };
     LayoutAreas areas;
     areas.header = rect (0, 0, 1280, 96);
-    areas.artwork = rect (24, 116, 272, 332);
-    areas.head = rect (24, 464, 272, 228);
+    areas.artwork = rect (24, 116, 272, 300);
+    areas.head = rect (24, 432, 272, 260);
     areas.switchDeck = rect (24, 708, 272, 148);
     areas.gridArea = rect (312, 116, 944, 300);
     areas.drumDeck = rect (312, 432, 464, 260);
@@ -1317,9 +1352,6 @@ void TaikorAudioProcessorEditor::paint (juce::Graphics& g)
     g.fillAll();
     g.setColour (panelColour);
     g.fillRect (areas.header);
-    g.setColour (brassColour);
-    g.fillRect (0.0f, static_cast<float> (areas.header.getBottom()) - 3.0f * scale,
-                static_cast<float> (getWidth()), 3.0f * scale);
 
     for (const auto area : { areas.gridArea, areas.drumDeck, areas.strokeDeck,
                              areas.microphoneDeck, areas.head, areas.switchDeck })
@@ -1337,23 +1369,10 @@ void TaikorAudioProcessorEditor::paint (juce::Graphics& g)
         g.reduceClipRegion (areas.artwork);
         g.drawImage (backgroundPainting, areas.artwork.toFloat(), juce::RectanglePlacement::fillDestination);
     }
-    g.setColour (brassColour);
-    g.drawRect (areas.artwork.toFloat(), 1.0f);
-    g.setColour (panelRaised.withAlpha (0.6f));
-    g.drawRect (areas.artwork.toFloat().reduced (5.0f * scale), 0.7f);
-
-    // Section dividers are quiet, solid rules on untextured paper.
-    for (const auto area : { areas.drumDeck, areas.strokeDeck, areas.microphoneDeck })
-    {
-        g.setColour (panelEdge.withAlpha (0.65f));
-        g.drawHorizontalLine (area.getY() + juce::roundToInt (37.0f * scale),
-                               static_cast<float> (area.getX()) + 16.0f * scale,
-                               static_cast<float> (area.getRight()) - 16.0f * scale);
-    }
     g.setColour (mutedText);
-    g.setFont (controlFont (juce::jmax (10.0f, 11.0f * scale)));
+    g.setFont (controlFont (20.0f * scale));
     const auto hint = areas.gridArea.toFloat().reduced (18.0f * scale, 11.0f * scale)
-        .withHeight (22.0f * scale).withTrimmedLeft (380.0f * scale);
+        .withHeight (40.0f * scale).withTrimmedLeft (570.0f * scale);
     g.drawText ("Click a pad to play  /  MIDI C3-D#6", hint,
                 juce::Justification::centredRight, false);
 }
@@ -1367,22 +1386,23 @@ void TaikorAudioProcessorEditor::resized()
     {
         return juce::Rectangle<int> (px (x), px (y), px (w), px (h));
     };
-    sealLabel.setBounds (rect (28, 23, 43, 48));
-    sealLabel.setFont (displayFont (27.0f * scale, juce::Font::bold));
-    logoLabel.setBounds (rect (86, 10, 238, 56));
-    logoLabel.setFont (displayFont (46.0f * scale, juce::Font::bold));
-    editionLabel.setBounds (rect (89, 64, 350, 18));
-    editionLabel.setFont (controlFont (juce::jmax (9.0f, 10.0f * scale)));
-    statusDisplay.setBounds (rect (622, 36, 208, 27));
-    limiterLabel.setBounds (rect (850, 22, 268, 19));
-    meter.setBounds (rect (850, 43, 268, 26));
-    panicButton.setBounds (rect (1150, 30, 100, 37));
+    sealLabel.setBounds (rect (28, 16, 64, 64));
+    sealLabel.setFont (displayFont (50.0f * scale, juce::Font::bold));
+    logoLabel.setBounds (rect (104, 8, 326, 80));
+    logoLabel.setFont (displayFont (80.0f * scale, juce::Font::bold));
+    editionLabel.setBounds (rect (440, 25, 160, 46));
+    editionLabel.setFont (controlFont (18.0f * scale));
+    statusDisplay.setBounds (rect (608, 30, 234, 36));
+    limiterLabel.setBounds (rect (850, 18, 252, 24));
+    limiterLabel.setFont (controlFont (18.0f * scale, true));
+    meter.setBounds (rect (850, 44, 252, 34));
+    panicButton.setBounds (rect (1130, 28, 124, 40));
 
     auto grid = areas.gridArea.reduced (px (16), px (10));
-    gridCaption.setBounds (grid.removeFromTop (px (29)).withWidth (px (370)));
-    gridCaption.setFont (displayFont (19.0f * scale, juce::Font::bold));
+    gridCaption.setBounds (grid.removeFromTop (px (40)).withWidth (px (520)));
+    gridCaption.setFont (displayFont (34.0f * scale, juce::Font::bold));
     const int gap = px (7);
-    const int rowHeaderWidth = px (202);
+    const int rowHeaderWidth = px (280);
     auto headings = grid.removeFromTop (px (27));
     headings.removeFromLeft (rowHeaderWidth + gap);
     const auto columns = taikor::ui::rowLayout (headings.getWidth(), 4, gap, 4);
@@ -1407,7 +1427,9 @@ void TaikorAudioProcessorEditor::resized()
     }
 
     auto head = areas.head.reduced (px (10), px (10));
-    headCaption.setBounds (head.removeFromTop (px (20)));
+    headCaption.setBounds (head.removeFromTop (px (34)));
+    headCaption.setFont (controlFont (22.0f * scale, true));
+    head.removeFromTop (px (8));
     headDisplay.setBounds (head);
 
     struct Cell
@@ -1419,9 +1441,9 @@ void TaikorAudioProcessorEditor::resized()
                                           std::initializer_list<Cell> cells, int columnsCount)
     {
         auto working = area.reduced (px (12), px (9));
-        label.setBounds (working.removeFromTop (px (30)).withTrimmedLeft (px (4)));
-        label.setFont (displayFont (17.0f * scale, juce::Font::bold));
-        working.removeFromTop (px (5));
+        label.setBounds (working.removeFromTop (px (42)).withTrimmedLeft (px (4)));
+        label.setFont (displayFont (32.0f * scale, juce::Font::bold));
+        working.removeFromTop (px (10));
         int totalColumns = 0;
         for (const auto& cell : cells)
             totalColumns += cell.span;

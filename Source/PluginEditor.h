@@ -21,7 +21,9 @@ public:
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&,
                                bool isHighlighted, bool isDown) override;
     juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
+    void drawButtonText (juce::Graphics&, juce::TextButton&, bool, bool) override;
     juce::Label* createSliderTextBox (juce::Slider&) override;
+    juce::Font getLabelFont (juce::Label&) override;
 };
 
 // One stroke of the vocabulary. The pad shows the stroke's name, the spoken
