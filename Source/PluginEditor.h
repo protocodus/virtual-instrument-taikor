@@ -21,10 +21,7 @@ public:
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&,
                                bool isHighlighted, bool isDown) override;
     juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
-    // A knob's value box: larger type on its own translucent pill, so the
-    // number stays readable wherever the printed landscape sits behind it.
     juce::Label* createSliderTextBox (juce::Slider&) override;
-    void drawLabel (juce::Graphics&, juce::Label&) override;
 };
 
 // One stroke of the vocabulary. The pad shows the stroke's name, the spoken
@@ -225,16 +222,13 @@ private:
     struct LayoutAreas
     {
         juce::Rectangle<int> header;
+        juce::Rectangle<int> artwork;
         juce::Rectangle<int> gridArea;
         juce::Rectangle<int> head;
-        // Everything under the playing surface, where the printed landscape
-        // is faded out behind the controls.
-        juce::Rectangle<int> lowerPanel;
         juce::Rectangle<int> drumDeck;
         juce::Rectangle<int> strokeDeck;
-        juce::Rectangle<int> playerDeck;
         juce::Rectangle<int> microphoneDeck;
-        juce::Rectangle<int> ensembleDeck;
+        juce::Rectangle<int> switchDeck;
     };
 
     void timerCallback() override;
@@ -270,9 +264,7 @@ private:
 
     juce::Label drumDeckLabel;
     juce::Label strokeDeckLabel;
-    juce::Label playerDeckLabel;
     juce::Label microphoneDeckLabel;
-    juce::Label ensembleDeckLabel;
 
     TaikorKnob sizeKnob { "DIAMETER", TaikorKnob::ValueStyle::Centimetres,
                           TaikorKnob::VisualRole::Drum };

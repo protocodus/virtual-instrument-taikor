@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "createdOn": "2026-09-09",
+  "generationMode": "built-in image_gen",
+  "tool": "image_gen.imagegen",
+  "description": "Original vintage Japanese woodblock artwork generated for the Taikor interface redesign. Original PNG files copied without image processing; generated alpha and embedded C2PA metadata preserved.",
+  "palette": {
+    "indigo": "#20363b",
+    "ivory": "#f3ead8",
+    "vermilion": "#ae4936",
+    "brass": "#927447"
+  },
+  "assets": [
+    {
+      "path": "Assets/taikor-coastal-print.png",
+      "width": 1135,
+      "height": 1386,
+      "mode": "RGB",
+      "prompt": "Use case: stylized-concept\nAsset type: original portrait illustration for the left art panel of a vintage Japanese taiko VST instrument, final display about 272x332 px\nPrimary request: a beautiful restrained early 20th-century Japanese shin-hanga woodblock scene showing a large traditional taiko drum on a dark wooden stand near a windswept coastal pine, with distant misty Mount Fuji, a small vermilion sun, cream clouds and indigo sea and hills.\nStyle/medium: exquisite antique woodblock print, nuanced flat ink textures, fine carved lines, muted layered pigments on aged warm washi paper, quiet refined craftsmanship, not overly grungy. Entirely original composition.\nComposition/framing: portrait near 4:5 aspect ratio, art fills the full image with no border, large drum prominently in the lower half, windswept coastal pine frames the upper side, Mount Fuji and sun small and distant. Balanced restrained detail; readable drum silhouette at thumbnail size.\nColor palette: deep indigo #20363b, warm ivory #f3ead8, vermilion #ae4936, weathered brass #927447. Warm paper, dark inky outlines, subtle wood grain.\nConstraints: no typography, no lettering, no labels, no signatures, no seals, no watermarks, no UI. No people, no photographic realism, no excessive noise. Generate one portrait illustration.",
+      "intendedDisplay": {
+        "width": 272,
+        "height": 332
+      },
+      "inspection": "Full-bleed portrait, prominent lower-half taiko, windswept pine, distant Fuji, vermilion sun. No text or border.",
+      "sourceArtifact": "exec-8af0bd9f-3804-4ca2-b0d0-4e34f059c5db.png"
+    },
+    {
+      "path": "Assets/taikor-drum-studies.png",
+      "width": 2172,
+      "height": 724,
+      "mode": "RGBA",
+      "prompt": "Use case: stylized-concept\nAsset type: original transparent horizontal atlas of four vintage Japanese drum illustrations for a virtual taiko instrument UI\nPrimary request: four separate beautiful handprinted woodblock illustrations of traditional Japanese drums in a horizontal row, each isolated on a genuinely transparent alpha background. FOUR drums left to right in this exact order: (1) a large horizontal odaiko barrel drum on a sturdy wooden stand, (2) a medium nagado-daiko barrel drum on a low wooden stand, (3) a tall upright rope-laced okedo-daiko with narrow wood slats, (4) a small shallow rope-laced shime-daiko with a cream head.\nStyle/medium: restrained early 20th-century Japanese woodblock illustration, refined carved dark indigo outlines and hatching, lightly worn printed ink, recognizable authentic drum construction, warm wood and cream skins with subtle vermilion wood details.\nComposition/framing: wide horizontal image, near 3:1 aspect ratio. Divide the width into four equal invisible quarters. Place exactly one complete drum centered within each quarter; each instrument and its stand entirely contained in that quarter with ample transparent margins. No drum overlaps any other quarter. Similar visual scale and consistent angle, clearly distinguish the four silhouettes. No dividers, no panels. The complete set will be displayed as four individual thumbnails cropped by these equal quarters.\nColor palette: deep indigo #20363b, warm ivory #f3ead8, vermilion #ae4936, weathered brass #927447. Warm wood and cream skins, dark indigo outlines.\nConstraints: genuinely transparent background and alpha channel, NOT white, NOT paper and NOT a fake checkerboard. No environment, no ground plane, no background shadow, no landscape, no people, no drumsticks. No typography, no labels, no lettering, no text, no signatures, no seals, no watermarks, no UI. Generate one image with exactly the four drums.",
+      "inspection": "Four distinct complete drums with genuine alpha; generation used unequal horizontal spacing. Consume with explicit source crop rectangles below instead of equal quarters. Faint low-alpha stray pixels in transparent space do not affect thumbnails.",
+      "sourceCrops": [
+        {
+          "name": "odaiko",
+          "x": 20,
+          "y": 32,
+          "width": 600,
+          "height": 668
+        },
+        {
+          "name": "nagado",
+          "x": 664,
+          "y": 140,
+          "width": 480,
+          "height": 550
+        },
+        {
+          "name": "okedo",
+          "x": 1228,
+          "y": 112,
+          "width": 425,
+          "height": 574
+        },
+        {
+          "name": "shime",
+          "x": 1704,
+          "y": 340,
+          "width": 451,
+          "height": 340
+        }
+      ],
+      "sourceArtifact": "exec-518b23f2-104b-4e19-9b18-88aa634b877a.png"
+    }
+  ]
+}

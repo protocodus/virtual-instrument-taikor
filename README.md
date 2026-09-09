@@ -46,6 +46,13 @@ Listen to the instrument's own synthesized performances:
 
 ## Release history
 
+### 2026-09-09
+
+- **Redesigned the instrument in indigo, ivory and vermilion**, with original
+  Japanese woodblock artwork, illustrated drum selectors, a high-contrast
+  playing grid and separate body, stroke and output panels. Performance controls remain
+  on one screen, with editable values, keyboard focus and host automation preserved.
+
 ### 2026-09-08
 
 - **Resolved the head to seventy-six modes** — 152 resonators against the
@@ -245,18 +252,16 @@ Listen to the instrument's own synthesized performances:
 
 ## Technical details
 
-The panel uses an original Japanese woodblock-inspired illustration of aged
-washi, with ink and vermilion controls. Settings with a handful of meaningful
-values are switches — **Performer** has four positions, **Drum Layout** two,
-**Curve** three and **Players** eight — and continuous physical settings keep
-their knobs, grouped into decks for the drum, the stroke, the player, the
-microphones and the ensemble. The lower half of the panel sits on a
-translucent washi wash that deepens towards the foot, so every label reads
-over the illustration. Resonant Head, Air Coupling and Shell Resonance stay
-host parameters but have left the panel: each is a fine physical trim rather
-than something a player reaches for. The background was generated with
-imagegen; its [generation prompt](Assets/taikor-woodblock-background.prompt.md)
-is included with the asset.
+The panel pairs original Japanese woodblock artwork with indigo framing and
+opaque ivory control surfaces. A coastal print and four drum studies sit beside
+the playing grid; labels and values stay clear of the artwork. **Body & Tuning**,
+**The Stroke** and **Microphones & Output** group the continuous controls.
+**Performer** has four switch positions, **Drum Layout** two, **Curve** three and
+**Players** eight. Resonant Head, Air Coupling and Shell Resonance remain
+host parameters without panel controls. Performance controls fit on one screen
+from 1024 × 704 to 1472 × 1012. The images were generated with the built-in
+imagegen tool; [prompts and provenance](Assets/artwork-provenance.json) are
+included with the assets.
 
 Taikor loads no samples, replays no recording, and emulates no particular
 branded instrument. Every stroke is solved from a struck circular membrane: the

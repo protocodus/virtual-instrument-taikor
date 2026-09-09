@@ -154,8 +154,8 @@ if(TAIKOR_BUILD_PLUGIN)
 
     juce_add_binary_data(TaikorAssets
         SOURCES
-            Assets/taiko-drum-atlas.png
-            Assets/taikor-woodblock-background.png)
+            Assets/taikor-drum-studies.png
+            Assets/taikor-coastal-print.png)
 
     target_sources(Taikor PRIVATE
         Source/PluginProcessor.cpp

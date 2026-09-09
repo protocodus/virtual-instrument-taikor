@@ -37,6 +37,23 @@ void expect (bool condition, const std::string& message)
     }
 }
 
+void writeEditorSnapshot (const juce::Image& image, const char* environmentVariable)
+{
+    const auto path = juce::SystemStats::getEnvironmentVariable (environmentVariable, {});
+    if (path.isEmpty())
+        return;
+
+    const juce::File file { path };
+    file.getParentDirectory().createDirectory();
+    juce::FileOutputStream output { file };
+    juce::PNGImageFormat png;
+    const bool preparedOutput =
+        output.openedOk() && output.setPosition (0) && output.truncate();
+    const bool wroteSnapshot = preparedOutput && png.writeImageToStream (image, output);
+    output.flush();
+    expect (wroteSnapshot, std::string ("could not write ") + environmentVariable);
+}
+
 float parameterValue (const TaikorAudioProcessor& processor, const juce::String& id)
 {
     const auto* value = processor.parameters.getRawParameterValue (id);
@@ -1474,6 +1491,65 @@ void testEditorRendering()
         }
     }
 
+    const auto checkControlLayout = [&editor]
+    {
+        std::vector<juce::Component*> controls;
+        int parameterControls = 0;
+        std::size_t pads = 0;
+        std::size_t drums = 0;
+        for (auto* child : editor->getChildren())
+        {
+            const bool isKnob = dynamic_cast<TaikorKnob*> (child) != nullptr;
+            const bool isSwitch = dynamic_cast<TaikorChoiceSwitch*> (child) != nullptr;
+            const bool isButton = dynamic_cast<juce::Button*> (child) != nullptr;
+            if (! isKnob && ! isSwitch && ! isButton)
+                continue;
+
+            const auto name = child->getName().toStdString();
+            const auto bounds = editor->getLocalArea (child, child->getLocalBounds());
+            expect (child->isVisible() && ! bounds.isEmpty()
+                        && editor->getLocalBounds().contains (bounds),
+                    "an editor control is hidden or clipped: " + name);
+            controls.push_back (child);
+            parameterControls += isKnob || isSwitch ? 1 : 0;
+            pads += dynamic_cast<TaikorPad*> (child) != nullptr ? 1u : 0u;
+            drums += dynamic_cast<TaikorDrumButton*> (child) != nullptr ? 1u : 0u;
+
+            if (isKnob || isSwitch)
+                for (auto* part : child->getChildren())
+                {
+                    const auto partBounds = child->getLocalArea (part, part->getLocalBounds());
+                    expect (part->isVisible() && ! partBounds.isEmpty()
+                                && child->getLocalBounds().contains (partBounds),
+                            "a control clips its caption, value or button: " + name);
+                }
+        }
+
+        // Resonant Head, Air Coupling and Shell Resonance remain as legacy
+        // host parameters, but their controls were retired from the editor.
+        constexpr int legacyHostOnlyParameters = 3;
+        expect (parameterControls == taikor::parameters::parameterCount
+                                        - legacyHostOnlyParameters,
+                "the editor does not expose every current parameter control");
+        expect (pads == taikor::drumCount * taikor::articulationCount,
+                "the playing surface is missing a drum articulation");
+        expect (drums == taikor::drumCount,
+                "the playing surface is missing a drum selector");
+
+        for (std::size_t first = 0; first < controls.size(); ++first)
+            for (std::size_t second = first + 1; second < controls.size(); ++second)
+            {
+                const auto firstBounds = editor->getLocalArea (
+                    controls[first], controls[first]->getLocalBounds());
+                const auto secondBounds = editor->getLocalArea (
+                    controls[second], controls[second]->getLocalBounds());
+                expect (! firstBounds.intersects (secondBounds),
+                        "editor controls overlap: " + controls[first]->getName().toStdString()
+                            + " / " + controls[second]->getName().toStdString());
+            }
+    };
+    checkControlLayout();
+
     // Drive the editor's timer path so the head display and meters are painted
     // with live values rather than their initial ones.
     processor.triggerFromUi (taikor::Articulation::Ka, 1, 0.95f);
@@ -1517,33 +1593,7 @@ void testEditorRendering()
              juce::Point<int> { editorMaximumWidth, editorMaximumHeight } })
     {
         editor->setSize (size.x, size.y);
-        if (highPassKnob != nullptr)
-            expect (editor->getLocalBounds().contains (highPassKnob->getBounds())
-                        && ! highPassKnob->slider.getBounds().isEmpty()
-                        && highPassKnob->getLocalBounds().contains (
-                            highPassKnob->slider.getBounds()),
-                    "a resized LOW CUT knob escaped its control row");
-        if (variationKnob != nullptr)
-            expect (editor->getLocalBounds().contains (variationKnob->getBounds())
-                        && ! variationKnob->slider.getBounds().isEmpty()
-                        && variationKnob->getLocalBounds().contains (
-                            variationKnob->slider.getBounds()),
-                    "a resized VARIATION knob escaped its control row");
-        if (playersSwitch != nullptr && variationKnob != nullptr)
-            expect (! playersSwitch->getBounds().intersects (variationKnob->getBounds()),
-                    "the ensemble controls overlap after resizing");
-        for (const auto* name : { "PERFORMER", "DRUM LAYOUT", "CURVE", "PLAYERS" })
-            if (auto* control = findSwitch (name))
-            {
-                expect (editor->getLocalBounds().contains (
-                            editor->getLocalArea (control, control->getLocalBounds())),
-                        "a resized choice switch escaped the editor");
-                for (auto* child : control->getChildren())
-                    if (auto* button = dynamic_cast<juce::TextButton*> (child))
-                        expect (! button->getBounds().isEmpty()
-                                    && control->getLocalBounds().contains (button->getBounds()),
-                                "a resized switch clipped a choice button");
-            }
+        checkControlLayout();
         juce::Image resized { juce::Image::ARGB, editor->getWidth(),
                               editor->getHeight(), true };
         juce::Graphics resizedGraphics { resized };
@@ -1562,6 +1612,12 @@ void testEditorRendering()
         }
         expect (resizeOpaque, "a resized editor left transparent pixels");
         expect (resizeColours.size() > 64u, "a resized editor lost its visual detail");
+
+        // Optional QA captures make the smallest readable layout and largest
+        // supported editor inspectable without opening a host window.
+        writeEditorSnapshot (resized, size.x == editorMinimumWidth
+                                          ? "TAIKOR_EDITOR_MIN_SNAPSHOT"
+                                          : "TAIKOR_EDITOR_MAX_SNAPSHOT");
     }
 
     editor->setSize (editorDesignWidth, editorDesignHeight);
@@ -1579,19 +1635,7 @@ void testEditorRendering()
             editor->paintEntireComponent (graphics, true);
         }
 
-        // The directory is tracked in the repository, but a local build may
-        // point this anywhere, so make sure the parent exists first.
-        const juce::File snapshotFile { snapshotPath };
-        snapshotFile.getParentDirectory().createDirectory();
-
-        juce::FileOutputStream output { snapshotFile };
-        juce::PNGImageFormat png;
-        const bool preparedOutput =
-            output.openedOk() && output.setPosition (0) && output.truncate();
-        const bool wroteSnapshot =
-            preparedOutput && png.writeImageToStream (committed, output);
-        output.flush();
-        expect (wroteSnapshot, "could not write the requested editor snapshot");
+        writeEditorSnapshot (committed, "TAIKOR_EDITOR_SNAPSHOT");
     }
 
     editor.reset();
