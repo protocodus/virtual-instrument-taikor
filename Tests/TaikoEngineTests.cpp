@@ -8457,12 +8457,20 @@ void testAStrokeLandsOnAHeadThatIsAlreadyMoving()
         float left = 0.0f;
         float right = 0.0f;
         engine.trigger (taikor::Articulation::Don, 0, 1.0f);
+        // This is a modal damping measurement, like the roll comparison above.
+        // A single stochastic residual bin can cancel the underlying partial
+        // differently after a palm changes its envelope, hiding real damping.
+        taikor::TaikoEngineTestAccess::isolateResolvedBank (engine);
         for (int sample = 0; sample < total; ++sample)
         {
             // A Tsu lands near the middle, where the fundamental is. An octave
             // below the playable range means no second stroke at all.
             if (sample == 12000 && interruptingOctave >= taikor::lowestOctaveOffset)
+            {
                 engine.trigger (taikor::Articulation::Tsu, interruptingOctave, 0.02f);
+                taikor::TaikoEngineTestAccess::isolateResolvedBank (
+                    engine, taikor::TaikoEngineTestAccess::newestStrikeSlot (engine));
+            }
             engine.process (&left, &right, 1);
             mono[static_cast<std::size_t> (sample)] = 0.5f * (left + right);
         }
