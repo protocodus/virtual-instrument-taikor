@@ -87,6 +87,11 @@ Listen to the instrument's own synthesized performances:
   switch, and Resonant Head, Air Coupling and Shell Resonance stay host
   parameters without a knob. Each grid pad shows its strike map beside its
   note name, both sized to the pad.
+- **Added two switched candidates for the wood and the hide**, both off: the
+  head's boundary shear at the rim driving the shell on every stroke, and a
+  per-drum hide thickness variation replacing the single 5.1-cent split. The
+  first fails its own screen against real captures and the reason is recorded;
+  neither has been to a listening test.
 - **Two candidates for the head's noise character were rendered and rejected
   by ear**, and stay in `TaikoEngine::setRealismFeatures` switched off: the
   continuum handed off above the whole resolved bank, and the bachi contact
@@ -1482,6 +1487,28 @@ the upper spectrum, since truncating the later force would also remove its
 physical phase cancellation. The retained exposure calculation is diagnostic
 only, and its per-unit-length `Z` does not make it a mechanical energy measure.
 Output protection remains downstream of the complete instrument.
+
+**The body is silent on three of the four strokes.** Don, Edge and Muted all
+carry no shell gain, so only a rim shot rings the wood. On the factory ō-daiko
+that matters more than it sounds: all 152 membrane resonators sit between 33
+and 447 Hz, so above 447 Hz an ordinary stroke is the statistical bed and
+nothing else, while the six shell ring modes that could fill 0.5-1.7 kHz are
+switched off. Resolving that region with modes instead is not an option — the
+Weyl count puts about 3100 resonators between 447 Hz and 2 kHz on that drum —
+so the wood is the only discrete source available there. A head-to-shell path
+driven by the membrane's own boundary shear at the rim is implemented behind
+a review switch and is off: it selects modes correctly and is clearly audible,
+but being one-way it lets an undiminished head pump the shell, which stretches
+the fundamental band's T60 from 2.24 s to 3.51 against a real 1.90. Closing it
+needs the coupling loss that a one-way path omits. See `Docs/decisions.md`.
+
+The hide is likewise more uniform than a real one. Every degenerate pair is
+split by one fixed constant worth 5.1 cents, beating once every 3.4 seconds at
+100 Hz, and the fundamental band's envelope ripple measures 1.7 dB where stage
+captures hold 4.9. A per-drum thickness variation is implemented behind a
+second switch, also off: at 2.5 % it moves the ripple to 2.1 dB, which is the
+right direction and not far enough, so the depth still needs a screened range
+and a listening test.
 
 The continuum is also carrying more of the drum than it should. On the factory
 ō-daiko its lowest bands are louder than the head's own modes in the pitch

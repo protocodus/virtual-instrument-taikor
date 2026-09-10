@@ -294,7 +294,11 @@ public:
         // entry rather than the calibrated twenty. Neither is re-pinned.
         continuumAboveBank = 1u << 5,
         fullBankContact = 1u << 6,
-        reviewCandidates = 0x60u
+        // The head's rim shear driving the shell on every stroke, and a hide
+        // whose thickness varies the way a real one does. Both off by default.
+        headToShellPath = 1u << 7,
+        hideInhomogeneity = 1u << 8,
+        reviewCandidates = 0x1e0u
     };
     static void setRealismFeatures (std::uint32_t mask) noexcept;
     [[nodiscard]] static std::uint32_t realismFeatures() noexcept;
@@ -566,6 +570,21 @@ private:
         // to sense head displacement and to spread force back into the bank.
         float inverseModalMass { 0.0f };
         float contactShape { 0.0f };
+        // The head-to-shell path. A membrane mode clamped at the rim pulls on
+        // the shell with the tension times its own slope there, and that line
+        // force only reaches a ring mode of the same circumferential order:
+        // the overlap integral of cos(m theta) against cos(n theta) is zero
+        // otherwise. So one resolved mode drives exactly one shell resonator,
+        // shellRingIndex, with shellRimCoupling newtons of generalised force
+        // per unit of this mode's resonator state. On a shell mode the same
+        // index names itself and rimDrive converts that force to its input.
+        // -1 on any mode with no partner: every axisymmetric mode, every
+        // circumferential order the six ring modes do not cover, and the
+        // sine-oriented member of every pair, whose overlap with the single
+        // cosine-oriented ring resonator is also zero.
+        float shellRimCoupling { 0.0f };
+        float rimDrive { 0.0f };
+        std::int8_t shellRingIndex { -1 };
         // Batter-head participation and the area-averaged gradient norm of
         // this spatial basis. Together they recover the membrane strain that
         // drives Berger/von Karman tension without depending on output scale.
@@ -714,6 +733,12 @@ private:
         std::uint32_t noiseState { 1u };
 
         std::array<Mode, resonatorCount> modes {};
+        // Rim shear accumulated by the head this sample, spent by the wood on
+        // the next one. One sample of delay keeps the exchange to a single
+        // pass over a bank whose shell modes are scattered through it by
+        // lifetime, and is 21 microseconds against ring modes no lower than
+        // 97 Hz.
+        std::array<float, shellResonatorCount> shellRimForce {};
         int modeCount { 0 };
         int activeModeCount { 0 };
         // Force already projected into stable physical-mode order. Every due
@@ -1333,8 +1358,14 @@ private:
         int performer) noexcept;
     // Fixed per-head split of a non-axisymmetric cosine/sine pair. Both the
     // renderer and the angle-aware pitch estimate must use the same two poles.
-    [[nodiscard]] static float nonAxisymmetricDetune (int entryIndex,
-                                                       int branch) noexcept;
+    // A stable per-drum seed for the hide's asymmetry.
+    [[nodiscard]] static std::uint32_t hideSeedFor (const DrumState& drum) noexcept;
+
+    // The split between the two members of a degenerate pair. `hideSeed`
+    // makes the asymmetry the drum's own; it is ignored unless the
+    // hideInhomogeneity candidate is on.
+    [[nodiscard]] static float nonAxisymmetricDetune (
+        int entryIndex, int branch, std::uint32_t hideSeed = 0u) noexcept;
     [[nodiscard]] static float nextNoise (std::uint32_t& state) noexcept;
 
     // The whole (0,1) pair of a resolved drum: both branches, their

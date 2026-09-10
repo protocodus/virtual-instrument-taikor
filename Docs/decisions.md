@@ -258,3 +258,76 @@ C is separately ruled out on its own terms: it leaves every noise descriptor
 where A had them (flatness −22 dB, tail +5.9 dB above the pitch band) while
 moving levels by 8 dB down on the large drums and 11 dB up on the okedo. It
 does not address the complaint it was rendered for.
+
+## 2026-09-10 — the wood and the hide: screened before rendering
+
+**The question.** The user's reading of the noise result was that the model
+leans on air and neglects the wood and the skin. Checking it against the code
+bore both halves out. Three of the four strokes never reach the shell at all:
+Don, Edge and Muted all carry `shellGain` 0 and `strikesHoop` false, so only a
+rim shot wakes the body. On the factory ō-daiko every one of the 152 membrane
+resonators sits between 33 and 447 Hz, while the six shell ring modes sit at
+97, 273, 524, 847, 1243 and 1711 Hz — so above 447 Hz an ordinary stroke is
+the statistical bed and nothing else, and the only discrete source that could
+live there is switched off. Separately, every degenerate pair is split by one
+fixed constant worth 5.1 cents, which beats once every 3.4 seconds at 100 Hz:
+slower than the note, which is why the envelope ripple has failed in every
+letter of every set so far.
+
+Two mechanisms follow, and this entry records the screen rather than a
+verdict. No listening test was run, because the rule adopted after the noise
+round is that a candidate does not reach the ear while any descriptor group
+sits further from real than it started.
+
+| Letter | What it is | Screen |
+| --- | --- | --- |
+| A | Shipping engine | baseline |
+| B | Head-to-shell path: the membrane's boundary shear at the rim drives the ring mode of matching circumferential order, on every stroke | **fails** |
+| C | Per-drum hide inhomogeneity: 2.5 % areal-density variation replacing the single 5.1-cent split | passes, under-dosed |
+| D | Both | fails, with B |
+
+**The projection is derived, not drawn.** A head clamped at the rim cannot
+move there but it pulls: the tension times the mode's own slope at r = a is a
+radial line force on the shell. For a mode at a zero of J_m that slope is
+-(lambda/a) J_(m+1)(lambda), and integrating it against a ring mode's
+cos(n theta) around the circumference gives -pi T lambda J_(m+1)(lambda) where
+the orders match and exactly zero where they do not. The radius cancels. This
+is why the earlier attempt failed and was removed: it copied the stick's
+solved contact force into the ring modes, which is neither the right source
+nor the right selection rule, and it let the light okedo body overwhelm its
+head. The rim shear scales with each mode's own amplitude and reaches only its
+matching ring mode, and it behaves accordingly — edge strokes gain most,
+because they drive the high circumferential orders the ring modes answer to:
++16.2 dB on the nagadō's Edge, +5.4 on the ō-daiko's, against +1 to +2.4 dB
+for a Don and nothing at all on the shime.
+
+**Why B fails.** Measured against the same real captures, it improves what it
+was built to improve — prominent partials from 15 to 17.5 against a real 23,
+the strongest partial above the pitch from -3.5 dB to -10.0 against a real
+-7.3 — and inflates two things it was not asked to touch: the fundamental
+band's T60 from 2.24 s to 3.51 against a real 1.90, and the 1.5-5 kHz tail
+from -38.7 dB to -51.9 against a real -28.8. The leading explanation is that
+the path is one-way. The shell receives the head's rim shear and the head
+never loses what the shell gains, so over a two-second tail an undiminished
+head pumps a shell whose Q is 12 to 52 and the body outlasts the drum. The
+246 kg of shell against a head modal mass under a kilogram justifies
+neglecting the shell's push back on the head's *motion*; it does not justify
+neglecting the *energy* over a long tail.
+
+**What it licensed.** Nothing ships. Both switches exist in
+`TaikoEngine::setRealismFeatures` and are off, and the released render is
+byte-identical. The next piece of work is named rather than guessed: a
+coupling loss on the coupled membrane modes, since the power a mode delivers
+into the shell is a decay rate it should be paying, computable from the
+coupling and the shell's impedance without the shell's state. A fully
+reciprocal exchange would additionally need the shell's radiating area
+separated from its drive so that its resonator state is a physical
+displacement, which would move the released rim-shot sound and require
+re-pinning.
+
+**C passes and is too small.** The ripple moves from 1.73 dB to 2.11 against a
+real 4.87, the partial balance improves with it, and nothing regresses beyond
+one and a half prominent partials. Two interquartile ranges still separate it
+from real, so 2.5 % is smaller than real hide varies. The honest next step is
+to screen a range of depths and put the two or three that survive to the ear,
+rather than shipping the first one tried.

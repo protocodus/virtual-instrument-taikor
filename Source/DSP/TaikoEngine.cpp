@@ -1546,6 +1546,11 @@ void TaikoEngine::beginMode (Mode& mode, float omega, float frequency,
                    * static_cast<double> (frequency);
     mode.decayRate = decay;
     mode.appliedPalmDecay = 0.0f;
+    // Cleared here because a rebuilt bank reuses this storage and only the
+    // modes that have a partner set these again.
+    mode.shellRimCoupling = 0.0f;
+    mode.rimDrive = 0.0f;
+    mode.shellRingIndex = -1;
 }
 
 void TaikoEngine::axisymmetricDiagonals (const DrumState& drum,
@@ -1668,16 +1673,48 @@ std::uint32_t TaikoEngine::performerRandomSalt (int performer) noexcept
     return hash32 (static_cast<std::uint32_t> (performer) * 0x9e3779b9u);
 }
 
-float TaikoEngine::nonAxisymmetricDetune (int entryIndex, int branch) noexcept
+std::uint32_t TaikoEngine::hideSeedFor (const DrumState& drum) noexcept
+{
+    // The drum's own geometry, so the hide is a property of the instrument
+    // and needs no extra state plumbed to the two places that ask for it.
+    std::uint32_t bits = 0u;
+    const float radius = drum.radius;
+    std::memcpy (&bits, &radius, sizeof (bits));
+    return hash32 (bits);
+}
+
+float TaikoEngine::nonAxisymmetricDetune (int entryIndex, int branch,
+                                          std::uint32_t hideSeed) noexcept
 {
     // A real head is never quite uniform, so each degenerate pair sits a
     // fraction of a percent apart and beats. The asymmetry belongs to the hide,
     // not the stroke, and is therefore fixed for a physical mode.
+    //
+    // The shipped depth splits a pair by 5.1 cents, which beats once every
+    // 3.4 seconds at 100 Hz - slower than the note lasts, so in practice the
+    // released heads do not beat at all. Measured against real captures the
+    // fundamental band's envelope ripple is 1.7 dB where stage recordings
+    // hold 4.9 dB, and that gap has survived every candidate tried so far.
+    //
+    // A hide is a skin: its thickness varies by several percent across one
+    // head, and areal density enters the frequency as its square root, so a
+    // perturbation of order 2.5 % splits a pair by about a percent and a
+    // quarter - 21 cents, beating once a second at 100 Hz. That is the
+    // candidate depth. Its exact size is a voicing choice and is what a
+    // listening test is for; that it is far larger than 5 cents is not.
     constexpr std::uint32_t headSeed = 0x9e3779b9u;
-    constexpr float splitDepth = 0.0016f;
+    constexpr float shippedDepth = 0.0016f;
+    constexpr float inhomogeneousDepth = 0.0062f;
+    const bool varied = hasRealismFeature (hideInhomogeneity);
+    const float splitDepth = varied ? inhomogeneousDepth : shippedDepth;
+    // Off, the asymmetry is one head repeated on every drum. On, the seed
+    // carries the drum, so each instrument's hide is its own and the same
+    // drum always beats the same way.
+    const std::uint32_t seed = headSeed
+                             + static_cast<std::uint32_t> (entryIndex)
+                             + (varied ? hideSeed : 0u);
     return 1.0f + splitDepth * (branch == 0 ? 1.0f : -1.0f)
-                    * (1.0f + 0.5f * signedUnitFromHash (
-                           headSeed + static_cast<std::uint32_t> (entryIndex)));
+                    * (1.0f + 0.5f * signedUnitFromHash (seed));
 }
 
 float TaikoEngine::nextNoise (std::uint32_t& state) noexcept
@@ -1965,6 +2002,7 @@ void TaikoEngine::silenceVoice (Voice& voice) noexcept
     voice.tensionDepth = 0.0f;
     voice.localMuteBaseDampingRates.fill (0.0f);
     voice.modalInput.fill (0.0f);
+    voice.shellRimForce.fill (0.0f);
     voice.modeProjection.fill (0.0f);
     voice.contactProjection.fill (0.0f);
     voice.continuumInjection.fill (0.0f);
@@ -2556,7 +2594,8 @@ TaikoEngine::ModeObservation TaikoEngine::observeMode (const DrumState& drum,
         // The renderer always builds two slightly detuned resonators. At exact
         // zero angle only the cosine member is driven, but it is still that
         // member's split pole rather than the unsplit parent frequency.
-        omega = omegaBatter * nonAxisymmetricDetune (entryIndex, branch);
+        omega = omegaBatter * nonAxisymmetricDetune (entryIndex, branch,
+                                                     hideSeedFor (drum));
         const float frequency = omega / (2.0f * piFloat);
         const float efficiency =
             radiationEfficiency (order, omega * radius / soundSpeed);
@@ -3779,6 +3818,7 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
     const float referenceMicProximity =
         micProximityFor (continuumReferenceDistanceMetres);
 
+    const std::uint32_t hideSeed = hideSeedFor (drum);
     const float edgeLoss = drum.edgeLoss * (1.0f + 3.0f * extraDamping);
     // The hide's own loss, kept as the two coefficients materialDamping sums
     // rather than as that sum, so a retuned mode can be re-damped at its new
@@ -4053,7 +4093,8 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
                 if (count >= membraneResonatorCount)
                     break;
 
-                const float detune = nonAxisymmetricDetune (entryIndex, branch);
+                const float detune = nonAxisymmetricDetune (entryIndex, branch,
+                                                            hideSeed);
                 const float omega = omegaBatter * detune;
                 const float frequency = omega / (2.0f * piFloat);
                 if (frequency >= nyquist * 0.98f)
@@ -4160,6 +4201,27 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
                 mode.resonantParticipation = 0.0f;
                 mode.batterTensionFraction = batterTensileShare;
                 mode.stretchNorm = 0.5f * lambda * lambda * besselSquared;
+                // A head clamped at the rim cannot move there, but it pulls:
+                // the tension times the mode's own slope at r = a is a radial
+                // line force on the shell. For a mode sitting at a zero of
+                // J_m that slope is -(lambda/a) J_(m+1)(lambda), and
+                // integrating it against a ring mode's cos(n theta) over the
+                // circumference gives -pi T lambda J_(m+1)(lambda) where the
+                // orders match and exactly zero where they do not. The radius
+                // cancels: the arc length restores the a the slope divided
+                // out. Carrying 1/modelScale turns the resonator state into
+                // the metres the derivation is written in.
+                if (branch == 0 && hasRealismFeature (headToShellPath))
+                {
+                    const int ring = order - 2;
+                    if (ring >= 0 && ring < shellResonatorCount)
+                    {
+                        mode.shellRingIndex = static_cast<std::int8_t> (ring);
+                        mode.shellRimCoupling =
+                            -piFloat * drum.tension * lambda * besselAtZero
+                            / modelScale;
+                    }
+                }
                 mode.drive = drive * profile.membraneGain * modelScale;
                 if (buildComplexObservation)
                 {
@@ -4278,6 +4340,18 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
         mode.stretchNorm = 0.0f;
         mode.batterTensionFraction = 0.0f;
         mode.drive = level * modelScale;
+        // The identical force-over-modal-mass path the hoop drive above uses,
+        // but gated on the body's own level instead of on the stroke catching
+        // the hoop, because the rim shear is there on every stroke.
+        mode.shellRingIndex = static_cast<std::int8_t> (index);
+        mode.rimDrive = hasRealismFeature (headToShellPath)
+            ? bodyLevel * shellCalibration * radiatingArea
+                  / (effectiveWoodMass * omega * rate)
+                  / (1.0f + 0.35f * static_cast<float> (index))
+                  * shellPerspectiveGain (drum, index + 2, omega, frequency,
+                                          micDistance)
+                  * modelScale
+            : 0.0f;
         mode.micLeft = shellL;
         mode.micRight = shellR;
         mode.micLeftQuadrature = 0.0f;
@@ -4568,7 +4642,12 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
             std::abs (mode.drive) * std::max (
                 std::hypot (mode.micLeft, mode.micLeftQuadrature),
                 std::hypot (mode.micRight, mode.micRightQuadrature));
-        const float relative = magnitude / peakMagnitude;
+        // A rim-fed shell mode is driven by the head for as long as the head
+        // rings, so its lifetime cannot be read from a stroke drive that is
+        // zero on every stroke which misses the hoop. Six resonators out of a
+        // hundred and fifty-eight is a cheap exemption.
+        const bool rimFed = ! mode.membrane && mode.rimDrive != 0.0f;
+        const float relative = rimFed ? 1.0f : magnitude / peakMagnitude;
 
         if (mode.decayRate <= 0.0f || relative <= modeRetirementFloor)
         {
@@ -6921,6 +7000,18 @@ float TaikoEngine::renderVoice (Voice& voice, Voice* physical,
     }
     const double parametricScale = 0.25 / (sampleRate_ * sampleRate_);
 
+    // The head's pull on the shell, gathered last sample and spent now. Read
+    // and cleared here so the loop below can refill it in the same pass,
+    // whatever order the sort left the shell modes in.
+    const bool rimPathActive = voice.physicalBank && renderModeCount > 0
+                            && hasRealismFeature (headToShellPath);
+    std::array<float, shellResonatorCount> rimForce {};
+    if (rimPathActive)
+    {
+        rimForce = voice.shellRimForce;
+        voice.shellRimForce.fill (0.0f);
+    }
+
     for (int index = 0; index < renderModeCount; ++index)
     {
         auto& mode = voice.modes[static_cast<std::size_t> (index)];
@@ -6934,6 +7025,17 @@ float TaikoEngine::renderVoice (Voice& voice, Voice* physical,
         // by a stick is nowhere near its elastic limit, so there is nothing
         // here for a saturator to do. testShellResonanceHasNoStepInIt keeps it
         // that way.
+        if (rimPathActive && mode.shellRingIndex >= 0)
+        {
+            const auto ring = static_cast<std::size_t> (mode.shellRingIndex);
+            if (mode.membrane)
+                voice.shellRimForce[ring] +=
+                    mode.shellRimCoupling * static_cast<float> (mode.resonator.y1);
+            else
+                voice.modalInput[static_cast<std::size_t> (mode.physicalIndex)]
+                    += mode.rimDrive * rimForce[ring];
+        }
+
         float value = 0.0f;
         const float ripple = parametricActive && mode.membrane
             ? entryRipple[mode.modeEntry] : 0.0f;
