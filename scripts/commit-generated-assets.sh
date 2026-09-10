@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ $# -lt 2 || $# -gt 4 ]]; then
     echo "usage: $0 source_sha generated_asset_dir [remote] [distribution_url]" >&2
@@ -9,6 +10,7 @@ SOURCE_SHA="$1"
 ASSET_DIR="$(cd "$2" && pwd)"
 REMOTE="${3:-origin}"
 DISTRIBUTION_URL="${4:-}"
+BUILD_NUMBER="$(python3 "${SCRIPT_DIR}/release_metadata.py")"
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "${REPO_ROOT}"
 
@@ -27,7 +29,7 @@ fi
 
 README_COPY="$(mktemp "${TMPDIR:-/tmp}/taikor-readme.XXXXXX")"
 trap 'rm -f "${README_COPY}"' EXIT
-python3 - "${ASSET_DIR}" "${README_COPY}" "${SOURCE_SHA}" "${DISTRIBUTION_URL}" "$#" <<'PY'
+python3 - "${ASSET_DIR}" "${README_COPY}" "${SOURCE_SHA}" "${DISTRIBUTION_URL}" "$#" "${BUILD_NUMBER}" <<'PY'
 import os
 import pathlib
 import re
@@ -79,7 +81,7 @@ if sys.argv[5] == "4":
     peak_stop = readme_bytes.index(end.encode()) + len(end)
     if start > stop or (start < peak_stop and stop > peak_start):
         sys.exit("error: distribution link markers are reversed or overlap the peaks table")
-    link = (f"\n**[Download latest distribution]({url})** — built from "
+    link = (f"\n**[Download latest distribution]({url})** — build {sys.argv[6]}, built from "
             f"[`{source_sha[:12]}`](https://github.com/{repository}/commit/{source_sha}).\n")
     readme_bytes = readme_bytes[:start] + link.encode("utf-8") + readme_bytes[stop:]
 

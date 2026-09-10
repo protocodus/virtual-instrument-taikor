@@ -6,6 +6,8 @@ from pathlib import Path
 import re
 from zipfile import ZIP_DEFLATED, ZipFile
 
+from release_metadata import package_prefix
+
 
 def package(build_dir: Path, config: str) -> Path:
     project_dir = Path(__file__).resolve().parent.parent
@@ -17,6 +19,7 @@ def package(build_dir: Path, config: str) -> Path:
     )
     if len(versions) != 1 or not re.fullmatch(r"\d+(?:\.\d+){1,3}", versions[0]):
         raise ValueError("Expected one valid CMake project version")
+    prefix = package_prefix(versions[0])
 
     required = (
         "VST3/Taikor.vst3/Contents/x86_64-win/Taikor.vst3",
@@ -38,7 +41,10 @@ def package(build_dir: Path, config: str) -> Path:
 
     dist = build_dir / "dist"
     dist.mkdir(parents=True, exist_ok=True)
-    archive_path = dist / f"Taikor-{versions[0]}-Windows-x64.zip"
+    archive_path = dist / f"{prefix}-Windows-x64.zip"
+    # Wildcard-driven publication must not upload a previous build as well.
+    for stale in dist.glob("Taikor-*-Windows-x64.zip"):
+        stale.unlink()
     with ZipFile(archive_path, "w", compression=ZIP_DEFLATED) as archive:
         # Include the complete VST3 bundle, including its generated module info.
         for directory in ("VST3/Taikor.vst3", "CLAP", "Standalone"):

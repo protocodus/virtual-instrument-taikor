@@ -18,7 +18,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
     exit 1
 fi
 
-for tool in codesign ditto lipo pkgbuild; do
+for tool in codesign ditto lipo pkgbuild python3; do
     command -v "${tool}" >/dev/null 2>&1 || {
         echo "error: required tool '${tool}' was not found" >&2
         exit 1
@@ -69,6 +69,7 @@ if [[ -n "${VERSION_OVERRIDE}" && "${VERSION_OVERRIDE}" != "${VERSION}" ]]; then
     echo "error: VERSION=${VERSION_OVERRIDE} does not match bundle version ${VERSION}" >&2
     exit 1
 fi
+PACKAGE_PREFIX="$(python3 "${SCRIPT_DIR}/release_metadata.py" --version "${VERSION}")"
 
 VST3_ARCHS="$(lipo -archs "${VST3}/Contents/MacOS/Taikor")"
 AU_ARCHS="$(lipo -archs "${AU}/Contents/MacOS/Taikor")"
@@ -158,9 +159,9 @@ sign_bundle "${PACKAGE_ROOT}/Library/Audio/Plug-Ins/Components/Taikor.component"
 sign_bundle "${PACKAGE_ROOT}/Library/Audio/Plug-Ins/CLAP/Taikor.clap"
 sign_bundle "${PACKAGE_ROOT}/Applications/Taikor.app"
 
-ZIP_PATH="${DIST_DIR}/Taikor-${VERSION}-macOS-${ARTIFACT_ARCH}.zip"
-PKG_UNSIGNED="${DIST_DIR}/Taikor-${VERSION}-unsigned.pkg"
-PKG_FINAL="${DIST_DIR}/Taikor-${VERSION}-macOS-${ARTIFACT_ARCH}.pkg"
+ZIP_PATH="${DIST_DIR}/${PACKAGE_PREFIX}-macOS-${ARTIFACT_ARCH}.zip"
+PKG_UNSIGNED="${DIST_DIR}/${PACKAGE_PREFIX}-unsigned.pkg"
+PKG_FINAL="${DIST_DIR}/${PACKAGE_PREFIX}-macOS-${ARTIFACT_ARCH}.pkg"
 
 # Leave exactly one Taikor release set in dist, avoiding stale version or
 # architecture names in wildcard-driven CI publication.

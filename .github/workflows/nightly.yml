@@ -134,8 +134,8 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           packages=(
-            build-macos/dist/Taikor-*-macOS-universal.zip
-            build-macos/dist/Taikor-*-macOS-universal.pkg
+            build-macos/dist/Taikor-*-build-${GITHUB_RUN_NUMBER}-macOS-universal.zip
+            build-macos/dist/Taikor-*-build-${GITHUB_RUN_NUMBER}-macOS-universal.pkg
           )
           if (( ${#packages[@]} != 2 )); then
             echo "error: expected one zip and one pkg, found ${#packages[@]}" >&2
@@ -148,10 +148,10 @@ jobs:
       - name: Upload the distributable packages
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: distribution-packages-macos
+          name: distribution-packages-build-${{ github.run_number }}-macos
           path: |
-            build-macos/dist/Taikor-*-macOS-universal.zip
-            build-macos/dist/Taikor-*-macOS-universal.pkg
+            build-macos/dist/Taikor-*-build-${{ github.run_number }}-macOS-universal.zip
+            build-macos/dist/Taikor-*-build-${{ github.run_number }}-macOS-universal.pkg
           if-no-files-found: error
           retention-days: 30
 
@@ -190,37 +190,13 @@ jobs:
             --target Taikor_VST3 Taikor_CLAP Taikor_Standalone
 
       - name: Package (Linux x64 tarball)
-        run: |
-          set -euo pipefail
-          artefacts="build-linux/Taikor_artefacts/Release"
-          test -d "$artefacts/VST3/Taikor.vst3"
-          test -s "$artefacts/CLAP/Taikor.clap"
-          test -x "$artefacts/Standalone/Taikor"
-          dist="build-linux/dist"
-          mkdir -p "$dist"
-          version="$(sed -n 's/^CMAKE_PROJECT_VERSION:STATIC=//p' build-linux/CMakeCache.txt)"
-          if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+){1,3}$ ]]; then
-            echo "error: invalid CMake project version: ${version:-missing}" >&2
-            exit 1
-          fi
-          archive="$dist/Taikor-${version}-Linux-x64.tar.gz"
-          # Licence and notice files ship inside the binary archive (the MIT
-          # licence requires the notice to accompany binaries).
-          contents=("VST3/Taikor.vst3" "CLAP/Taikor.clap" "Standalone/Taikor")
-          for notice in LICENSE THIRD_PARTY_NOTICES.md ThirdParty/*-LICENSE.md; do
-            test -s "$notice"
-            cp "$notice" "$artefacts/$(basename "$notice")"
-            contents+=("$(basename "$notice")")
-          done
-          tar -czf "$archive" -C "$artefacts" "${contents[@]}"
-          test -s "$archive"
-          tar -tzf "$archive" >/dev/null
+        run: bash scripts/package-linux.sh
 
       - name: Upload the distributable Linux package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: distribution-packages-linux
-          path: build-linux/dist/Taikor-*-Linux-x64.tar.gz
+          name: distribution-packages-build-${{ github.run_number }}-linux
+          path: build-linux/dist/Taikor-*-build-${{ github.run_number }}-Linux-x64.tar.gz
           if-no-files-found: error
           retention-days: 30
 
@@ -247,8 +223,8 @@ jobs:
       - name: Upload the distributable Windows package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: distribution-packages-win
-          path: build-win/dist/Taikor-*-Windows-x64.zip
+          name: distribution-packages-build-${{ github.run_number }}-win
+          path: build-win/dist/Taikor-*-build-${{ github.run_number }}-Windows-x64.zip
           if-no-files-found: error
           retention-days: 30
 
@@ -302,7 +278,7 @@ jobs:
       - name: Download every package
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          pattern: distribution-packages-*
+          pattern: distribution-packages-build-${{ github.run_number }}-*
           merge-multiple: true
           path: dist
 
@@ -312,7 +288,7 @@ jobs:
           shopt -s nullglob
           # Deliberately expand this glob so the array contains every match.
           # shellcheck disable=SC2206
-          mac_zips=(dist/Taikor-*-macOS-universal.zip)
+          mac_zips=(dist/Taikor-*-build-${GITHUB_RUN_NUMBER}-macOS-universal.zip)
           if (( ${#mac_zips[@]} != 1 )); then
             echo "error: expected exactly one macOS zip, found ${#mac_zips[@]}" >&2
             printf '  %s\n' "${mac_zips[@]:-(none)}" >&2
@@ -320,16 +296,16 @@ jobs:
           fi
           filename="${mac_zips[0]##*/}"
           version="${filename#Taikor-}"
-          version="${version%-macOS-universal.zip}"
+          version="${version%-build-${GITHUB_RUN_NUMBER}-macOS-universal.zip}"
           if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+){1,3}$ ]]; then
             echo "error: invalid version in $filename" >&2
             exit 1
           fi
           expected=(
-            "dist/Taikor-${version}-macOS-universal.zip"
-            "dist/Taikor-${version}-macOS-universal.pkg"
-            "dist/Taikor-${version}-Linux-x64.tar.gz"
-            "dist/Taikor-${version}-Windows-x64.zip"
+            "dist/Taikor-${version}-build-${GITHUB_RUN_NUMBER}-macOS-universal.zip"
+            "dist/Taikor-${version}-build-${GITHUB_RUN_NUMBER}-macOS-universal.pkg"
+            "dist/Taikor-${version}-build-${GITHUB_RUN_NUMBER}-Linux-x64.tar.gz"
+            "dist/Taikor-${version}-build-${GITHUB_RUN_NUMBER}-Windows-x64.zip"
           )
           for asset in "${expected[@]}"; do
             if [[ ! -s "$asset" ]]; then
@@ -365,8 +341,8 @@ jobs:
         working-directory: dist
         run: |
           set -euo pipefail
-          printf 'Repository: %s\nCommit: %s\nBuild: %s\n' \
-            "$SOURCE_REPOSITORY" "$SOURCE_SHA" "$RUN_URL" > BUILD-INFO.txt
+          printf 'Repository: %s\nCommit: %s\nBuild number: %s\nBuild: %s\n' \
+            "$SOURCE_REPOSITORY" "$SOURCE_SHA" "$GITHUB_RUN_NUMBER" "$RUN_URL" > BUILD-INFO.txt
           find Taikor-* previews -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
 
       # Retained on the workflow run itself, downloadable by anyone with repo
@@ -375,7 +351,7 @@ jobs:
         id: distribution
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: taikor-distribution-${{ github.sha }}
+          name: taikor-distribution-build-${{ github.run_number }}-${{ github.sha }}
           path: dist
           if-no-files-found: error
           retention-days: 30

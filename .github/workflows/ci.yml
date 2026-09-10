@@ -43,6 +43,9 @@ jobs:
             -DTAIKOR_BUILD_PLUGIN=OFF \
             -DBUILD_TESTING=ON
 
+      - name: Test packaging and distribution publication
+        run: python3 -m unittest discover -s Tests -p 'test_packaging.py' -v
+
       - name: Build and test DSP engine
         run: |
           cmake --build build-dsp --parallel
@@ -80,32 +83,13 @@ jobs:
             --target Taikor_VST3 Taikor_CLAP Taikor_Standalone
 
       - name: Package Linux VST3, CLAP and standalone
-        run: |
-          set -euo pipefail
-          artefacts="build-dsp/Taikor_artefacts/Release"
-          test -d "$artefacts/VST3/Taikor.vst3"
-          test -s "$artefacts/CLAP/Taikor.clap"
-          test -x "$artefacts/Standalone/Taikor"
-          dist="build-dsp/dist"
-          mkdir -p "$dist"
-          archive="$dist/Taikor-Linux-x64.tar.gz"
-          # Licence and notice files ship inside the binary archive (the MIT
-          # licence requires the notice to accompany binaries).
-          contents=("VST3/Taikor.vst3" "CLAP/Taikor.clap" "Standalone/Taikor")
-          for notice in LICENSE THIRD_PARTY_NOTICES.md ThirdParty/*-LICENSE.md; do
-            test -s "$notice"
-            cp "$notice" "$artefacts/$(basename "$notice")"
-            contents+=("$(basename "$notice")")
-          done
-          tar -czf "$archive" -C "$artefacts" "${contents[@]}"
-          test -s "$archive"
-          tar -tzf "$archive" >/dev/null
+        run: BUILD_DIR=build-dsp bash scripts/package-linux.sh
 
       - name: Upload Linux package
         uses: actions/upload-artifact@v4
         with:
-          name: ci-linux
-          path: build-dsp/dist/Taikor-Linux-x64.tar.gz
+          name: ci-linux-build-${{ github.run_number }}
+          path: build-dsp/dist/Taikor-*-build-${{ github.run_number }}-Linux-x64.tar.gz
           if-no-files-found: error
           retention-days: 7
 
@@ -182,7 +166,7 @@ jobs:
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
         with:
-          name: ci-windows
-          path: build-win/dist/Taikor-*-Windows-x64.zip
+          name: ci-windows-build-${{ github.run_number }}
+          path: build-win/dist/Taikor-*-build-${{ github.run_number }}-Windows-x64.zip
           if-no-files-found: error
           retention-days: 7
