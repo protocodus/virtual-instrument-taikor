@@ -30,3 +30,7 @@ DerivedData/
 # Scratch worktrees created by agent tooling: each is a full checkout of this
 # repository, so committing one would nest the tree inside itself.
 /.claude/worktrees/
+
+# Python tooling caches
+__pycache__/
+*.pyc
