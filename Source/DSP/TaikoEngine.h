@@ -3,6 +3,9 @@
 #include "OutputLimiter.h"
 #include "OutputHighPass.h"
 #include "StereoPan.h"
+#include "BachiModel.h"
+#include "CoupledCavity.h"
+#include "PhysicalDrumProfile.h"
 
 #include <array>
 #include <atomic>
@@ -99,9 +102,10 @@ struct DrumDescription
     std::string_view summary;
     // Modeled membrane diameter in metres, not a measured replica specification.
     float headDiameterMetres { 0.95f };
-    // Body depth, head tension, head material and shell material in control
-    // units. See drumDescriptionTable in TaikoEngine.cpp for where each number
-    // comes from.
+    // Body depth, head tension and shell material in control units. The HEAD
+    // field is the neutral global trim, with its family's independently
+    // specified skin properties in PhysicalDrumProfile. The tension coordinate
+    // is multiplied by that module's explicit factory tuning scale.
     float bodyDepth { 0.5f };
     float tension { 0.55f };
     float headMaterial { 0.75f };
@@ -131,23 +135,19 @@ struct EngineParameters
     // enclosed volume is what couples the two heads, so a shallow drum splits
     // its axisymmetric modes much further apart than a deep one.
     float bodyDepth { 0.5f };
-    // Head tension. Mapped geometrically onto 1.2..22 kN/m, the range a tacked
-    // or rope-laced hide actually occupies. Wave speed is sqrt(T/sigma), so
-    // this and the head material together set the pitch.
+    // Reference head-tension control, mapped geometrically onto 1.2..22 kN/m
+    // before the explicit family/retuning scales in PhysicalDrumProfile.
+    // Wave speed is sqrt(T/sigma); 1 Drum allows extended synthetic retuning.
     float tension { 0.62f };
-    // 0 = thin synthetic film, 1 = thick heavy cowhide. Sets the head's areal
-    // density, its internal loss factor and its bending stiffness at once,
-    // because all three come from the same piece of material - and the last of
-    // them goes as the cube of the thickness, so the two ends of this control
-    // are two and a half orders of magnitude apart in how far they open the
-    // modal ratios out.
+    // 0 = explicit synthetic film; 0.20..1 trim the family's natural hide.
+    // 0.75 is its reference specimen. Mass, thickness, modulus and losses are
+    // separate physical properties; a light natural head remains natural.
     float headMaterial { 0.75f };
     // 0 = light laminated ply, 1 = dense carved zelkova. Sets the shell's ring
     // frequencies, their Q, and how much the rim absorbs from the head.
     float shellMaterial { 0.8f };
-    // Tension of the far (resonant) head relative to the batter head,
-    // 0 -> 0.85, 1 -> 1.15. Detuning the pair is the traditional way to
-    // lengthen or shorten a taiko's boom.
+    // Trim on the far head's independently specified family tension ratio,
+    // 0 -> 0.85, 1 -> 1.15. Changing the pair changes the coupled boom.
     float resonantTension { 0.5f };
     // How strongly the enclosed air ties the two heads together. 0 leaves the
     // batter head free, as though the body were open; 1 is a fully sealed
@@ -164,9 +164,10 @@ struct EngineParameters
     float pitch { 0.0f };
 
     // --- The stroke -----------------------------------------------------
-    // 0 = a soft felt-wrapped beater, 1 = a hard oak bachi. Drives the Hertz
-    // contact stiffness, which sets how long the stick stays on the head and
-    // therefore how much high partial content a stroke carries.
+    // Soft -> hard effective contact compliance for this family's bare wooden
+    // bachi. Wood softness does not turn it into a felt-wrapped beater. Drives
+    // contact stiffness and therefore contact duration/high partial excitation;
+    // each family's stick also has its own physical mass and tip size.
     float bachiHardness { 0.7f };
     // Bipolar move from each stroke's own strike radius, -1 towards its
     // established centre limit and +1 towards its established rim limit. The
@@ -196,18 +197,10 @@ struct EngineParameters
     // At 0 the authored position is exact, but small speed/contact variation
     // remains. Reset replays the sequence for repeatable offline rendering.
     float humanise { 0.4f };
-    // What an octave up the keyboard actually changes, 0..1. At 0 the drum
-    // described by the controls above is simply retuned - same head, same body,
-    // same hide, more tension - which is one drum played four times. At 1 each
-    // octave is its own instrument: the o-daiko, the chu-daiko, the okedo-daiko
-    // and the shime-daiko of getDrumDescription, each with its own diameter,
-    // body depth, hide thickness, tension and shell. In between, the drum is
-    // blended from one towards the other.
-    //
-    // It also chooses how the residual tuning is taken, because the four drums
-    // are real instruments and do not land on exact octaves by themselves: at 0
-    // that residual is head tension, at 1 it is the drum's size. Both are how a
-    // drum is actually brought to pitch, and at 1 it is a couple of per cent.
+    // Discrete layout: 0 retunes the reference drum at fixed dimensions;
+    // 1 uses the four declared family geometries and independent skin profiles.
+    // Factory tension priors put their default open strokes on heard octaves.
+    // Host values are quantised to these two supported endpoints by sanitise.
     float octaveBody { 1.0f };
 
     // --- The microphones ------------------------------------------------
@@ -247,6 +240,12 @@ struct EngineParameters
     int ensembleSize { 1 };
     float ensembleVariation { 0.4f };
 
+    // Internal resolved family coordinates, populated by parametersForOctave.
+    // Not host parameters or saved controls; sanitise resets both before use.
+    int physicalFamily { 0 };
+    float physicalFamilyMix { 0.0f };
+    float physicalRearTensionScale { 1.0f };
+
     [[nodiscard]] bool operator== (const EngineParameters&) const noexcept = default;
 };
 
@@ -274,12 +273,10 @@ public:
     // Allocates the voice pool once; nothing after construction allocates.
     TaikoEngine();
 
-    // Review switches for the mechanisms added in September 2026, so an A-Z
-    // listening set can render each one alone against the engine as it
-    // shipped: with every bit clear the render is sample-identical to the
-    // previous release. Process-wide and read at build and render time; the
-    // plug-in never touches them; the five mechanisms ship set and the review
-    // candidates below ship clear.
+    // Process-wide DSP review switches; the plug-in never changes these.
+    // Shared cavity ships enabled. Family skin/bachi profiles and shell
+    // boundary mechanics are always active, so clearing this mask is no longer
+    // a bit-exact reconstruction of a historical release.
     enum RealismFeature : std::uint32_t
     {
         extendedBank = 1u << 0,
@@ -287,15 +284,16 @@ public:
         rearHeadPath = 1u << 2,
         parametricRipple = 1u << 3,
         distinctEnsembleDrums = 1u << 4,
-        allRealismFeatures = 0x1fu,
+        sharedCavity = 1u << 9,
+        allRealismFeatures = 0x21fu,
         // Candidates under review, off by default: the continuum handed off
         // above the whole resolved bank rather than above the calibrated
         // twenty entries, and the bachi contact solved against every resolved
         // entry rather than the calibrated twenty. Neither is re-pinned.
         continuumAboveBank = 1u << 5,
         fullBankContact = 1u << 6,
-        // The head's rim shear driving the shell on every stroke, and a hide
-        // whose thickness varies the way a real one does. Both off by default.
+        // Earlier listening candidates retained for comparison, both off.
+        // The one-way shear path replaces the passive boundary when selected.
         headToShellPath = 1u << 7,
         hideInhomogeneity = 1u << 8,
         reviewCandidates = 0x1e0u
@@ -328,6 +326,9 @@ public:
     // CC having been sent at all.
     void setStrikeAzimuthOverride (float radians) noexcept;
     void setStrikePositionOverride (float normalisedBipolar) noexcept;
+    // Select the struck head for subsequent strokes. Existing contacts retain
+    // their side; the microphone pair stays in front of the batter head.
+    void setRearHeadStrike (bool rear) noexcept { rearHeadStrike_ = rear; }
     void clearStrikeOverrides() noexcept;
     // Pressing the head raises its tension, so the wheel bends the drum up the
     // way a palm does: sharp, and with a slightly shorter tail.
@@ -363,47 +364,24 @@ public:
         float waveSpeedMetresPerSecond { 70.0f };
         // Ideal (0,1) membrane mode, before air loading and cavity coupling.
         float idealFundamentalHz { 100.0f };
-        // Lowest and strongest sounding modes once the air has been accounted
-        // for. On a sealed drum these differ: the cavity lifts the mode that
-        // changes the body's volume well above the one that does not.
+        // Lowest batter-excitable axisymmetric pole at the host rate, and the
+        // shared mode with the strongest net head-volume compliance. The latter
+        // identifies a breathing response even when many radial/air modes mix.
+        // At zero coupling both report the batter's lowest pole; zero means
+        // there is no corresponding in-band mode.
         float loadedFundamentalHz { 88.0f };
         float breathingModeHz { 140.0f };
-        // The pitch the drum is heard at: the mode that reaches the microphones
-        // with the most energy over the window a struck note's pitch is taken
-        // from, under the stroke Strike Position currently describes. On a small
-        // tightly laced head that is the loaded fundamental above; on a large
-        // slack one it is not, because the fundamental has no monopole moment,
-        // reaches the current front observer weakly and is emptied by the
-        // mounting in half a second while the (1,1) mode a fifth and a half
-        // above it rings on. Moving the stick towards the middle of
-        // the head changes it again, because a centred stroke cannot drive a
-        // mode with a nodal diameter at all.
-        //
-        // Closely related to, but not the same as, the quantity the keyboard's
-        // octaves are solved against. That one is a *latched* mode of the drum
-        // evaluated at the centred stroke - see tuningModeFor and
-        // tuningStrikeRadius - so that neither Strike Position nor a near-tie
-        // between two modes can retune the instrument. The two agree at and
-        // near the four instruments the family table describes, which is what
-        // puts the factory keyboard on heard octaves; they part company on a
-        // drum the controls have taken a long way from those, and where they do
-        // it is this figure that is right about what you can hear.
-        //
-        // Zero means the drum has no membrane tone at this sample rate, and it
-        // is the only value in this struct that is a marker rather than a
-        // measurement. The renderer refuses every mode at or above 0.98 of
-        // Nyquist, and a very small head at the tension ceiling taken up the
-        // keyboard can put its *lowest* membrane mode past that: at Head
-        // Diameter 15 cm, Head Tension 1.0, a thin film and Pitch +12 the top
-        // pad's fundamental is 25565 Hz, which no 44.1 or 48 kHz host will ever
-        // sound. There is then no partial to name, and naming one anyway - as
-        // this used to, by ranking modes the renderer had already thrown away -
-        // is reporting a pitch that is not in the audio. See soundingMode.
+        // Strongest rendered membrane pole under a neutral open stroke at the
+        // current strike position and microphone settings. The contact solve
+        // and modal tail determine its weight; transient noise and attack
+        // strain are excluded. Changing the stroke can change which pole wins.
+        // Factory geometry/tension never follows this acoustic ranking.
+        // Zero means no excited, observable membrane pole is below the host's
+        // rendered frequency ceiling (0.98 of Nyquist).
         float soundingHz { 88.0f };
-        // How long the drum audibly rings: the longer-lived of the two
-        // axisymmetric branches, each solved with its own radiation share.
-        // Reporting only one of them described whichever mode happened to be
-        // chosen rather than the drum.
+        // Longest structural modal T60 among the rendered, observable modes
+        // excited by a neutral batter stroke, bounded by the instrument's tail
+        // cap. Additional held-palm/boundary transfer can shorten that estimate.
         float tailSeconds { 1.2f };
         // How stiff the head is against its own tension: the dimensionless B in
         // f(lambda) = f_membrane(lambda) * sqrt((1 + B lambda^2)/(1 + B
@@ -412,7 +390,8 @@ public:
         // the order of 10^-3, which stretches the top of the resolved bank by
         // well over a semitone.
         float headStiffnessParameter { 0.0f };
-        // The enclosed air's stiffness as a fraction of the lumped rho c^2 / L
+        // Legacy diagnostic only when sharedCavityActive is true: the old
+        // column model's stiffness as a fraction of the lumped rho c^2 / L
         // an infinite spring would give. A drum's cavity is a column of finite
         // length, and its exact input stiffness is x cot x times the lumped
         // value with x = omega L / 2c - one only as the wavelength runs away
@@ -422,6 +401,12 @@ public:
         // frequency it is evaluated at is the frequency it sets, so the drum
         // resolve converges on it rather than computing it.
         float cavityStiffnessFactor { 1.0f };
+        // Active shared model diagnostics. The legacy column factor above is
+        // retained for older analysis tools; it is not the shared air's law.
+        bool sharedCavityActive { false };
+        // Fraction of the reported breathing mode's restoring energy in the
+        // internal air, with every retained head and axial coordinate included.
+        float cavityEnergyFraction { 0.0f };
     };
 
     [[nodiscard]] DrumMeasurements measureDrum (int octaveOffset) const noexcept;
@@ -454,6 +439,8 @@ public:
 private:
     friend struct TaikoEngineTestAccess;
     friend struct CavityStudyAccess;
+    friend struct BachiModalIntegrationTestAccess;
+    friend struct ShellBoundaryIntegrationTestAccess;
 
     static constexpr int maxVoices = 16;
     // Seventy-six membrane modes (m, n), every Bessel zero up to about 25.
@@ -461,7 +448,7 @@ private:
     // entry in two by orientation: 152 resonators before the shell bank.
     //
     // The first twenty entries are the bank the instrument shipped with, in
-    // their original order, so every latched tuning identity, every fixed
+    // their original order, so every diagnostic mode identity, every fixed
     // per-head pair split and every test that names an entry by index still
     // means the same mode. The remaining fifty-six are appended in ascending
     // order of their zero. The four leading entries are still the only
@@ -474,7 +461,8 @@ private:
     // Every axisymmetric entry, (0,1)..(0,8): the size of each per-slot cavity
     // and palm table. Slots 0..3 are entries 0..3.
     static constexpr int axisymmetricSlotCount = 8;
-    static constexpr int membraneResonatorCount = 152;
+    static constexpr int rearMembraneOffset = 154;
+    static constexpr int membraneResonatorCount = rearMembraneOffset + 2 * modeEntryCount;
     static constexpr int shellResonatorCount = 6;
     static constexpr int resonatorCount =
         membraneResonatorCount + shellResonatorCount;
@@ -570,21 +558,9 @@ private:
         // to sense head displacement and to spread force back into the bank.
         float inverseModalMass { 0.0f };
         float contactShape { 0.0f };
-        // The head-to-shell path. A membrane mode clamped at the rim pulls on
-        // the shell with the tension times its own slope there, and that line
-        // force only reaches a ring mode of the same circumferential order:
-        // the overlap integral of cos(m theta) against cos(n theta) is zero
-        // otherwise. So one resolved mode drives exactly one shell resonator,
-        // shellRingIndex, with shellRimCoupling newtons of generalised force
-        // per unit of this mode's resonator state. On a shell mode the same
-        // index names itself and rimDrive converts that force to its input.
-        // -1 on any mode with no partner: every axisymmetric mode, every
-        // circumferential order the six ring modes do not cover, and the
-        // sine-oriented member of every pair, whose overlap with the single
-        // cosine-oriented ring resonator is also zero.
-        float shellRimCoupling { 0.0f };
-        float rimDrive { 0.0f };
-        std::int8_t shellRingIndex { -1 };
+        // Principal angular shape in the [cos(m theta), sin(m theta)] basis.
+        // Used when structural automation rotates a head's fixed nodal axes.
+        std::array<float, 2> angularBasis { 1.0f, 0.0f };
         // Batter-head participation and the area-averaged gradient norm of
         // this spatial basis. Together they recover the membrane strain that
         // drives Berger/von Karman tension without depending on output scale.
@@ -594,11 +570,21 @@ private:
         // controls move; retaining both shares lets a rebuild preserve the
         // physical head coordinates rather than the old eigenmode labels.
         float resonantParticipation { 0.0f };
+        // Unit-mass shared cavity coordinate. The complete physical basis is
+        // retained for contact, observation and structural state remapping.
+        bool sharedCavityMode { false };
+        bool rearHeadMode { false };
+        std::array<float, cavity::maximumCoordinates> cavityBasis {};
+        std::array<float, cavity::radialModeCount> cavityStretchNorm {};
+        std::array<float, cavity::radialModeCount> cavityTensionWeights {};
+        std::array<float, cavity::radialModeCount> cavityRearTensionWeights {};
+        float headEnergyFraction { 1.0f };
         float stretchNorm { 0.0f };
         // Fraction of this mode's restoring energy stored in batter tension.
         // Strain changes that term; bending rigidity, rear tension and the
         // enclosed air spring keep their own stiffness.
         float batterTensionFraction { 0.0f };
+        float rearTensionFraction { 0.0f };
         float micLeft { 0.0f };
         float micRight { 0.0f };
         // The imaginary parts of the complex pressure residues. A real modal
@@ -613,6 +599,16 @@ private:
         // audio loop pays only two multiplies and an add for propagation phase.
         double quadratureFromCurrent { 0.0 };
         double quadratureFromPrevious { 0.0 };
+        // Signed near-rim displacement in one shell-ring coordinate. The head
+        // uses its actual rotated spatial basis; the corresponding shell port
+        // is -1. A collocated dashpot transfers energy in both directions.
+        std::int8_t shellBoundaryGroup { -1 };
+        float shellBoundaryProjection { 0.0f };
+        double shellBoundaryImpulseScale { 0.0 };
+        double shellBoundaryVelocityToPrevious { 0.0 };
+        float shellRimCoupling { 0.0f };
+        float rimDrive { 0.0f };
+        std::int8_t shellRingIndex { -1 };
         // Resting angular frequency in radians per second, kept so the tension
         // glide can retune the resonator without redoing the physical solve.
         float omega { 0.0f };
@@ -664,7 +660,7 @@ private:
         // projections use this key to sum their forces before the one canonical
         // resonator bank is advanced; lifetime sorting may move the Mode object
         // but can never change which physical degree of freedom it names.
-        std::uint8_t physicalIndex { 0 };
+        std::uint16_t physicalIndex { 0 };
         // log(level / retirement floor), so the lifetime below can be redone
         // from a new decay rate without the whole bank's levels to hand. Zero
         // for a mode that was never audible.
@@ -711,6 +707,8 @@ private:
         float configurationPitch { 0.0f };
         bool active { false };
         Articulation articulation { Articulation::Don };
+        bool rearStrike { false };
+        std::array<float, shellResonatorCount> shellRimForce {};
         // strikeProfile(articulation).levelScale, cached at trigger() time.
         // articulation is fixed for the voice's whole lifetime (see
         // physicalDrumIndex above), so this is exact for as long as the voice
@@ -733,12 +731,6 @@ private:
         std::uint32_t noiseState { 1u };
 
         std::array<Mode, resonatorCount> modes {};
-        // Rim shear accumulated by the head this sample, spent by the wood on
-        // the next one. One sample of delay keeps the exchange to a single
-        // pass over a bank whose shell modes are scattered through it by
-        // lifetime, and is 21 microseconds against ring modes no lower than
-        // 97 Hz.
-        std::array<float, shellResonatorCount> shellRimForce {};
         int modeCount { 0 };
         int activeModeCount { 0 };
         // Force already projected into stable physical-mode order. Every due
@@ -746,6 +738,7 @@ private:
         // in one tick. This is the structural guarantee that two simultaneous
         // hits feed one recurrence rather than create two copies of the drum.
         std::array<float, resonatorCount> modalInput {};
+        std::array<double, shellResonatorCount> shellBoundaryDamping {};
         // Strike slots keep only these stable-ID force projections after the
         // geometry builder has run; their temporary Mode objects are cleared
         // before trigger() returns. Physical banks leave this array unused.
@@ -941,15 +934,19 @@ private:
         // squared. The live Tension Mod control multiplies it at each control
         // tick, so automation reaches a head that is already ringing.
         float tensionEnvelope { 0.0f };
+        float rearTensionEnvelope { 0.0f };
         float tensionDecay { 0.999f };
         float tensionDepth { 0.0f };
+        float rearTensionDepth { 0.0f };
         // Running mean of each entry's own squared slope, per sample, about
         // which that entry's twice-per-cycle tension ripple is taken - see
         // renderVoice.
         std::array<float, modeEntryCount> parametricMeanStrain {};
+        std::array<float, modeEntryCount> rearParametricMeanStrain {};
         // Ideal batter frequency multiplier, also used for the continuum.
         float appliedTensionShift { 1.0f };
         float appliedTensionRise { 0.0f };
+        float appliedRearTensionRise { 0.0f };
         // The mounting loss this stroke was built with, kept so retuning can
         // re-evaluate it at the mode's new frequency.
         float mountLoss { 0.0f };
@@ -973,6 +970,18 @@ private:
         std::uint64_t retirementOffset { 0 };
 
         int localMuteTicksRemaining { 0 };
+        struct PalmPatch
+        {
+            float radius { 0.0f };
+            float strength { 0.0f };
+            bool rear { false };
+        };
+        // Keep the physical contacts, not only rates in an obsolete modal
+        // basis. Repeated contacts at one point share a slot; up to four
+        // distinct held patches survive structural automation without allocation.
+        std::array<PalmPatch, 4> localMutePatches {};
+        std::uint8_t localMutePatchCount { 0 };
+        std::uint8_t nextLocalMutePatch { 0 };
         // Physical Tsu patch rate before an axisymmetric eigenmode's batter-head
         // energy fraction. It must outlive the currently rendered branches: at
         // a hostile low sample rate the only in-band member can be rear-only,
@@ -1050,12 +1059,17 @@ private:
     // per-strike computation reads this rather than the raw parameters.
     struct DrumState
     {
+        bachi::Profile bachi { bachi::profileForFamily (0) };
+        int physicalFamily { 0 };
+        float physicalFamilyMix { 0.0f };
         float radius { 0.275f };
         float depth { 0.275f };
         float tension { 6000.0f };
         float resonantTension { 6000.0f };
         float batterDensity { 1.2f };
         float resonantDensity { 1.2f };
+        float batterThickness { 0.0012f };
+        float resonantThickness { 0.0012f };
         float waveSpeed { 70.0f };
         float resonantWaveSpeed { 70.0f };
         // Bending stiffness of each head against its own tension, as the
@@ -1071,11 +1085,15 @@ private:
         // thing the attack pitch glide needs from the drum: a slack head bends
         // a long way sharp and a tight one barely moves.
         float stretchStiffness { 0.0f };
+        float resonantStretchStiffness { 0.0f };
         float headLossFactor { 0.012f };
+        float rearHeadLossFactor { 0.012f };
         // The viscous half of the hide's loss, damping as omega squared where
         // headLossFactor damps as omega. See resolveDrumFor.
         float headViscousFactor { 0.0f };
+        float rearHeadViscousFactor { 0.0f };
         float edgeLoss { 0.6f };
+        float rearEdgeLoss { 0.6f };
         // Cavity stiffness per unit area for each axisymmetric entry, before
         // that entry's 4/lambda^2 volume-efficiency weighting. Zero on an
         // uncoupled (open) body. Each is the lumped rho c^2 / L multiplied by
@@ -1109,6 +1127,11 @@ private:
         // through the same force-over-mass path the head uses rather than
         // through a bare level constant.
         float shellModalMass { 12.0f };
+        std::array<float, shellResonatorCount> shellModalMasses {};
+        std::array<double, shellResonatorCount> shellBoundaryDamping {};
+        // Family microphone voicing, outside the physical displacement/force
+        // path. These gains are engineering priors, not measured SPL fits.
+        float shellObservationCalibration { 1100.0f };
         float shellLevel { 0.4f };
         // Loss into the shell, hoops and stand, and the frequency below which
         // a mode is long enough to move them.
@@ -1124,7 +1147,28 @@ private:
         // observeMode and contactSpectrum.
         float contactSeconds { 0.0015f };
         float acousticRadiationGain { 1.0f };
+        cavity::Solution sharedAir {};
+        bool sharedAirValid { false };
+        float airCoupling { 0.85f };
     };
+
+    struct SharedModeData
+    {
+        float omega {}, contact {}, observed {}, quadrature {};
+        float headFraction {}, batterFraction {}, tensionFraction {}, rearTensionFraction {};
+        float radiationSelf {}, radiationCross {};
+        float fixedLoss {}, lossOmega {}, lossOmegaSquared {};
+        std::array<float, cavity::maximumCoordinates> basis {};
+        std::array<float, cavity::radialModeCount> stretchNorm {};
+        std::array<float, cavity::radialModeCount> tensionWeights {};
+        std::array<float, cavity::radialModeCount> rearTensionWeights {};
+    };
+    static void resolveSharedAir (DrumState& drum) noexcept;
+    [[nodiscard]] static SharedModeData sharedModeData (
+        const DrumState& drum, int modeIndex, float strikeRadius,
+        float micDistance, bool rearStrike = false) noexcept;
+    [[nodiscard]] static float sharedPalmDamping (
+        const DrumState&, const Mode&, float strikeRadius, bool rear = false) noexcept;
 
     [[nodiscard]] static EngineParameters sanitise (
         const EngineParameters& parameters) noexcept;
@@ -1264,6 +1308,10 @@ private:
     // lookup keeps exact build-time covariance off the live control path.
     [[nodiscard]] static float continuumLogVariance (
         float normalisedCentre) noexcept;
+    // Exact peak placement for the two-high-pass/seven-low-pass observation
+    // cascade. Both the force quadrature and emitted band use this centre.
+    [[nodiscard]] static std::array<float, 2> continuumBandCoefficients (
+        float normalisedCentre) noexcept;
     static void scaleContinuumFilterState (Voice::ContinuumBand& band,
                                            float gain) noexcept;
     // Fractional read of the airborne-path delay line. Extracted from the
@@ -1356,23 +1404,14 @@ private:
     [[nodiscard]] static float signedUnitFromHash (std::uint32_t value) noexcept;
     [[nodiscard]] static std::uint32_t performerRandomSalt (
         int performer) noexcept;
-    // Fixed per-head split of a non-axisymmetric cosine/sine pair. Both the
-    // renderer and the angle-aware pitch estimate must use the same two poles.
-    // A stable per-drum seed for the hide's asymmetry.
-    [[nodiscard]] static std::uint32_t hideSeedFor (const DrumState& drum) noexcept;
-
-    // The split between the two members of a degenerate pair. `hideSeed`
-    // makes the asymmetry the drum's own; it is ignored unless the
-    // hideInhomogeneity candidate is on.
-    [[nodiscard]] static float nonAxisymmetricDetune (
-        int entryIndex, int branch, std::uint32_t hideSeed = 0u) noexcept;
+    // Fixed material/boundary principal axes and splitting for one table entry.
+    // Force, sensing, microphone and readout share this same physical basis.
+    [[nodiscard]] static physical::AngularBasis basisForEntry (
+        const DrumState& drum, int entryIndex) noexcept;
     [[nodiscard]] static float nextNoise (std::uint32_t& state) noexcept;
 
-    // The whole (0,1) pair of a resolved drum: both branches, their
-    // eigenvectors, and which of the two the batter head can actually be heard
-    // in. The readout reports it, and the octave transform is solved against
-    // it, so the pitch the keyboard buys and the pitch the panel shows are the
-    // same quantity by construction rather than by agreement.
+    // Legacy independent (0,1) pair, retained for the ablation and diagnostics.
+    // The default readout and renderer instead use the full shared-air bank.
     struct AxisymmetricPair
     {
         float upperHz { 0.0f };
@@ -1435,21 +1474,30 @@ private:
                                                       int entryIndex, int branch,
                                                       float strikeRadius,
                                                       float strikeAngle = 0.0f) noexcept;
+    [[nodiscard]] static ModeObservation observeSharedMode (
+        const DrumState&, int sharedIndex, float strikeRadius) noexcept;
+    [[nodiscard]] static ModeObservation finishObservation (
+        float omega, float amplitude, float decay, float contactSeconds) noexcept;
 
-    // Which mode a pitch is being taken in: a row of the mode table, and for
-    // the axisymmetric rows which branch of the cavity-split pair. This is an
-    // identity rather than a frequency, and it is the thing the octave
-    // transform holds fixed - see tuningModeFor.
+    // Stable metadata for one rendered pole: shared mixed coordinate, or a
+    // specified head's non-axisymmetric principal-axis member. The two extra
+    // air coordinates do not masquerade as large legacy branch numbers.
     struct ModeIdentity
     {
         std::uint8_t entryIndex { 0 };
         std::uint8_t branch { 0 };
+        std::int8_t sharedIndex { -1 };
+        bool rearHead { false };
 
         [[nodiscard]] bool operator== (const ModeIdentity& other) const noexcept
         {
-            return entryIndex == other.entryIndex && branch == other.branch;
+            return entryIndex == other.entryIndex && branch == other.branch
+                && sharedIndex == other.sharedIndex && rearHead == other.rearHead;
         }
     };
+    [[nodiscard]] static ModeObservation observeIdentity (
+        const DrumState&, ModeIdentity, float strikeRadius, float strikeAngle = 0.0f) noexcept;
+    [[nodiscard]] static ModeIdentity identityForMode (const Mode&) noexcept;
 
     // The mode a drum is heard at, which is the loudest one over that window
     // and is not always the lowest. See soundingMode's definition for why half
@@ -1460,11 +1508,8 @@ private:
         float weight { 0.0f };
         ModeIdentity identity {};
     };
-    // `ceilingHz` bounds the comparison to the modes the caller's question is
-    // about. The readout passes the renderer's own cutoff, so it can only name
-    // a partial that will be in the audio; the octave transform passes
-    // infinity, because which mode an instrument is tuned by is a property of
-    // the instrument and must not follow the host's clock. See the definition.
+    // Only compare poles below the rendered frequency ceiling. Analysis tools
+    // may pass infinity when inspecting the untruncated physical instrument.
     [[nodiscard]] static SoundingMode soundingMode (const DrumState& drum,
                                                     float strikeRadius,
                                                     float ceilingHz,
@@ -1483,20 +1528,12 @@ private:
     // in the audio.
     [[nodiscard]] static float renderedModeCeilingHz (double sampleRateHz) noexcept;
 
-    // The mode each octave of the family is tuned by: an identity latched from
-    // the four instruments the table describes, and never re-chosen from the
-    // player's controls. An argmax is a discontinuous function of every control
-    // that feeds it, so tuning against one made a hundredth of a semitone of
-    // Pitch automation drop a drum by a tenth of an octave and re-solve its
-    // size; a latched identity is what lets the same solve be written
-    // continuously. See the definition for what it does and does not depend on.
+    // Diagnostic factory pole identity for analysis tools. It never drives
+    // geometry or tension; shared mode ordering changes at avoided crossings.
     [[nodiscard]] static ModeIdentity tuningModeFor (int octaveOffset,
                                                      float octaveBody) noexcept;
 
-    // Where the octave transform takes its pitches from: a full open stroke on
-    // the head with Strike Position centred. The transform is deliberately
-    // anchored here rather than at the player's own strike position, so that
-    // Strike Position stays a timbre control with no tuning side effect.
+    // Authored contact radius, and the neutral open-stroke diagnostic radius.
     [[nodiscard]] static float strikeRadiusFor (
         const StrikeProfile& profile, float strikePosition) noexcept;
     [[nodiscard]] static float tuningStrikeRadius() noexcept;
@@ -1517,13 +1554,9 @@ private:
     [[nodiscard]] static DrumState resolveDrumFor (const EngineParameters& raw,
                                                    float pitchBendSemitones,
                                                    int octaveOffset) noexcept;
-    // The head and the air behind it for one choice of the octave transform:
-    // geometry, tension, wave speeds, bending stiffness, the loss terms and the
-    // converged cavity stiffness. Split out of resolveDrumFor because the
-    // octave transform is solved against one latched mode, so everything that
-    // mode depends on runs several times per octave. The shell and higher
-    // radial cavity factors the tracked mode cannot observe are resolved only
-    // after the transform settles.
+    // Resolve declared geometry, explicitly scaled head tensions, independent
+    // material losses and the complete shared cavity. No acoustic ranking or
+    // frequency search changes the dimensions or stiffness during this solve.
     static void resolveDrumGeometry (const EngineParameters& applied,
                                      float radiusFactor,
                                      float tensionOctaveFactor,
@@ -1547,11 +1580,13 @@ private:
     static void solveContact (float collisionMass, float targetImpedance,
                               const StrikeProfile& profile, float bachiHardness,
                               float impactSpeed, float& contactSeconds,
-                              float& peakForce, float stiffnessScale = 1.0f) noexcept;
+                              float& peakForce, float stiffnessScale = 1.0f,
+                              const bachi::Profile& stick = bachi::Profile {}) noexcept;
     [[nodiscard]] static float shapeVelocity (float rawVelocity,
                                               float velocityCurve) noexcept;
     [[nodiscard]] static float contactStiffnessFor (
-        const StrikeProfile& profile, float bachiHardness) noexcept;
+        const StrikeProfile& profile, float bachiHardness,
+        const bachi::Profile& stick = bachi::Profile {}) noexcept;
     // The power-law contact the tip actually obeys: Hertz's K delta^1.5 for
     // bare wood, a steeper delta^alpha for a felt-wrapped beater, with the
     // felt's constant pinned so the neutral stroke keeps its Hertz contact
@@ -1561,11 +1596,13 @@ private:
         double stiffness { 0.0 };
         double exponent { 1.5 };
     };
-    [[nodiscard]] static double contactExponentFor (float bachiHardness) noexcept;
+    [[nodiscard]] static double contactExponentFor (float bachiHardness,
+        bachi::Covering covering = bachi::Covering::bareWood) noexcept;
     [[nodiscard]] static ContactLaw contactLawFor (const StrikeProfile& profile,
                                                    float bachiHardness,
                                                    float stiffnessScale,
-                                                   float collisionMass) noexcept;
+                                                   float collisionMass,
+                                                   const bachi::Profile& stick = bachi::Profile {}) noexcept;
     // Exact constants of a power-law collision, F = K delta^alpha: the
     // duration prefactor, the impulse of the sin^alpha reference arch and the
     // mean of its square. Each reduces to the Hertz value at alpha = 3/2.
@@ -1580,15 +1617,22 @@ private:
     // their squared participation sums without knowing their orientation.
     [[nodiscard]] static float contactCollisionMass (
         const DrumState& drum, const StrikeProfile& profile,
-        float strikeRadius, float strikerMass) noexcept;
+        float strikeRadius, float strikerMass, bool rearStrike = false) noexcept;
     void buildVoiceModes (Voice& voice, const DrumState& drum,
                           const StrikeProfile& profile, float extraDamping,
                           bool buildComplexObservation) noexcept;
+    // Cache after constructing the canonical bank; the per-sample step uses
+    // no allocation, exponential or solve. Displacement is unchanged while
+    // the exact passive relative-velocity impulse updates both connected sides.
+    void configureShellBoundary (Voice& voice) const noexcept;
+    static void applyShellBoundary (Voice& voice) noexcept;
     // A muted Tsu leaves a finite-area free-hand damper on the one canonical
     // head. This schedules that local passive loss; bachi/head momentum
     // exchange belongs to advancePhysicalContacts().
     void dampPhysicalDrum (Voice& physical, const StrikeProfile& profile,
-                           float strikeRadius, const DrumState& drum) noexcept;
+                           float strikeRadius, const DrumState& drum,
+                           bool rear = false) noexcept;
+    static void rebuildLocalPalmRates (Voice& physical, const DrumState& drum) noexcept;
     // How much of an axisymmetric mode's palm-damping rate actually reaches
     // the batter head: the hide-density-weighted square of the mode's own
     // batter participation, clamped to the unit interval. A mode with a
@@ -1602,24 +1646,24 @@ private:
     static void palmDampingRates (
         const DrumState& drum, float strikeRadius,
         std::array<float, modeEntryCount>& modeRates,
-        float& continuumRate) noexcept;
+        float& continuumRate, bool rear = false) noexcept;
     void ensurePhysicalDrum (int octave, const DrumState& drum) noexcept;
     void scheduleContacts (Voice& voice, const StrikeProfile& profile,
                            float contactSeconds, float peakForce,
                            float noiseLevel) noexcept;
     void applyTensionShift (Voice& voice, float shift,
-                            float tensionRise = 0.0f) noexcept;
+                            float tensionRise = 0.0f, float rearTensionRise = 0.0f) noexcept;
     void updateVoiceControl (Voice& voice) noexcept;
     // The batter head's area-mean squared slope from the resolved membrane
     // states, and the fractional tension rise Berger's term makes of it.
-    [[nodiscard]] static double membraneSquaredSlope (const Voice& voice) noexcept;
+    [[nodiscard]] static double membraneSquaredSlope (const Voice& voice, bool rear = false) noexcept;
     [[nodiscard]] static float tensionRiseFor (float strain) noexcept;
     // The same strain split by mode-table entry, so each entry's own swing
     // can be told from the head's mean. Entries beyond the contact's twenty
     // are left at zero: the glide's one chosen constant was pinned against the
     // strain of that bank, and the one-way entries stay outside it.
     static void membraneSquaredSlopePerEntry (
-        const Voice& voice, std::array<float, modeEntryCount>& strain) noexcept;
+        const Voice& voice, std::array<float, modeEntryCount>& strain, bool rear = false) noexcept;
     void advancePhysicalContacts (Voice& physical) noexcept;
     static void configureContinuumForce (Voice::ContinuumBand& band,
                                          double rate, float shift = 1.0f) noexcept;
@@ -1707,7 +1751,7 @@ private:
     // enough and no atomics are needed here.
     EngineParameters applied_ {};
 
-    // The voice pool lives on the heap: twenty voices of a 158-resonator bank
+    // The voice pool lives on the heap: twenty contacts and the physical banks
     // with their airborne delay lines and continuum states come to well over a
     // megabyte, and the tests, the readout audit and any host that holds an
     // engine by value would otherwise carry that on the stack. The two arrays
@@ -1725,7 +1769,7 @@ private:
     std::array<Voice, drumCount>& physicalDrums_;
     // Incremented only by controls that alter the physical bank. Pitch-bend
     // smoothing deliberately does not touch it: a wheel retunes the live poles
-    // instead of rebuilding forty-six modes at audio rate.
+    // instead of rebuilding the complete bank at audio rate.
     std::uint64_t physicalConfigurationRevision_ { 1 };
     // One resolved drum per playable octave - which is now one per instrument
     // of the family. Strokes are common and the solve involves a Bessel series
@@ -1768,6 +1812,7 @@ private:
     float handDampingCoefficient_ { 0.05f };
     float parametricMeanCoefficient_ { 0.0005f };
     float strikeAzimuthOverride_ { 0.0f };
+    bool rearHeadStrike_ { false };
     float strikePositionOverride_ { 0.0f };
     bool strikeAzimuthOverrideActive_ { false };
     bool strikePositionOverrideActive_ { false };

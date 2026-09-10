@@ -27,6 +27,7 @@ public:
     void setStrikePositionOverride (float amount) noexcept;
     void setStrikeAzimuthOverride (float radians) noexcept;
     void clearStrikeOverrides() noexcept;
+    void setRearHeadStrike (bool rear) noexcept { rearHeadStrike = rear; }
 
     [[nodiscard]] int getActiveVoiceCount() const noexcept
     { return activeVoices.load (std::memory_order_relaxed); }
@@ -49,6 +50,7 @@ private:
         Articulation articulation = Articulation::Don;
         float velocity = 0.0f, position = 0.0f, azimuth = 0.0f;
         float radial = 0.0f, tangential = 0.0f;
+        bool rear = false;
     };
     static bool later (const Hit& a, const Hit& b) noexcept;
     static std::uint32_t hash (std::uint32_t) noexcept;
@@ -69,6 +71,7 @@ private:
     bool prepared = false;
     float positionOverride = 0.0f, azimuthOverride = 0.0f;
     bool positionOverridden = false, azimuthOverridden = false;
+    bool rearHeadStrike = false;
     std::array<float, blockCapacity> extraLeft {}, extraRight {}, mixGain {};
     std::array<float, blockCapacity> scratchLeft {}, scratchRight {};
     std::array<StereoPan, maximumEnsembleSize> pan {}, panTarget {};

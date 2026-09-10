@@ -46,15 +46,20 @@ set(TAIKOR_CLAP_JUCE_EXTENSIONS_PATH "" CACHE PATH
 include(CTest)
 
 set(TAIKOR_DSP_SOURCES
+    Source/DSP/ShellBoundary.cpp
     Source/DSP/CoupledCavity.cpp
     Source/DSP/EnsembleEngine.cpp
+    Source/DSP/PhysicalDrumProfile.cpp
     Source/DSP/TaikoEngine.cpp
     Source/DSP/UiMath.cpp)
 set(TAIKOR_DSP_HEADERS
+    Source/DSP/ShellBoundary.h
+    Source/DSP/BachiModel.h
     Source/DSP/CoupledCavity.h
     Source/DSP/EnsembleEngine.h
     Source/DSP/OutputHighPass.h
     Source/DSP/OutputLimiter.h
+    Source/DSP/PhysicalDrumProfile.h
     Source/DSP/StereoPan.h
     Source/DSP/TaikoEngine.h
     Source/DSP/UiMath.h)
@@ -211,9 +216,41 @@ if(TAIKOR_BUILD_TOOLS)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(TaikorAngularRebuildIntegrationTests Tests/AngularRebuildIntegrationTests.cpp)
+    target_link_libraries(TaikorAngularRebuildIntegrationTests PRIVATE TaikorDSP)
+    add_test(NAME Taikor.AngularRebuildIntegration COMMAND TaikorAngularRebuildIntegrationTests)
+
+    add_executable(TaikorShellBoundaryTests Tests/ShellBoundaryTests.cpp)
+    target_link_libraries(TaikorShellBoundaryTests PRIVATE TaikorDSP)
+    add_test(NAME Taikor.ShellBoundary COMMAND TaikorShellBoundaryTests)
+
+    add_executable(TaikorShellBoundaryIntegrationTests Tests/ShellBoundaryIntegrationTests.cpp)
+    target_link_libraries(TaikorShellBoundaryIntegrationTests PRIVATE TaikorDSP)
+    add_test(NAME Taikor.ShellBoundaryIntegration COMMAND TaikorShellBoundaryIntegrationTests)
+
+    add_executable(TaikorBachiModalIntegrationTests Tests/BachiModalIntegrationTests.cpp)
+    target_link_libraries(TaikorBachiModalIntegrationTests PRIVATE TaikorDSP)
+    add_test(NAME Taikor.BachiModalIntegration COMMAND TaikorBachiModalIntegrationTests)
+
+    add_executable(TaikorPhysicalDrumProfileTests Tests/PhysicalDrumProfileTests.cpp)
+    target_link_libraries(TaikorPhysicalDrumProfileTests PRIVATE TaikorDSP)
+    add_test(NAME Taikor.PhysicalDrumProfile COMMAND TaikorPhysicalDrumProfileTests)
+
+    add_executable(TaikorBachiModelTests Tests/BachiModelTests.cpp)
+    target_link_libraries(TaikorBachiModelTests PRIVATE TaikorDSP)
+    add_test(NAME Taikor.BachiModel COMMAND TaikorBachiModelTests)
+
     add_executable(TaikorCoupledCavityTests Tests/CoupledCavityTests.cpp)
     target_link_libraries(TaikorCoupledCavityTests PRIVATE TaikorDSP)
     add_test(NAME Taikor.CoupledCavity COMMAND TaikorCoupledCavityTests)
+
+    add_executable(TaikorSharedCavityIntegrationTests Tests/SharedCavityIntegrationTests.cpp)
+    target_link_libraries(TaikorSharedCavityIntegrationTests PRIVATE TaikorDSP)
+    add_test(NAME Taikor.SharedCavityIntegration COMMAND TaikorSharedCavityIntegrationTests)
+
+    add_executable(TaikorRearHeadIntegrationTests Tests/RearHeadIntegrationTests.cpp)
+    target_link_libraries(TaikorRearHeadIntegrationTests PRIVATE TaikorDSP)
+    add_test(NAME Taikor.RearHeadIntegration COMMAND TaikorRearHeadIntegrationTests)
 
     find_package(Python3 QUIET COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)
@@ -248,8 +285,8 @@ if(BUILD_TESTING)
 
     add_test(NAME Taikor.TaikoEngine COMMAND TaikorTaikoEngineTests)
     # Includes broad physical-control scans and voice-bank builds at four sample
-    # rates through a 152-resonator membrane bank; keep a generous ceiling for
-    # slower CI workers.
+    # rates through the 296-resonator head, cavity and shell bank; keep a
+    # generous ceiling for slower CI workers.
     set_tests_properties(Taikor.TaikoEngine PROPERTIES TIMEOUT 600)
 
     if(TAIKOR_BUILD_TOOLS)

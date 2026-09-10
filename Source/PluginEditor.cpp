@@ -1173,8 +1173,8 @@ TaikorAudioProcessorEditor::TaikorAudioProcessorEditor (TaikorAudioProcessor& pr
              "Head tension. Wave speed is the square root of tension over the head's "
              "areal density, so this and the head material together set the pitch.");
     addKnob (headMaterialKnob, ids::headMaterial,
-             "Head material, from a thin synthetic film to a thick cowhide. Sets both "
-             "the head's weight and how much it loses per cycle.");
+             "Trims each drum's natural-hide thickness and loss. The lowest fifth "
+             "blends toward synthetic film; 75% is the family reference skin.");
     addKnob (shellMaterialKnob, ids::shellMaterial,
              "Shell material, from light laminated ply to dense carved zelkova. Moves "
              "the body's ring modes, their Q, and how much the rim absorbs.");
@@ -1185,8 +1185,8 @@ TaikorAudioProcessorEditor::TaikorAudioProcessorEditor (TaikorAudioProcessor& pr
              "tuning a drum is.");
 
     addKnob (hardnessKnob, ids::bachiHardness,
-             "Bachi hardness, from a felt-wrapped beater to seasoned oak. Sets the "
-             "Hertz contact stiffness and therefore how long the stick stays down.");
+             "Soft to hard wooden contact around this drum's bachi mass and tip. "
+             "Changes contact stiffness and how long the stick stays down.");
     addKnob (strikePositionKnob, ids::strikePosition,
              "Moves every stroke towards the centre or towards the rim, on top of "
              "the position its own articulation already asks for.");

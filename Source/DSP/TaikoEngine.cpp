@@ -1,4 +1,5 @@
 #include "DSP/TaikoEngine.h"
+#include "DSP/ShellBoundary.h"
 
 #include <algorithm>
 #include <atomic>
@@ -18,26 +19,8 @@ constexpr double piDouble = 3.1415926535897932384626433832795;
 constexpr float airDensity = 1.2041f;
 constexpr float soundSpeed = 343.0f;
 
-// The head's areal density, in kg/m^2, from a thin synthetic film to a thick
-// cowhide. Geometric, because the audible parameter is the wave speed and that
-// goes as the square root of the ratio.
-constexpr float minimumArealDensity = 0.30f;
-constexpr float maximumArealDensity = 1.60f;
-
-// The head as a material rather than as an areal density, which is what its
-// bending stiffness needs. Ando's measurements of nagado-daiko diaphragms put
-// chemically treated cow skin at about 3.5 GPa and conclude that a taiko head
-// has to be treated as a stretched plate - a stiff membrane - rather than as an
-// ideal one. A synthetic film is a little stiffer per unit volume and a great
-// deal denser, so the thickness that carries the same areal density is far
-// smaller; since the flexural rigidity goes as the cube of that thickness, the
-// two ends of Head Material are three hundred times apart in stiffness even
-// though their moduli are within fifteen per cent of each other.
-constexpr float filmModulus = 4.0e9f;    // biaxially oriented polyester
-constexpr float hideModulus = 3.5e9f;    // treated cow skin
-constexpr float filmDensity = 1390.0f;   // kg/m^3
-constexpr float hideDensity = 1000.0f;   // kg/m^3
-constexpr float headPoisson = 0.30f;
+// Independent head material, thickness and loss priors are resolved in
+// PhysicalDrumProfile, including each family's separately specified rear head.
 // The (0,1) Bessel zero squared, which is the reference the stiffness stretch
 // below is taken against.
 constexpr float fundamentalZeroSquared = 5.7831859629467f;
@@ -62,39 +45,23 @@ constexpr float radiusFloor = 0.008f;
 // being octaves - they would come out 1.39x apart rather than 2x.
 constexpr float radiusCeiling = 3.75f;
 
-// The bachi. A taiko stick is a heavy piece of hardwood; the hardness control
-// moves the Hertz contact stiffness across three orders of magnitude, from a
-// felt-wrapped odaiko beater to a stick of seasoned oak.
-//
-// The mass is quoted for the reference drum and scales with the one actually
-// being played, because nobody hits a shime-daiko with an odaiko club: a stick
-// is chosen to suit the drum. Leaving it fixed made the smallest drums roughly
-// twenty-five decibels louder than the largest, which is a property of the
-// wrong stick rather than of the instrument.
-constexpr float bachiMass = 0.19f;
+// Hardness is an effective contact-compliance trim, not a hidden switch from
+// wood to felt. Stick mass, tip size and wood-modulus priors belong to the
+// explicit family specimen in BachiModel.h, independently of drum diameter.
+// Retained reference for the existing small-head radiation/observation trim;
+// it no longer sets bachi mass.
 constexpr float referenceRadius = 0.275f;
-constexpr float minimumBachiScale = 0.30f;
-// The ceiling has to clear the widest head at the bottom of the keyboard, or it
-// stops being a scaling law and becomes a wall. At 2.2 it bound for every radius
-// above 0.605 m - the whole battle-drum end of the instrument - so the two
-// lowest octaves were handed the same stick as each other, and the largest drum
-// in the family came out the quietest thing on it. The value now clears
-// radiusCeiling over referenceRadius, the same reasoning radiusCeiling itself
-// is written from.
-constexpr float maximumBachiScale = 13.7f;
 constexpr float minimumContactStiffness = 2.0e6f;
 constexpr float maximumContactStiffness = 6.0e8f;
 constexpr float restitution = 0.42f;
 // Bare wood meets the hide with Hertz's delta^1.5, whatever its modulus. A
-// felt-wrapped tip does not: the wrap compacts, and measured mallets follow a
-// steeper power law - Chaigne & Doutaut (JASA 101, 1997) fit xylophone
+// explicitly felt-wrapped tip does not: the wrap compacts, and measured mallets
+// follow a steeper power law - Chaigne & Doutaut (JASA 101, 1997) fit xylophone
 // mallets between about 1.5 (hard) and 3 (soft), and Stulov's piano-hammer
-// felt sits at 2.5-3.5 (Stulov, JASA 97, 1995). The lower half of Bachi
-// Hardness is the wrapped range; the upper half is wood of rising modulus and
-// stays exactly Hertz, so the factory bachi is untouched.
+// felt sits at 2.5-3.5 (Stulov, JASA 97, 1995). The family reference sticks
+// remain bare wood throughout Hardness; only an explicit felt covering changes
+// the exponent. Soft hinoki is not compacting felt.
 constexpr double hertzContactExponent = 1.5;
-constexpr double feltContactExponent = 2.5;
-constexpr float feltHardnessLimit = 0.5f;
 // The impact speed Velocity Depth leaves alone - lerp (0.72, v, depth) in
 // trigger() - at which a felt law is pinned to its Hertz contact time.
 constexpr float neutralVelocity = 0.72f;
@@ -317,22 +284,6 @@ constexpr float mountLossCorner = 55.0f;
 // either side of it move.
 constexpr float mountReferenceRadius = 0.475f;
 
-// The viscous share of the hide's loss, as a damping rate per radian squared.
-// This is what separates the head's body from its crack: it is worth about a
-// twentieth of an inverse second at the fundamental and several hundred at six
-// kilohertz.
-constexpr float viscousScale = 1.5e-7f;
-
-// The hysteretic share, as a loss angle. Hide is a lossy material and this is
-// most of what stops a mode that cannot radiate.
-constexpr float hysteresisScale = 0.00048f;
-
-// How efficiently the shell's ring modes reach the microphones compared with
-// the head's. The body radiates from a curved surface the pair is beside
-// rather than in front of, and this model does not describe that geometry, so
-// one scalar stands in for it - the same arrangement as radiationCalibration.
-constexpr float shellCalibration = 4200.0f;
-
 // The tack line of a byo-uchi drum. Iron tacks are driven round the head at a
 // spacing, not in a fixed number: a nagado carries about forty-eight of them
 // round a 1.8-shaku hoop, which is a nail every 36 mm, and a bigger drum is
@@ -415,7 +366,7 @@ const std::array<ArticulationMetadata, articulationCount> articulationTable {{
 // the active membrane span. Our 30 cm model remains unverified against a
 // measured drum; do not equate it with a maker's full leather-head diameter:
 // https://www.asano.jp/product/145
-// Diameters, depth ratios, effective hide density and shell controls below are
+// Diameters, depth ratios and shell controls below are
 // model design values. The four tensions produce the keyboard's octave spacing;
 // that spacing and a five-shaku bass drum are not cultural requirements.
 // Tacked nagado tension is normally set during making/reheading, whereas rope
@@ -428,13 +379,13 @@ const std::array<DrumDescription, static_cast<std::size_t> (drumCount)>
           0.6200f, 0.7500f, 0.80f, true },
         { "Nagado-daiko", "chudaiko",
           "78 cm (about 2-shaku 6-sun) long carved drum; the chu-daiko role", 0.78f,
-          0.8889f, 0.5437f, 0.6200f, 0.74f, true },
+          0.8889f, 0.5437f, 0.7500f, 0.74f, true },
         { "Okedo-daiko", "okedo",
           "Stave-built tub, rope-laced thin hide, light ringing shell", 0.40f,
-          0.9444f, 0.7760f, 0.3621f, 0.20f, false },
+          0.9444f, 0.7760f, 0.7500f, 0.20f, false },
         { "Shime-daiko", "shime",
-          "Tsuke-shime-inspired voice: shallow carved body and tensioned heads", 0.30f,
-          0.3333f, 0.9516f, 0.1800f, 0.92f, false },
+          "Tsuke-shime-inspired voice: shallow body and thick tensioned cowhide", 0.30f,
+          0.3333f, 0.9516f, 0.7500f, 0.92f, false },
     }};
 } // namespace
 
@@ -502,7 +453,7 @@ TaikoEngine::membraneModes() noexcept
 {
     // Zeros of J_m, in the order (m, n), every one below about 25. The first
     // twenty are the bank the instrument shipped with, kept in their original
-    // order so that a latched tuning identity, a fixed per-head pair split and
+    // order so that a diagnostic mode identity, a fixed per-head pair split and
     // any test that names an entry by index still mean the same mode; the
     // fifty-six appended after them climb in their zero. Only the leading
     // four axisymmetric entries are contiguous - the cavity, palm and rebuild
@@ -762,7 +713,7 @@ float TaikoEngine::membraneDecayAt (const Voice& voice, const Mode& mode,
              + mode.lossOmegaSquared * omega * omega
              + mode.radiationPrefactor * efficiency
              + mountingLossAt (voice.mountLoss, voice.mountCorner,
-                               omega / (2.0f * piFloat));
+                               omega / (2.0f * piFloat)) * mode.headEnergyFraction;
 
     return mode.decayFixed + mode.lossOmega * omega
          + mode.lossOmegaSquared * omega * omega
@@ -771,7 +722,7 @@ float TaikoEngine::membraneDecayAt (const Voice& voice, const Mode& mode,
                                    omega * voice.radiationDelaySeconds)
                * efficiency
          + mountingLossAt (voice.mountLoss, voice.mountCorner,
-                           omega / (2.0f * piFloat));
+                           omega / (2.0f * piFloat)) * mode.headEnergyFraction;
 }
 
 // The hide's own loss: a hysteretic part that damps as omega and a viscous part
@@ -853,8 +804,8 @@ float TaikoEngine::micDistanceSizeScale (float radius) noexcept
 // pair never occupies - measured, that put 10 dB of extra body on a close okedo
 // and took the loudest rim shot to 0.985 of full scale, past the limiter clause
 // the suite holds at 0.95. Against each drum's own position instead, every
-// factory preset renders as it did and shellCalibration keeps the meaning it
-// was pinned with; only moving the pair means anything.
+// factory perspective has unit gain, independent of each family's separate
+// shell observation calibration; only moving the pair changes this ratio.
 //
 // Which of these to ship was decided by ear, in the A-Z listening test recorded
 // under the 2026-08-19 shell-perspective entry in Docs/decisions.md.
@@ -1229,39 +1180,65 @@ float TaikoEngine::bandPassVariance (float lowCoefficient,
         std::isfinite (variance) && variance > 1.0e-12 ? variance : 1.0);
 }
 
+std::array<float, 2> TaikoEngine::continuumBandCoefficients (
+    float normalisedCentre) noexcept
+{
+    // For a one-pole coefficient a, write L=a^2/[4(1-a)] and
+    // x=sin^2(pi*f/Fs). Two high-pass and seven low-pass stages have
+    // power proportional to x^2/[(L+x)^2(H+x)^7]. Its peak satisfies
+    // 7x^2+5Lx-2LH=0. Solve the coefficients from the intended peak,
+    // retaining the former relative edge-width parameter H/L=bandwidth^4.
+    // Applying the literal edges centre/bandwidth and centre*bandwidth
+    // instead shifted the noise peak down to about0.61*centre, although its
+    // forcing quadrature was still centred on centre. That put the nominal
+    // unresolved layer over already-resolved body partials.
+    const double centre = std::clamp (
+        std::isfinite (normalisedCentre) ? static_cast<double> (normalisedCentre) : 1.0e-4,
+        1.0e-7, 0.45);
+    constexpr double width = static_cast<double> (continuumBandwidth);
+    constexpr double ratio = width * width * width * width;
+    const double peakOverLow = (std::sqrt (25.0 + 56.0 * ratio) - 5.0) / 14.0;
+    const double sine = std::sin (piDouble * centre);
+    const double low = sine * sine / peakOverLow;
+    const auto coefficient = [] (double coordinate) noexcept
+    {
+        // Rationalized inverse of a^2/[4(1-a)], bounded strictly inside
+        // the unit interval for every supported band centre.
+        return static_cast<float> (2.0 * coordinate
+            / (std::sqrt (coordinate * coordinate + coordinate) + coordinate));
+    };
+    return { coefficient (low), coefficient (ratio * low) };
+}
+
 float TaikoEngine::continuumLogVariance (float normalisedCentre) noexcept
 {
-    // Both filter coefficients depend only on centre/sample-rate. Two explicit
-    // intervals put knots at the two clamp seams: the upper edge reaches
-    // 0.9*Nyquist at x=0.45/1.35, then the lower edge joins it at x=0.45*1.35.
+    // Both coefficients depend only on centre/sample-rate. A denser interval
+    // near Nyquist resolves the digital-frequency warp;0.45 is the sole clamp.
     // Interpolating log variance over log frequency keeps the low-frequency
-    // V proportional to x asymptote exact and bounds the live lookup error
-    // without running the covariance solve every 32 samples.
+    // V proportional to x asymptote and avoids a covariance solve per retune.
     constexpr int broadCount = 97;
     constexpr int clampCount = 17;
     constexpr float minimumLogCentre = -13.287712379549449f; // log2(1e-4)
     constexpr float minimumCentre = 1.0e-4f;
-    constexpr float highEdgeClampCentre = 0.45f / continuumBandwidth;
-    constexpr float lowEdgeClampCentre = 0.45f * continuumBandwidth;
-    constexpr float highEdgeClampLog = -1.584962500721156f; // log2(1/3)
-    const float lowEdgeClampLog = std::log2 (lowEdgeClampCentre);
+    constexpr float denseCentre = 1.0f / 3.0f;
+    constexpr float maximumCentre = 0.45f;
+    constexpr float denseCentreLog = -1.584962500721156f; // log2(1/3)
+    const float maximumCentreLog = std::log2 (maximumCentre);
 
     struct Table
     {
         std::array<float, broadCount> broad {};
-        std::array<float, clampCount> clampedHighEdge {};
+        std::array<float, clampCount> highFrequency {};
     };
 
     static const Table table = []
     {
         Table result;
-        const float lowClampLog = std::log2 (lowEdgeClampCentre);
+        const float maximumLog = std::log2 (maximumCentre);
         const auto exactLogVariance = [] (float centre)
         {
-            const float low = continuumEdgeCoefficient (
-                centre / continuumBandwidth, 0.5f, 1.0f);
-            const float high = continuumEdgeCoefficient (
-                centre * continuumBandwidth, 0.5f, 1.0f);
+            const auto coefficients = continuumBandCoefficients (centre);
+            const float low = coefficients[0], high = coefficients[1];
             return std::log2 (std::max (
                 bandPassVariance (low, high, 2, 7), 1.0e-30f));
         };
@@ -1273,16 +1250,16 @@ float TaikoEngine::continuumLogVariance (float normalisedCentre) noexcept
             result.broad[static_cast<std::size_t> (index)] =
                 exactLogVariance (std::exp2 (
                     minimumLogCentre
-                    + fraction * (highEdgeClampLog - minimumLogCentre)));
+                    + fraction * (denseCentreLog - minimumLogCentre)));
         }
         for (int index = 0; index < clampCount; ++index)
         {
             const float fraction = static_cast<float> (index)
                                  / static_cast<float> (clampCount - 1);
-            result.clampedHighEdge[static_cast<std::size_t> (index)] =
+            result.highFrequency[static_cast<std::size_t> (index)] =
                 exactLogVariance (std::exp2 (
-                    highEdgeClampLog
-                    + fraction * (lowClampLog - highEdgeClampLog)));
+                    denseCentreLog
+                    + fraction * (maximumLog - denseCentreLog)));
         }
         return result;
     }();
@@ -1293,8 +1270,8 @@ float TaikoEngine::continuumLogVariance (float normalisedCentre) noexcept
     const float logCentre = std::log2 (centre);
     if (centre < minimumCentre)
         return table.broad.front() + logCentre - minimumLogCentre;
-    if (centre >= lowEdgeClampCentre)
-        return table.clampedHighEdge.back();
+    if (centre >= maximumCentre)
+        return table.highFrequency.back();
 
     const auto interpolate = [logCentre] (const auto& values,
                                            float firstLog, float lastLog)
@@ -1309,10 +1286,10 @@ float TaikoEngine::continuumLogVariance (float normalisedCentre) noexcept
         return values[index] + fraction * (values[index + 1] - values[index]);
     };
 
-    if (centre < highEdgeClampCentre)
-        return interpolate (table.broad, minimumLogCentre, highEdgeClampLog);
-    return interpolate (table.clampedHighEdge, highEdgeClampLog,
-                        lowEdgeClampLog);
+    if (centre < denseCentre)
+        return interpolate (table.broad, minimumLogCentre, denseCentreLog);
+    return interpolate (table.highFrequency, denseCentreLog,
+                        maximumCentreLog);
 }
 
 void TaikoEngine::scaleContinuumFilterState (Voice::ContinuumBand& band,
@@ -1487,12 +1464,9 @@ float TaikoEngine::columnStiffnessFactor (float x) noexcept
 float TaikoEngine::continuumEdgeCoefficient (float cutoffHz, float nyquist,
                                              float rate) noexcept
 {
-    // One-pole low-pass coefficient for a continuum band edge, cutoff
-    // clamped to 0.9x Nyquist so a band that has climbed past the usable
-    // spectrum still gets a stable filter rather than a runaway one.
-    // buildVoiceModes's initial band setup and applyTensionShift's retune
-    // rebuilt this identically for both the low and high edge of every
-    // band; shared here so the two cannot drift apart.
+    // One-pole edge coefficient for the tack observer and diagnostic filters.
+    // Continuum bands use continuumBandCoefficients to place their actual peak.
+    // Clamp the edge to0.9x Nyquist to retain a stable bounded coefficient.
     return 1.0f - std::exp (-2.0f * piFloat * std::min (cutoffHz, nyquist * 0.9f) / rate);
 }
 
@@ -1541,16 +1515,25 @@ TaikoEngine::MembraneModeOmegas TaikoEngine::membraneModeOmegas (
 void TaikoEngine::beginMode (Mode& mode, float omega, float frequency,
                              float decay) noexcept
 {
+    mode.shellRimCoupling = mode.rimDrive = 0.0f;
+    mode.shellRingIndex = -1;
+    mode.shellBoundaryGroup = -1;
+    mode.shellBoundaryProjection = 0.0f;
+    mode.shellBoundaryImpulseScale = 0.0;
+    mode.shellBoundaryVelocityToPrevious = 0.0;
+    mode.sharedCavityMode = false;
+    mode.rearHeadMode = false;
+    mode.cavityBasis.fill (0.0f);
+    mode.cavityStretchNorm.fill (0.0f);
+    mode.cavityTensionWeights.fill (0.0f);
+    mode.cavityRearTensionWeights.fill (0.0f);
+    mode.rearTensionFraction = 0.0f;
+    mode.headEnergyFraction = 1.0f;
     mode.omega = omega;
     mode.liveOmega = 2.0 * static_cast<double> (piFloat)
                    * static_cast<double> (frequency);
     mode.decayRate = decay;
     mode.appliedPalmDecay = 0.0f;
-    // Cleared here because a rebuilt bank reuses this storage and only the
-    // modes that have a partner set these again.
-    mode.shellRimCoupling = 0.0f;
-    mode.rimDrive = 0.0f;
-    mode.shellRingIndex = -1;
 }
 
 void TaikoEngine::axisymmetricDiagonals (const DrumState& drum,
@@ -1673,48 +1656,29 @@ std::uint32_t TaikoEngine::performerRandomSalt (int performer) noexcept
     return hash32 (static_cast<std::uint32_t> (performer) * 0x9e3779b9u);
 }
 
-std::uint32_t TaikoEngine::hideSeedFor (const DrumState& drum) noexcept
+physical::AngularBasis TaikoEngine::basisForEntry (const DrumState& drum,
+                                                    int entryIndex) noexcept
 {
-    // The drum's own geometry, so the hide is a property of the instrument
-    // and needs no extra state plumbed to the two places that ask for it.
-    std::uint32_t bits = 0u;
-    const float radius = drum.radius;
-    std::memcpy (&bits, &radius, sizeof (bits));
-    return hash32 (bits);
-}
-
-float TaikoEngine::nonAxisymmetricDetune (int entryIndex, int branch,
-                                          std::uint32_t hideSeed) noexcept
-{
-    // A real head is never quite uniform, so each degenerate pair sits a
-    // fraction of a percent apart and beats. The asymmetry belongs to the hide,
-    // not the stroke, and is therefore fixed for a physical mode.
-    //
-    // The shipped depth splits a pair by 5.1 cents, which beats once every
-    // 3.4 seconds at 100 Hz - slower than the note lasts, so in practice the
-    // released heads do not beat at all. Measured against real captures the
-    // fundamental band's envelope ripple is 1.7 dB where stage recordings
-    // hold 4.9 dB, and that gap has survived every candidate tried so far.
-    //
-    // A hide is a skin: its thickness varies by several percent across one
-    // head, and areal density enters the frequency as its square root, so a
-    // perturbation of order 2.5 % splits a pair by about a percent and a
-    // quarter - 21 cents, beating once a second at 100 Hz. That is the
-    // candidate depth. Its exact size is a voicing choice and is what a
-    // listening test is for; that it is far larger than 5 cents is not.
-    constexpr std::uint32_t headSeed = 0x9e3779b9u;
-    constexpr float shippedDepth = 0.0016f;
-    constexpr float inhomogeneousDepth = 0.0062f;
-    const bool varied = hasRealismFeature (hideInhomogeneity);
-    const float splitDepth = varied ? inhomogeneousDepth : shippedDepth;
-    // Off, the asymmetry is one head repeated on every drum. On, the seed
-    // carries the drum, so each instrument's hide is its own and the same
-    // drum always beats the same way.
-    const std::uint32_t seed = headSeed
-                             + static_cast<std::uint32_t> (entryIndex)
-                             + (varied ? hideSeed : 0u);
-    return 1.0f + splitDepth * (branch == 0 ? 1.0f : -1.0f)
-                    * (1.0f + 0.5f * signedUnitFromHash (seed));
+    const auto& entries = membraneModes();
+    const int index = std::clamp (entryIndex, 0, modeEntryCount - 1);
+    const int order = entries[static_cast<std::size_t> (index)].circumferentialOrder;
+    int radialOrder = 0;
+    for (int prior = 0; prior <= index; ++prior)
+        if (entries[static_cast<std::size_t> (prior)].circumferentialOrder == order)
+            ++radialOrder;
+    auto basis = physical::basisForMode (drum.physicalFamily, drum.physicalFamilyMix,
+                                        order, radialOrder);
+    if (order > 0 && hasRealismFeature (hideInhomogeneity))
+    {
+        // Preserve the earlier stronger, geometry-seeded listening candidate.
+        // Both contact and observation still use the same fixed angular axes.
+        std::uint32_t bits = 0;
+        std::memcpy (&bits, &drum.radius, sizeof (bits));
+        const float depth = 0.0062f * (1.0f + 0.5f * signedUnitFromHash (
+            0x9e3779b9u + static_cast<std::uint32_t> (index) + hash32 (bits)));
+        basis.frequencyScale = { 1.0f + depth, 1.0f - depth };
+    }
+    return basis;
 }
 
 float TaikoEngine::nextNoise (std::uint32_t& state) noexcept
@@ -1760,10 +1724,7 @@ EngineParameters TaikoEngine::sanitise (const EngineParameters& parameters) noex
     result.tensionModulation = clampFloat (parameters.tensionModulation, 0.0f, 1.0f);
     result.strikeNoise = clampFloat (parameters.strikeNoise, 0.0f, 1.0f);
     result.humanise = clampFloat (parameters.humanise, 0.0f, 1.0f);
-    // The old continuous Octave Body morph exposed a necessary modal-identity
-    // handover inside the range. Drum Layout now presents only its two useful
-    // physical endpoints; threshold here as well as in the host parameter so
-    // direct API callers and legacy state restore get the same result.
+    // Keep the host's two physical layout choices for direct and legacy callers.
     result.octaveBody = clampFloat (parameters.octaveBody, 0.0f, 1.0f) < 0.5f
         ? 0.0f : 1.0f;
     result.micDistance = clampFloat (parameters.micDistance, 0.0f, 1.0f);
@@ -1842,6 +1803,7 @@ void TaikoEngine::reset() noexcept
 {
     silenceAllVoices();
     clearStrikeOverrides();
+    rearHeadStrike_ = false;
 
     handDamping_ = handDampingTarget_;
     pitchBend_ = pitchBendTarget_;
@@ -1886,6 +1848,26 @@ void TaikoEngine::setParameters (const EngineParameters& parameters) noexcept
     const bool drumCacheChanged = physicalConfigurationChanged
                                || next.pitch != applied_.pitch
                                || next.shellResonance != applied_.shellResonance;
+
+    if (next.shellResonance != applied_.shellResonance)
+    {
+        // Shell Resonance is an observer gain. Updating a ringing wall must
+        // not rebuild its poles, change its displacement or alter the force
+        // exchanged with either head. The nonzero base keeps this ratio safe
+        // even when the control returns from its minimum.
+        const float gain = (0.30f + 0.70f * next.shellResonance)
+                         / (0.30f + 0.70f * applied_.shellResonance);
+        for (auto& physical : physicalDrums_)
+            for (int index = 0; index < physical.modeCount; ++index)
+            {
+                auto& mode = physical.modes[static_cast<std::size_t> (index)];
+                if (! mode.membrane)
+                {
+                    mode.micLeft *= gain;
+                    mode.micRight *= gain;
+                }
+            }
+    }
 
     if (next.outputHighPassHz != applied_.outputHighPassHz)
     {
@@ -1988,6 +1970,8 @@ void TaikoEngine::silenceVoice (Voice& voice) noexcept
     voice.contactRemaining = 0u;
     voice.ageSamples = 0;
     voice.localMuteTicksRemaining = 0;
+    voice.localMutePatches = {};
+    voice.localMutePatchCount = voice.nextLocalMutePatch = 0;
     voice.continuumMuteDampingRate = 0.0f;
     voice.palmDampingActive = false;
     voice.continuumHandDampingRate = 0.0f;
@@ -1995,11 +1979,15 @@ void TaikoEngine::silenceVoice (Voice& voice) noexcept
     voice.retireStep = 0.0f;
     voice.peakLevel = 0.0f;
     voice.tensionEnvelope = 0.0f;
+    voice.rearTensionEnvelope = 0.0f;
     voice.parametricMeanStrain.fill (0.0f);
+    voice.rearParametricMeanStrain.fill (0.0f);
     // Belongs to the stroke, like the schedule below it: it carries the drum's
     // in-plane stiffness against its tension, and a slot reused by a stroke on
     // a different drum must not inherit the last one's.
     voice.tensionDepth = 0.0f;
+    voice.rearTensionDepth = 0.0f;
+    voice.rearStrike = false;
     voice.localMuteBaseDampingRates.fill (0.0f);
     voice.modalInput.fill (0.0f);
     voice.shellRimForce.fill (0.0f);
@@ -2024,6 +2012,7 @@ void TaikoEngine::silenceVoice (Voice& voice) noexcept
     voice.solvedContactForce = 0.0f;
     voice.appliedTensionShift = 1.0f;
     voice.appliedTensionRise = 0.0f;
+    voice.appliedRearTensionRise = 0.0f;
     // Belongs to the stroke, not to the slot. The attack glide runs before the
     // new contact schedule is known - Tension Mod is on by default, so that is
     // every ordinary stroke - and it rebuilds the lifetimes; leaving the last
@@ -2179,6 +2168,12 @@ void TaikoEngine::resolveDrumGeometry (const EngineParameters& applied,
                                        DrumState& drum,
                                        bool includeHigherCavityModes) noexcept
 {
+    drum.physicalFamily = std::clamp (applied.physicalFamily, 0, 3);
+    drum.physicalFamilyMix = clampFloat (applied.physicalFamilyMix, 0.0f, 1.0f);
+    const auto heads = physical::resolveHeads (
+        drum.physicalFamily, drum.physicalFamilyMix, applied.headMaterial);
+    drum.bachi = bachi::blendProfiles (bachi::profileForFamily (0),
+        bachi::profileForFamily (drum.physicalFamily), drum.physicalFamilyMix);
     drum.radius = clampFloat (0.5f * applied.headDiameter * radiusFactor,
                               radiusFloor, radiusCeiling);
     // The ceiling has to clear the geometry the controls can actually ask for,
@@ -2198,41 +2193,26 @@ void TaikoEngine::resolveDrumGeometry (const EngineParameters& applied,
     drum.tension = clampFloat (baseTension * tensionOctaveFactor * tensionPitchFactor,
                                tensionFloor, tensionCeiling);
     drum.resonantTension = clampFloat (
-        drum.tension * (0.85f + 0.30f * applied.resonantTension),
+        drum.tension * heads.rearTensionRatio * applied.physicalRearTensionScale
+            * (0.85f + 0.30f * applied.resonantTension),
         tensionFloor, tensionCeiling);
 
-    drum.batterDensity =
-        geometricLerp (minimumArealDensity, maximumArealDensity, applied.headMaterial);
-    // The far head of a taiko is cut from the same hide but is not the one
-    // being hit, so it is traditionally a touch lighter.
-    drum.resonantDensity = drum.batterDensity * 0.92f;
+    drum.batterDensity = heads.batter.arealDensity;
+    drum.resonantDensity = heads.rear.arealDensity;
+    drum.batterThickness = heads.batter.thickness;
+    drum.resonantThickness = heads.rear.thickness;
 
     drum.waveSpeed = std::sqrt (drum.tension / drum.batterDensity);
     drum.resonantWaveSpeed = std::sqrt (drum.resonantTension / drum.resonantDensity);
 
-    // The head's bending stiffness, which is what makes a taiko head a
-    // stretched plate rather than an ideal membrane. Head Material already sets
-    // the areal density; dividing by the material's own volumetric density
-    // recovers the thickness the hide actually has, and the flexural rigidity
-    // D = E h^3 / 12(1 - nu^2) follows. It is stored as the dimensionless
-    // D / (T a^2), because that is the only combination the mode frequencies
-    // depend on - and it is a comparison between the head's stiffness and its
-    // tension, which is exactly the ratio Ando's eigenvalue tables are indexed
-    // by.
-    //
-    // The far head is cut from the same hide and is a touch lighter, so it is
-    // thinner in the same proportion and its rigidity falls as the cube of it.
-    const float headDensity = lerp (filmDensity, hideDensity, applied.headMaterial);
-    const float headModulus = lerp (filmModulus, hideModulus, applied.headMaterial);
-    const float thickness = drum.batterDensity / headDensity;
-    const float rigidity = headModulus * thickness * thickness * thickness
-                         / (12.0f * (1.0f - headPoisson * headPoisson));
+    // A head is a stretched plate, with D = E h^3 / 12(1 - nu^2).
+    // Each side owns its physical properties; neither its thickness nor its
+    // loss is inferred from a universal fixed ratio to the other head.
     const float radiusSquared = drum.radius * drum.radius;
-    const float densityRatio = drum.resonantDensity / drum.batterDensity;
-
-    drum.stiffnessBatter = rigidity / (drum.tension * radiusSquared);
-    drum.stiffnessResonant = rigidity * densityRatio * densityRatio * densityRatio
-                           / (drum.resonantTension * radiusSquared);
+    drum.stiffnessBatter = physical::flexuralRigidity (heads.batter)
+                        / (drum.tension * radiusSquared);
+    drum.stiffnessResonant = physical::flexuralRigidity (heads.rear)
+                          / (drum.resonantTension * radiusSquared);
 
     // The same material seen in the plane of the head rather than across it.
     // A membrane clamped at its rim cannot move without stretching, and the
@@ -2241,8 +2221,10 @@ void TaikoEngine::resolveDrumGeometry (const EngineParameters& applied,
     // because what moves the pitch is the fractional change - which is why a
     // slack o-daiko head bends a long way sharp on a hard stroke and a shime
     // held at four times the tension barely moves at all.
-    drum.stretchStiffness = headModulus * thickness
-                          / ((1.0f - headPoisson * headPoisson) * drum.tension);
+    drum.stretchStiffness = heads.batter.youngsModulus * heads.batter.thickness
+        / ((1.0f - heads.batter.poissonRatio * heads.batter.poissonRatio) * drum.tension);
+    drum.resonantStretchStiffness = heads.rear.youngsModulus * heads.rear.thickness
+        / ((1.0f - heads.rear.poissonRatio * heads.rear.poissonRatio) * drum.resonantTension);
 
     // Hysteretic loss in the head material. A thick hide loses more per cycle
     // than a thin film; the damping control scales what the material gives.
@@ -2274,14 +2256,14 @@ void TaikoEngine::resolveDrumGeometry (const EngineParameters& applied,
     const float dampingShape =
         0.55f + 1.30f * damping + 6.0f * damping * damping * damping;
 
-    const float materialLoss = hysteresisScale * (0.33f + 1.00f * applied.headMaterial);
-    drum.headLossFactor = materialLoss * dampingShape;
+    drum.headLossFactor = heads.batter.lossAngle * dampingShape;
+    drum.rearHeadLossFactor = heads.rear.lossAngle * dampingShape;
 
     // The viscous share. It is negligible at the fundamental - a few hundredths
     // of an inverse second at fifty hertz - and dominant by a kilohertz, which
     // is exactly the division of labour a hide has.
-    const float viscousLoss = viscousScale * (0.55f + 0.90f * applied.headMaterial);
-    drum.headViscousFactor = viscousLoss * dampingShape;
+    drum.headViscousFactor = heads.batter.viscousLossSeconds * dampingShape;
+    drum.rearHeadViscousFactor = heads.rear.viscousLossSeconds * dampingShape;
 
     // Loss into the hoop and the tacks. A soft laminated shell absorbs far
     // more of what reaches the rim than a dense carved log does.
@@ -2301,6 +2283,7 @@ void TaikoEngine::resolveDrumGeometry (const EngineParameters& applied,
     // would take the long ō-daiko boom off the instrument altogether.
     drum.edgeLoss = (0.34f + 1.50f * (1.0f - applied.shellMaterial))
                   * (0.15f + 1.85f * applied.headDamping);
+    drum.rearEdgeLoss = drum.edgeLoss;
 
     // Cavity stiffness per unit area. The per-mode 4/lambda^2 volume weighting
     // is applied where the modes are built, since it belongs to the mode.
@@ -2315,10 +2298,8 @@ void TaikoEngine::resolveDrumGeometry (const EngineParameters& applied,
     // x cot x with x = omega L / 2c.
     //
     // That makes the eigenproblem implicit: the stiffness depends on the
-    // frequency it sets. A complete drum carries one solve per axisymmetric
-    // mode. Octave-search trials resolve only the factors their latched mode can
-    // observe, then complete the winning drum once; the render loop sees only
-    // the four converged numbers.
+    // frequency it sets. This converged independent-column model remains
+    // available for the legacy ablation; the default bank uses shared air.
     //
     // The map from the factor to the factor the branch it produces asks for is
     // monotone decreasing - a stiffer cavity raises the branch, which raises x,
@@ -2338,6 +2319,7 @@ void TaikoEngine::resolveDrumGeometry (const EngineParameters& applied,
     // stopped wherever its iteration cap left it, which would have made the
     // reported factor a number about the solver. Bisection on a monotone
     // bracket cannot do that, and it converges in a fixed count.
+    drum.airCoupling = applied.cavityCoupling;
     resolveCavityStiffnesses (
         applied, drum, 0,
         includeHigherCavityModes ? axisymmetricSlotCount : 1);
@@ -2361,12 +2343,14 @@ void TaikoEngine::resolveDrumGeometry (const EngineParameters& applied,
     // instrument got - which is backwards, and it is why the o-daiko end of the
     // keyboard was both the quietest and the shortest.
     //
-    // It is resolved here rather than after the octave transform because it is
-    // the term that decides which of a drum's modes is the one heard: it is the
-    // only loss steep enough to separate two modes a fifth apart, and the
-    // sounding mode has to be identifiable at every trial the transform makes,
-    // not only at the answer.
-    drum.mountLoss = mountLossScale * (0.55f + 0.90f * applied.headDamping);
+    // A separate family support prior sets how much low-frequency motion is
+    // lost to its mounting. It changes decay without altering geometry or poles.
+    const float supportLossScale = lerp (
+        physical::profileForFamily (0).supportLossScale,
+        physical::profileForFamily (applied.physicalFamily).supportLossScale,
+        applied.physicalFamilyMix);
+    drum.mountLoss = mountLossScale * supportLossScale
+                   * (0.55f + 0.90f * applied.headDamping);
     drum.mountCorner = mountLossCorner * mountReferenceRadius
                      / std::max (drum.radius, radiusFloor);
 
@@ -2409,8 +2393,8 @@ void TaikoEngine::resolveDrumGeometry (const EngineParameters& applied,
     // mounting and the microphones, and for the same reason: a stroke is a
     // force pulse of finite length rather than an impulse, so how long it lasts
     // decides how much of it reaches each mode - and therefore which mode the
-    // drum is heard at. Every trial drum the octave transform builds has to be
-    // able to answer that.
+    // drum is heard at. The diagnostic observation uses this neutral duration;
+    // the rendered strike integrates its actual nonlinear contact force.
     //
     // At the neutral impact speed, which is the one the velocity map leaves
     // alone: `shaped` in trigger() is lerp(0.72, velocity, velocityDepth), so
@@ -2429,8 +2413,9 @@ void TaikoEngine::resolveDrumGeometry (const EngineParameters& applied,
         float peakForce = 0.0f;
         solveContact (collisionMass, impedance, profile, applied.bachiHardness,
                       geometricLerp (minimumImpactSpeed, maximumImpactSpeed, 0.72f),
-                      drum.contactSeconds, peakForce);
+                      drum.contactSeconds, peakForce, 1.0f, drum.bachi);
     }
+    resolveSharedAir (drum);
 }
 
 // What a stroke of contact time tau is worth in a mode at omega, relative to
@@ -2481,16 +2466,168 @@ float TaikoEngine::contactSpectrum (float omegaTau) noexcept
 // on every mode and cannot change which of them wins.
 //
 // `branch` is the two halves of the cavity-split pair for an axisymmetric mode.
-// A non-axisymmetric row is represented by the same deliberately detuned
-// cosine/sine resonators buildVoiceModes constructs. At exact zero angle the
-// sine member has no drive and is rejected below; the cosine member keeps its
-// rendered split frequency.
+// A non-axisymmetric row uses the same fixed principal-axis pair as the live
+// builder. Both members can be excited even at authored angle zero, because
+// the hide's nodal axes need not coincide with the player's reference axis.
+void TaikoEngine::resolveSharedAir (DrumState& drum) noexcept
+{
+    drum.sharedAirValid = false;
+    if (! hasRealismFeature (sharedCavity))
+        return;
+    cavity::Input input;
+    input.radius = drum.radius;
+    input.depth = drum.depth;
+    input.coupling = drum.airCoupling;
+    input.headArealDensity = { drum.batterDensity, drum.resonantDensity };
+    for (std::size_t radial = 0; radial < cavity::radialModeCount; ++radial)
+    {
+        const auto& entry = membraneModes()[radial];
+        input.besselZeros[radial] = entry.besselZero;
+        input.besselJ1AtZeros[radial] = besselJ (1, entry.besselZero);
+        const auto frequencies = membraneModeOmegas (
+            drum, drum.radius, static_cast<float> (entry.besselZero), 0.0f);
+        input.headAngularFrequencies[0][radial] = frequencies.batter;
+        input.headAngularFrequencies[1][radial] = frequencies.resonant;
+    }
+    drum.sharedAirValid = cavity::solve (input, drum.sharedAir);
+}
+
+TaikoEngine::SharedModeData TaikoEngine::sharedModeData (
+    const DrumState& drum, int modeIndex, float strikeRadius,
+    float micDistance, bool rearStrike) noexcept
+{
+    SharedModeData result;
+    if (! drum.sharedAirValid || modeIndex < 0
+        || static_cast<std::size_t> (modeIndex) >= drum.sharedAir.coordinateCount)
+        return result;
+    const auto index = static_cast<std::size_t> (modeIndex);
+    result.omega = static_cast<float> (drum.sharedAir.angularFrequencies[index]);
+    const float area = membraneAreaFor (drum.radius);
+    const float efficiency = radiationEfficiency (0, result.omega * drum.radius / soundSpeed);
+    float volumeB = 0.0f, volumeR = 0.0f;
+    float rearFraction = 0.0f;
+    for (std::size_t coordinate = 0; coordinate < drum.sharedAir.coordinateCount; ++coordinate)
+        result.basis[coordinate] = static_cast<float> (drum.sharedAir.eigenvectors[coordinate][index]);
+    for (std::size_t radial = 0; radial < cavity::radialModeCount; ++radial)
+    {
+        const auto lambda = static_cast<float> (membraneModes()[radial].besselZero);
+        const auto j1 = static_cast<float> (besselJ (1, lambda));
+        const float geometricMass = area * j1 * j1;
+        const float b = result.basis[radial];
+        const float r = result.basis[cavity::radialModeCount + radial];
+        const float bEnergy = geometricMass * drum.batterDensity * b * b;
+        const float rEnergy = geometricMass * drum.resonantDensity * r * r;
+        result.batterFraction += bEnergy;
+        rearFraction += rEnergy;
+        result.stretchNorm[radial] = lambda * lambda * j1 * j1;
+        const auto frequencies = membraneModeOmegas (drum, drum.radius, lambda, 0.0f);
+        result.tensionWeights[radial] = bEnergy * frequencies.batter * frequencies.batter
+            / ((1.0f + drum.stiffnessBatter * lambda * lambda)
+               * result.omega * result.omega);
+        result.tensionFraction += result.tensionWeights[radial];
+        result.rearTensionWeights[radial] = rEnergy * frequencies.resonant * frequencies.resonant
+            / ((1.0f + drum.stiffnessResonant * lambda * lambda)
+               * result.omega * result.omega);
+        result.rearTensionFraction += result.rearTensionWeights[radial];
+        const float footprint = bachi::contactRadius (drum.bachi, drum.radius, strikeRadius);
+        const float shape = static_cast<float> (besselJ (0, lambda * strikeRadius)
+            * bachi::diskProjection (lambda * footprint / drum.radius));
+        result.contact += shape * (rearStrike ? r : b);
+        const float micShape = static_cast<float> (besselJ (0, lambda * drum.micRadius / drum.radius));
+        const auto pressure = axisymmetricObservation (
+            drum, lambda, result.omega, efficiency, j1, micShape, b, r, micDistance);
+        result.observed += pressure.real;
+        result.quadrature += pressure.quadrature;
+        volumeB += 2.0f * j1 / lambda * b;
+        volumeR += 2.0f * j1 / lambda * r;
+    }
+    result.headFraction = clampFloat (result.batterFraction + rearFraction, 0.0f, 1.0f);
+    result.tensionFraction = clampFloat (result.tensionFraction, 0.0f, 1.0f);
+    result.rearTensionFraction = clampFloat (result.rearTensionFraction, 0.0f, 1.0f);
+    const float radiation = drum.radiationScale * airDensity * soundSpeed * area;
+    result.radiationSelf = radiation * (volumeB * volumeB + volumeR * volumeR);
+    result.radiationCross = radiation * (2.0f * volumeB * volumeR);
+    result.lossOmega = 0.5f * (drum.headLossFactor * result.batterFraction
+                              + drum.rearHeadLossFactor * rearFraction);
+    result.lossOmegaSquared = drum.headViscousFactor * result.batterFraction
+                           + drum.rearHeadViscousFactor * rearFraction;
+    // Small wall thermal loss for the air-dominated coordinates. The observed
+    // head and radiation terms retain their actual modal energy participation.
+    const float surfaceOverVolume = 2.0f / drum.radius + 2.0f / drum.depth;
+    const float thermalLoss = 0.1f * std::sqrt (2.2e-5f * 2.0f * result.omega)
+                            * surfaceOverVolume * (1.0f - result.headFraction);
+    result.fixedLoss = drum.edgeLoss * result.batterFraction
+                    + drum.rearEdgeLoss * rearFraction + thermalLoss;
+    return result;
+}
+
+TaikoEngine::ModeObservation TaikoEngine::observeSharedMode (
+    const DrumState& drum, int sharedIndex, float strikeRadius) noexcept
+{
+    const auto shared = sharedModeData (drum, sharedIndex,
+        clampFloat (strikeRadius, 0.0f, 0.995f), drum.micDistanceMetres);
+    if (! (shared.omega > 0.0f) || shared.headFraction < 1.0e-10f)
+        return {};
+    const float frequency = shared.omega / (2.0f * piFloat);
+    const float decay = shared.fixedLoss + shared.lossOmega * shared.omega
+        + shared.lossOmegaSquared * shared.omega * shared.omega
+        + mountingLoss (drum, frequency) * shared.headFraction
+        + coherentRadiationPower (shared.radiationSelf, shared.radiationCross,
+                                  shared.omega * drum.depth / soundSpeed)
+            * radiationEfficiency (0, shared.omega * drum.radius / soundSpeed);
+    const float amplitude = std::abs (shared.contact / shared.omega)
+        * std::hypot (shared.observed, shared.quadrature)
+        * proximityLift (drum.micProximity, frequency);
+    return finishObservation (shared.omega, amplitude, decay, drum.contactSeconds);
+}
+
+TaikoEngine::ModeIdentity TaikoEngine::identityForMode (const Mode& mode) noexcept
+{
+    ModeIdentity identity;
+    identity.entryIndex = mode.modeEntry;
+    identity.rearHead = mode.rearHeadMode;
+    if (mode.sharedCavityMode)
+        identity.sharedIndex = static_cast<std::int8_t> (
+            mode.physicalIndex < 8 ? mode.physicalIndex
+            : mode.physicalIndex - 2 * modeEntryCount + 8);
+    else
+        identity.branch = static_cast<std::uint8_t> (
+            mode.physicalIndex - (mode.rearHeadMode ? rearMembraneOffset : 0)
+            - 2 * mode.modeEntry);
+    return identity;
+}
+
+TaikoEngine::ModeObservation TaikoEngine::observeIdentity (
+    const DrumState& drum, ModeIdentity identity, float strikeRadius,
+    float strikeAngle) noexcept
+{
+    if (identity.sharedIndex >= 0)
+        return observeSharedMode (drum, identity.sharedIndex, strikeRadius);
+    if (! identity.rearHead)
+        return observeMode (drum, identity.entryIndex, identity.branch, strikeRadius, strikeAngle);
+    // Rear-only metadata names its own head frequency. The public neutral
+    // readout strikes the batter; this path also keeps explicit identities
+    // meaningful when a weak reciprocal shell transfer excites a rear pole.
+    auto rear = drum;
+    std::swap (rear.waveSpeed, rear.resonantWaveSpeed);
+    std::swap (rear.batterDensity, rear.resonantDensity);
+    std::swap (rear.stiffnessBatter, rear.stiffnessResonant);
+    std::swap (rear.headLossFactor, rear.rearHeadLossFactor);
+    std::swap (rear.headViscousFactor, rear.rearHeadViscousFactor);
+    return observeMode (rear, identity.entryIndex, identity.branch, strikeRadius, strikeAngle);
+}
+
 TaikoEngine::ModeObservation TaikoEngine::observeMode (const DrumState& drum,
                                                        int entryIndex, int branch,
                                                        float strikeRadius,
                                                        float strikeAngle) noexcept
 {
     ModeObservation result;
+
+    if (entryIndex < 0 || entryIndex >= modeEntryCount || branch < 0 || branch > 1)
+        return result;
+    if (drum.sharedAirValid && entryIndex < axisymmetricEntryCount)
+        return observeSharedMode (drum, 2 * entryIndex + branch, strikeRadius);
 
     const auto& entry = membraneModes()[static_cast<std::size_t> (entryIndex)];
     const int order = entry.circumferentialOrder;
@@ -2504,10 +2641,8 @@ TaikoEngine::ModeObservation TaikoEngine::observeMode (const DrumState& drum,
     // the stick lands decides which modes it can reach at all, so this has to
     // be a real stroke rather than a point at the centre - a strike on the
     // exact middle of the head drives the axisymmetric family and nothing else.
-    // The caller supplies it, because the two questions asked of this function
-    // want two different strokes: the readout wants the stroke the controls
-    // actually produce, and the octave transform wants the centred one, so that
-    // moving Strike Position cannot retune the keyboard.
+    // The caller supplies the authored contact radius. It affects excitation
+    // and observation without feeding back into physical tuning.
     const float rho = clampFloat (strikeRadius, 0.0f, 0.995f);
     const float micRho = drum.micRadius / radius;
     const float micDistance = drum.micDistanceMetres;
@@ -2521,8 +2656,10 @@ TaikoEngine::ModeObservation TaikoEngine::observeMode (const DrumState& drum,
     const auto besselAtZero =
         static_cast<float> (besselJ (order + 1, entry.besselZero));
     const float besselSquared = std::max (besselAtZero * besselAtZero, 1.0e-9f);
-    const auto shapeStrike =
-        static_cast<float> (besselJ (order, entry.besselZero * rho));
+    const auto shapeStrike = static_cast<float> (
+        besselJ (order, entry.besselZero * rho)
+        * bachi::diskProjection (entry.besselZero * bachi::contactRadius (
+              drum.bachi, radius, rho) / radius));
     const auto shapeMic =
         static_cast<float> (besselJ (order, entry.besselZero * micRho));
 
@@ -2584,18 +2721,16 @@ TaikoEngine::ModeObservation TaikoEngine::observeMode (const DrumState& drum,
     }
     else
     {
-        const bool legacyAxis = strikeAngle == 0.0f;
-        if (branch < 0 || branch > 1 || (legacyAxis && branch != 0))
+        if (branch < 0 || branch > 1)
             return result;
 
         const float geometricMass = 0.5f * area * besselSquared * sigmaB;
         const auto orderFloat = static_cast<float> (order);
 
-        // The renderer always builds two slightly detuned resonators. At exact
-        // zero angle only the cosine member is driven, but it is still that
-        // member's split pole rather than the unsplit parent frequency.
-        omega = omegaBatter * nonAxisymmetricDetune (entryIndex, branch,
-                                                     hideSeedFor (drum));
+        // Both split poles and their fixed nodal axes belong to the same head.
+        // An authored angle of zero can excite both rotated principal modes.
+        const auto basis = basisForEntry (drum, entryIndex);
+        omega = omegaBatter * basis.frequencyScale[static_cast<std::size_t> (branch)];
         const float frequency = omega / (2.0f * piFloat);
         const float efficiency =
             radiationEfficiency (order, omega * radius / soundSpeed);
@@ -2606,13 +2741,8 @@ TaikoEngine::ModeObservation TaikoEngine::observeMode (const DrumState& drum,
               + materialDamping (drum, omega, 0.0f)
               + mountingLoss (drum, frequency);
 
-        const float strikeAngular = legacyAxis
-            ? 1.0f
-            : (branch == 0 ? std::cos (orderFloat * strikeAngle)
-                           : std::sin (orderFloat * strikeAngle));
-        const float drive = legacyAxis
-            ? shapeStrike / (geometricMass * omega)
-            : shapeStrike * strikeAngular / (geometricMass * omega);
+        const float strikeAngular = basis.project (strikeAngle, branch);
+        const float drive = shapeStrike * strikeAngular / (geometricMass * omega);
         const float nearField = nearFieldAttenuation (lambda, radius, omega, micDistance);
         const float proximity = proximityLift (drum.micProximity, frequency);
         // Both capsules, and then the width trim the output stage puts on them.
@@ -2639,29 +2769,27 @@ TaikoEngine::ModeObservation TaikoEngine::observeMode (const DrumState& drum,
         // this used to read and what it should always have read. Written as a
         // pair of gains rather than as mid plus side so that at width 0.5 the
         // two are exactly 1 and 0 and the answer is bit-identical to the
-        // capsule term - the octave transform reads this function, and a
-        // difference in the last place there would move a latched mode. It
-        // does: taking the louder of the two finished channels instead moves
-        // the chu-daiko's handover from Octave Body 0.359 to 0.209.
+        // capsule term. This observation cannot alter geometry or tension.
         const float propagating = 0.35f * efficiency * propagatingSpread;
         const float observedRadial =
             nearField * shapeMic * proximity + propagating;
         const float observedLeft = observedRadial
-            * (legacyAxis
-                   ? std::cos (orderFloat * (drum.micAngleLeft - strikeAngle))
-                   : (branch == 0 ? std::cos (orderFloat * drum.micAngleLeft)
-                                  : std::sin (orderFloat * drum.micAngleLeft)));
+            * basis.project (drum.micAngleLeft, branch);
         const float observedRight = observedRadial
-            * (legacyAxis
-                   ? std::cos (orderFloat * (drum.micAngleRight - strikeAngle))
-                   : (branch == 0 ? std::cos (orderFloat * drum.micAngleRight)
-                                  : std::sin (orderFloat * drum.micAngleRight)));
+            * basis.project (drum.micAngleRight, branch);
         const float ownGain = 0.5f + drum.stereoWidth;
         const float otherGain = 0.5f - drum.stereoWidth;
         amplitude = std::abs (
             drive * (ownGain * observedLeft + otherGain * observedRight));
     }
 
+    return finishObservation (omega, amplitude, decay, drum.contactSeconds);
+}
+
+TaikoEngine::ModeObservation TaikoEngine::finishObservation (
+    float omega, float amplitude, float decay, float contactSeconds) noexcept
+{
+    ModeObservation result;
     if (! (omega > 0.0f) || ! (decay > 0.0f))
         return result;
 
@@ -2673,7 +2801,7 @@ TaikoEngine::ModeObservation TaikoEngine::observeMode (const DrumState& drum,
     // on the chu-daiko with a felt beater, where the contact runs to 4.7 ms, it
     // put the (1,2) mode nine decibels above where the rendered take has it.
     // See contactSpectrum.
-    amplitude *= contactSpectrum (omega * drum.contactSeconds);
+    amplitude *= contactSpectrum (omega * contactSeconds);
 
     result.frequencyHz = omega / (2.0f * piFloat);
     result.decayRate = decay;
@@ -2718,58 +2846,14 @@ TaikoEngine::ModeObservation TaikoEngine::observeMode (const DrumState& drum,
     return result;
 }
 
-// Which of a drum's modes is the one it is heard at: the loudest of them over
-// the window above, with nothing excluded.
+// Analytic settled-pole ranking for visualization and diagnostics. The full
+// shared-air bank and every non-axisymmetric head shape can participate. A
+// centered hit can remove angular modes entirely; the loudest partial can also
+// change when decay or microphone position changes. None of these observations
+// drives the explicit factory geometry/tension priors.
 //
-// There used to be a bound - first twice the fundamental's wavenumber, then the
-// head's third radial order - and it is gone, because it was never a statement
-// about which modes can carry a pitch. It was a guard against this comparison
-// being wrong above it, and the reason it looked wrong was an artefact of how
-// the comparison was checked rather than anything in the weights.
-//
-// Measure the settled linear modes: an attack glide moves their frequencies
-// during a measurement window, so a spectral probe fixed at the resting pitch
-// underestimates their energy. The strain response now depends on each mode's
-// batter tensile share; the readout still intentionally names the drum after
-// that transient stretching has decayed, rather than predicting attack pitch.
-//
-// On the o-daiko struck at the very centre three partials land within a decibel
-// of one another and the ranking is inside the weights' own accuracy; that drum
-// has no single pitch there, and no weighting can give it one.
-//
-// This is not the same question as which mode is lowest, and on half of this
-// family it is not the same answer. The (0,1) pair's lower branch moves the two
-// heads against each other, so it has no monopole moment. Their finite spacing
-// still radiates it as a dipole, but the current front-pair observer receives
-// it only through the near field - and on a drum big enough for that mode to sit
-// near the mounting's corner it is also the mode the stand empties first. What
-// is left ringing is the (1,1) mode, a fifth and a half above it, and that is
-// the pitch the drum is heard at. On a small tightly laced head the fundamental
-// sits far above the corner, keeps its ring, and wins by fifteen decibels. Both
-// are the same physics read at two sizes.
-//
-// `ceilingHz` is the one thing that is excluded, and it is not a claim about
-// which modes can carry a pitch - it is a claim about which modes exist in the
-// audio at all. buildVoiceModes drops every mode at or above 0.98 of Nyquist,
-// because configureResonator cannot make one, so a comparison run over the
-// whole bank can name a partial the render has already thrown away. It did: on
-// a 15 cm head at the tension ceiling with a thin film and Pitch +12, the top
-// pad's own fundamental is 25565 Hz, and the readout named it at a 48 kHz host
-// where nothing at or above 23520 Hz is ever instantiated.
-//
-// The readout passes the renderer's cutoff and the octave transform passes
-// infinity. That is two behaviours in one function and it is deliberate: which
-// mode an instrument is tuned by is a property of the instrument, and a
-// keyboard that retuned itself when the host changed its clock would be a far
-// worse defect than the one this bound fixes. It is also a bound rather than a
-// re-ranking - at infinity this is exactly the function it was - so the tuning
-// path is bit-identical to there being no bound at all.
-//
-// If nothing survives it, nothing is returned: `frequencyHz` stays zero, and
-// zero is the caller's marker for a drum with no membrane tone at this sample
-// rate. Naming the lowest mode anyway would be the defect rather than the fix -
-// the render contains no partial there, and the drum genuinely has no pitch at
-// that rate. See DrumMeasurements::soundingHz.
+// Restrict the comparison to poles the caller can render. Zero denotes no
+// excited, observable membrane pole below that ceiling, not a hidden frequency.
 TaikoEngine::SoundingMode TaikoEngine::soundingMode (const DrumState& drum,
                                                      float strikeRadius,
                                                      float ceilingHz,
@@ -2778,61 +2862,42 @@ TaikoEngine::SoundingMode TaikoEngine::soundingMode (const DrumState& drum,
     SoundingMode best;
     bool found = false;
     float bestLogWeight = -std::numeric_limits<float>::infinity();
-
-    const int entryLimit =
-        hasRealismFeature (extendedBank) ? modeEntryCount : legacyModeEntryCount;
+    const auto consider = [&] (ModeObservation observation, ModeIdentity identity)
+    {
+        if (! (observation.frequencyHz > 0.0f) || ! (observation.amplitude > 0.0f)
+            || observation.frequencyHz >= ceilingHz)
+            return;
+        const bool better = ! found || observation.weight > best.weight
+            || (! (best.weight > 0.0f) && ! (observation.weight > 0.0f)
+                && observation.logWeight > bestLogWeight);
+        if (! better)
+            return;
+        found = true;
+        best.frequencyHz = observation.frequencyHz;
+        best.weight = observation.weight;
+        bestLogWeight = observation.logWeight;
+        best.identity = identity;
+    };
+    if (drum.sharedAirValid)
+        for (std::size_t index = 0; index < drum.sharedAir.coordinateCount; ++index)
+        {
+            ModeIdentity identity;
+            identity.sharedIndex = static_cast<std::int8_t> (index);
+            consider (observeSharedMode (drum, static_cast<int> (index), strikeRadius), identity);
+        }
+    const int entryLimit = hasRealismFeature (extendedBank) ? modeEntryCount : legacyModeEntryCount;
     for (int entryIndex = 0; entryIndex < entryLimit; ++entryIndex)
     {
-        const auto& entry = membraneModes()[static_cast<std::size_t> (entryIndex)];
-        const int branches = entry.circumferentialOrder == 0
-            ? 2 : (strikeAngle == 0.0f ? 1 : 2);
-
-        for (int branch = 0; branch < branches; ++branch)
+        if (drum.sharedAirValid && entryIndex < axisymmetricEntryCount)
+            continue;
+        for (int branch = 0; branch < 2; ++branch)
         {
-            const auto observation =
-                observeMode (drum, entryIndex, branch, strikeRadius, strikeAngle);
-
-            if (! (observation.frequencyHz > 0.0f))
-                continue;
-
-            // Exactly the test buildVoiceModes makes on the same frequency, so
-            // the set compared here is the set that will be rendered.
-            if (observation.frequencyHz >= ceilingHz)
-                continue;
-
-            // The comparison is on `weight`, and it is only on `logWeight` when
-            // `weight` has run out of exponent - on a drum whose every mode is
-            // emptied before the pitch window opens, where every weight is
-            // exactly zero and there is otherwise nothing to choose between
-            // them. Written this way rather than as a comparison on `logWeight`
-            // alone so that wherever this function had an answer before it
-            // returns the same one: the two orderings agree mathematically and
-            // to a few units in the last place numerically, and a comparison
-            // that changed in the last place would be a comparison that could
-            // hand the octave transform a different latched mode.
-            //
-            // The first valid mode is always taken, so a drum that sounds is
-            // never reported as having no pitch. It used to be: nothing was
-            // accepted unless it beat a zero, and on a 15 cm head at the
-            // tension ceiling nothing did.
-            const bool better =
-                ! found
-                || observation.weight > best.weight
-                || (! (best.weight > 0.0f) && ! (observation.weight > 0.0f)
-                    && observation.logWeight > bestLogWeight);
-
-            if (! better)
-                continue;
-
-            found = true;
-            best.frequencyHz = observation.frequencyHz;
-            best.weight = observation.weight;
-            bestLogWeight = observation.logWeight;
-            best.identity.entryIndex = static_cast<std::uint8_t> (entryIndex);
-            best.identity.branch = static_cast<std::uint8_t> (branch);
+            ModeIdentity identity;
+            identity.entryIndex = static_cast<std::uint8_t> (entryIndex);
+            identity.branch = static_cast<std::uint8_t> (branch);
+            consider (observeMode (drum, entryIndex, branch, strikeRadius, strikeAngle), identity);
         }
     }
-
     return best;
 }
 
@@ -2852,16 +2917,7 @@ float TaikoEngine::renderedModeCeilingHz (double sampleRateHz) noexcept
     return 0.5f * rate * 0.98f;
 }
 
-// Where the octave transform reads a pitch, and where the readout does.
-//
-// The transform is anchored at the centred stroke on purpose. An off-centre
-// strike really does excite a different balance of modes and really is heard at
-// a different pitch - that physics is in observeMode above and stays there - but
-// making the octave solve follow it would turn Strike Position into a tuning
-// control: nudging the stick towards the middle of the head would retune the
-// whole keyboard and re-solve every drum's size. So the solve always asks what
-// the drum sounds under a centred full open stroke, and Strike Position moves
-// only what is heard and what is reported.
+// The authored stroke position, shared by contact construction and readout.
 float TaikoEngine::strikeRadiusFor (const StrikeProfile& profile,
                                     float strikePosition) noexcept
 {
@@ -2899,118 +2955,29 @@ float TaikoEngine::readoutStrikeRadius (const EngineParameters& parameters) noex
                             parameters.strikePosition);
 }
 
-// The mode each octave of the family is tuned by.
-//
-// This is the fix for a regression the octave solve shipped with. Solving the
-// transform against soundingMode() - an argmax over the drum's modes - is what
-// puts the four heard octaves where they belong, but an argmax is a
-// discontinuous function of everything that feeds it. Two of this family's modes
-// are within a decibel of each other over a wide stretch of the controls, and
-// wherever they crossed, the reference drum's reported pitch stepped by up to a
-// tenth of an octave and every transformed octave re-solved for radically
-// different geometry. Measured on the shipping code at factory settings, a
-// single 0.01-semitone step of Pitch at 7.48 -> 7.49 dropped the chu-daiko from
-// 183.8 Hz to 100.6 Hz - 1043 cents - and moved its head from 0.238 m to
-// 0.404 m, so the timbre lurched with the pitch. Head Tension crossed the same
-// balance at 0.4142 and 0.9175, Head Diameter at 0.5958, and Resonant Tension
-// and Mic Spread further in, all of them doing the same thing.
-//
-// So the identity is latched instead of re-chosen. Which mode an instrument is
-// heard at is a property of the instrument - the o-daiko and the chu-daiko are
-// named by their (1,1), because their own fundamentals have no monopole moment,
-// reach the current front observer weakly and are emptied by the mounting in
-// half a second, while the okedo and the shime are named by their fundamentals
-// - and that is a fact about the four drums the family table describes, not
-// about where the player has left Head Tension. So
-// it is read off those four drums, at the factory controls, and the solve then
-// tracks that same mode as the player's controls move.
-//
-// The one control it does depend on is Octave Body, and it has to: that control
-// decides what the four drums *are*. At Family they are four instruments and the
-// chu-daiko is heard at its (1,1); at Tuned they are one o-daiko retuned, and an
-// o-daiko taken up an octave is a drum whose own fundamental has climbed clear
-// of the mounting and become the loudest thing it has - which is the mode
-// handover the README describes as the reason the first octave at Tuned costs
-// x13.49 in tension rather than x4. No single assignment can serve both ends:
-// tuning the chu-daiko's fundamental onto the octave breaks the family grid, and
-// tuning a retuned o-daiko's (1,1) onto it makes the first octave at Tuned a
-// step of 157 cents. So this reads the identity off the drum the family would
-// build at the current Octave Body, and one handover survives, in the control
-// whose whole job is to change which instrument an octave plays.
-//
-// Everything else the latch has to be, it is, because past Octave Body it is a
-// constant: it cannot depend on what was struck, because no stroke is involved;
-// a host that sets the parameters in a different order lands on the same drum,
-// because this is a pure function of one of them; and it persists across
-// setParameters for the same reason. Anything narrower - latching on the first
-// setParameters, or latching from the current controls with only Pitch held back
-// - is either path dependent or still discontinuous in whatever control was left
-// live.
-//
-// Which drum to read it off is the one subtlety. Not the untransformed
-// instrument: at Tuned that is the reference drum itself, and it is heard at its
-// (1,1), which is exactly the answer that costs the first octave 1043 cents of
-// the handover. It has to be the instrument as the key will actually leave it,
-// and that is not known until the solve has run. So it is taken at the transform
-// that would put the drum's *ideal* membrane fundamental on its octave - a
-// closed form, continuous in the controls, and within a per cent of the answer
-// at Family, where the drums are already an octave apart, and exactly an octave
-// of tension at Tuned, where they are not.
+// Diagnostic identity of the factory model for analysis tools. It is never
+// used to choose dimensions or tension: an acoustic mode index cannot remain
+// a physical head identity while it passes through shared air resonances.
 TaikoEngine::ModeIdentity TaikoEngine::tuningModeFor (int octaveOffset,
                                                       float octaveBody) noexcept
 {
-    const int clamped =
-        std::clamp (octaveOffset, lowestOctaveOffset, highestOctaveOffset);
-
-    // The family as the table builds it, at the factory controls. Nothing the
-    // player has done to the drum reaches this.
-    auto controls = sanitise (EngineParameters {});
-    controls.octaveBody = clampFloat (octaveBody, 0.0f, 1.0f);
-    const float body = controls.octaveBody;
-
-    DrumState referenceState;
-    resolveDrumGeometry (controls, 1.0f, 1.0f, 1.0f, referenceState);
-
-    // No ceiling on either of these. Which mode an instrument is tuned by is a
-    // property of the instrument; putting the render's Nyquist cutoff on it
-    // would let the host's clock retune the keyboard. See soundingMode.
-    constexpr float noCeiling = std::numeric_limits<float>::infinity();
-
-    if (clamped == 0)
-        return soundingMode (referenceState, tuningStrikeRadius(), noCeiling).identity;
-
-    const auto applied = parametersForOctave (controls, clamped);
-    DrumState untransformed;
-    resolveDrumGeometry (applied, 1.0f, 1.0f, 1.0f, untransformed);
-
-    // How much transform it takes to put the ideal membrane fundamental - wave
-    // speed over radius, up to a constant - where the key asks. Both halves of
-    // the transform move that quantity by exactly 2^amount, whatever the mixture,
-    // so this inverts in closed form.
-    float amount = static_cast<float> (clamped);
-    const float idealReference = referenceState.waveSpeed / referenceState.radius;
-    const float idealHere = untransformed.waveSpeed / untransformed.radius;
-
-    if (idealReference > 0.0f && idealHere > 0.0f)
-        amount += std::log2 (idealReference / idealHere);
-
-    DrumState canonical;
-    resolveDrumGeometry (applied, std::exp2 (-body * amount),
-                         std::exp2 (2.0f * (1.0f - body) * amount), 1.0f, canonical);
-
-    return soundingMode (canonical, tuningStrikeRadius(), noCeiling).identity;
+    auto parameters = sanitise (EngineParameters {});
+    parameters.octaveBody = clampFloat (octaveBody, 0.0f, 1.0f);
+    const auto drum = resolveDrumFor (parameters, 0.0f, octaveOffset);
+    return soundingMode (drum, tuningStrikeRadius(),
+                         std::numeric_limits<float>::infinity()).identity;
 }
 
 // The player's controls carried onto whichever of the four drums this octave
 // plays. Head Diameter is a ratio, because it is a length and the family spans
-// a factor of three in it; the other four are offsets in control units, which
+// a factor of five in it; body, tension and shell use offsets in control units, which
 // for Head Tension is a constant ratio in newtons per metre because that
 // control's own map is geometric. Either way a control moved from the factory
 // setting moves the whole family by the same amount rather than moving one drum
-// out of the set.
+// out of the set. HEAD remains the same trim on each independent skin profile.
 //
 // At Octave Body 0 the four drums collapse onto the reference one and this
-// returns the parameter block untouched, which is what "the same drum, retuned"
+// returns the player's controls untouched, which is what "the same drum, retuned"
 // has to mean. At octave 0 it returns it untouched at every Octave Body,
 // because the reference drum is the o-daiko the controls describe.
 EngineParameters TaikoEngine::parametersForOctave (const EngineParameters& applied,
@@ -3020,24 +2987,26 @@ EngineParameters TaikoEngine::parametersForOctave (const EngineParameters& appli
     const auto& drum = getDrumDescription (octaveOffset);
     const float body = clampFloat (applied.octaveBody, 0.0f, 1.0f);
 
+    EngineParameters result = applied;
+    result.physicalFamily = body > 0.0f ? std::clamp (octaveOffset, 0, 3) : 0;
+    result.physicalFamilyMix = body;
+
     if (! (body > 0.0f))
-        return applied;
+        return result;
 
     // Geometric on the diameter and linear on the rest, each in the space its
     // own control is even in.
     const float diameterRatio =
         std::pow (drum.headDiameterMetres / reference.headDiameterMetres, body);
 
-    EngineParameters result = applied;
     result.headDiameter =
         clampFloat (applied.headDiameter * diameterRatio, 0.15f, 1.80f);
     result.bodyDepth = clampFloat (
         applied.bodyDepth + body * (drum.bodyDepth - reference.bodyDepth), 0.0f, 1.0f);
     result.tension = clampFloat (
         applied.tension + body * (drum.tension - reference.tension), 0.0f, 1.0f);
-    result.headMaterial = clampFloat (
-        applied.headMaterial + body * (drum.headMaterial - reference.headMaterial),
-        0.0f, 1.0f);
+    // HEAD trims each family's independent natural-hide profile. Offsetting
+    // this control made a thin natural okedo or thick shime become synthetic.
     result.shellMaterial = clampFloat (
         applied.shellMaterial + body * (drum.shellMaterial - reference.shellMaterial),
         0.0f, 1.0f);
@@ -3049,280 +3018,41 @@ TaikoEngine::DrumState TaikoEngine::resolveDrumFor (const EngineParameters& raw,
                                                     int octaveOffset) noexcept
 {
     const auto controls = sanitise (raw);
-    const auto applied = parametersForOctave (controls, octaveOffset);
+    const int octave = std::clamp (octaveOffset, lowestOctaveOffset, highestOctaveOffset);
+    auto applied = parametersForOctave (controls, octave);
+    const auto tuning = physical::tuningForPad (octave, controls.octaveBody);
+    applied.physicalRearTensionScale = tuning.rearTensionScale;
+    const float tensionPitchFactor = std::exp2 (
+        2.0f * (applied.pitch + pitchBendSemitones) / 12.0f);
     DrumState drum;
+    // Geometry is construction, not the output of a pitch observer. Shared air
+    // has avoided crossings and finite-frequency air poles, so tracking sorted
+    // eigenvalue indices as tuning anchors can run all the way to the tension
+    // or diameter clamp. Explicit factory tensions preserve each named design
+    // and let every physical control move continuously. The strongest audible
+    // partial can change naturally away from that factory setting.
+    resolveDrumGeometry (applied, 1.0f, tuning.batterTensionScale,
+                         tensionPitchFactor, drum);
 
-    const auto octave = static_cast<float> (
-        std::clamp (octaveOffset, lowestOctaveOffset, highestOctaveOffset));
-
-    // What is left for the transform to do, and which axis it does it on. Going
-    // up the keyboard is no longer a rescaling: the drum has already changed
-    // into a different instrument, and all that remains is to bring that
-    // instrument to the pitch the key asks for - which is what tuning a drum
-    // is. Octave Body chooses whether that residual is taken as head tension
-    // (0, and then it is the whole octave, because the drum has not changed) or
-    // as the drum's own size (1, and then it is a couple of per cent).
-    const float body = applied.octaveBody;
-
-    // The pitch control and the wheel are head tension, because that is what
-    // tuning a drum is.
-    const float semitones = applied.pitch + pitchBendSemitones;
-    const float tensionPitchFactor = std::exp2 (2.0f * semitones / 12.0f);
-
-    // Halving the drum and quadrupling the tension used to be written down as
-    // landing on exactly the same pitch, and that was only ever true of the
-    // ideal membrane frequency - a quantity that is never audible on its own.
-    // The air load goes as rho_air a / sigma while the cavity goes as
-    // rho c^2 / L. Neither of them scales with the transform, so the two ways
-    // of buying an octave land a long way apart in the pitch a listener names,
-    // and the transform that doubles the ideal frequency does not double the
-    // real one. Measured on the shipping code the octave steps at Octave Body
-    // 1.0 were 1545 / 1443 / 1353 / 1286 / 1244 cents - a keyboard whose bottom
-    // octave is nearly three semitones wide.
-    //
-    // So the tuning is solved for rather than written down: how much transform,
-    // in octaves, puts the mode this drum is heard at exactly `octave` octaves
-    // above the mode the reference drum is heard at. The mixture is untouched -
-    // the solve moves along the axis Octave Body already chose, so at Octave
-    // Body 0 the radius still never moves and at 1.0 the tension still never
-    // does - and it is the principle the head's stiffness stretch already
-    // follows and the README already states: a drum is tuned by the pitch it
-    // sounds.
-    //
-    // The mode it is heard at, and not its loaded fundamental. Those are the
-    // same thing on a small tightly laced head and they are not on a large
-    // slack one: the (0,1) pair's lower branch moves the two heads against each
-    // other and has no monopole moment. Finite separation still gives it dipole
-    // radiation, but the current front observer reaches it only through the
-    // near field, so on a drum whose fundamental sits down near the mounting's
-    // corner that mode is emptied by the stand in half a second while the (1,1)
-    // mode a fifth and a half above it rings for two. Solving against the lower
-    // branch put the four drums' inaudible fundamentals on exact octaves and
-    // left what anyone actually hears stepping 0 / 11.7 / 14.3 / 26.3
-    // semitones. See soundingMode.
-    //
-    // The reference is the drum the controls describe, resolved untransformed.
-    // It used to be this octave's own untransformed drum, which was the same
-    // thing when every octave was one drum rescaled; now that the four octaves
-    // are four instruments it is not, and taking each drum's own pitch as the
-    // reference would have tuned each of them an octave above itself and left
-    // the keyboard reading the family's own intervals rather than octaves.
-    //
-    // Which mode that is, on both sides of the comparison, is latched rather
-    // than taken as an argmax over the drum's modes - see tuningModeFor. It has
-    // to be: an argmax is discontinuous in every control that feeds it, so
-    // re-running it per parameter update made a hundredth of a semitone of Pitch
-    // automation drop a drum by a tenth of an octave and re-solve its size.
-    // Re-deciding it inside the bisection would be worse still, because a
-    // bisection cannot bracket a step it creates itself.
-    //
-    // That frequency is monotone increasing in the amount of transform applied,
-    // because more tension and less radius both raise every mode of the head
-    // and the mixture moves them together, so a bisection on a bracket widened
-    // until it straddles the answer is well posed. The bracket has to reach both
-    // ways: a real drum can sound above the key it is put on as easily as below
-    // it, and at Octave Body 0 the answer is still very nearly the whole octave.
-    // Twenty-four halvings of a bracket that starts two octaves wide is a
-    // ten-millionth of an octave, well under a thousandth of a cent.
-    //
-    // Inside the loop is the head, the air behind it, the mounting and the
-    // microphones; the shell and any cavity factors the tracked mode cannot see
-    // are computed once, from the answer. A drum resolve happens when a control
-    // moves or the wheel passes a tenth of a cent, which is at most once per
-    // block and never per sample.
-    const auto transformed = [&applied, body, tensionPitchFactor] (
-                                 float amount, DrumState& state,
-                                 bool includeHigherCavityModes)
-    {
-        resolveDrumGeometry (applied, std::exp2 (-body * amount),
-                             std::exp2 (2.0f * (1.0f - body) * amount),
-                             tensionPitchFactor, state,
-                             includeHigherCavityModes);
-    };
-
-    // The reference drum is the controls themselves, so at octave zero the
-    // target is the pitch this very drum already sounds and the transform is the
-    // identity for every Octave Body. Taking that case out keeps the reference
-    // octave bit-identical rather than nearly so - and it is also the only place
-    // the reference resolve can be skipped.
-    if (octaveOffset == 0)
-    {
-        transformed (0.0f, drum, true);
-    }
-    else
-    {
-        // The two latched identities: the mode the reference drum is tuned by
-        // and the mode this octave's instrument is tuned by. They are not the
-        // same row of the table across this family - the two large drums are
-        // named by their (1,1) and the two small ones by their fundamentals -
-        // and that difference is exactly what puts the four heard pitches on
-        // octaves. What matters here is only that neither of them is re-decided
-        // when a control moves.
-        const auto referenceIdentity = tuningModeFor (0, applied.octaveBody);
-        const auto identity = tuningModeFor (octaveOffset, applied.octaveBody);
-        // The shipping latches are either entry zero or non-axisymmetric, so
-        // their octave search cannot observe the three higher cavity factors.
-        // Keep the condition explicit: if a future drum family is tuned by a
-        // higher axisymmetric mode, that mode must remain fully resolved in
-        // every trial rather than inheriting a deferred zero stiffness.
-        const auto& trackedEntry =
-            membraneModes()[static_cast<std::size_t> (identity.entryIndex)];
-        const bool needsHigherTrackedEntry =
-            trackedEntry.circumferentialOrder == 0
-            && trackedEntry.axisymmetricSlot > 0;
-        // Always the centred stroke, on both sides. Strike Position moves what
-        // the drum is heard at, and it must not move what it is tuned to.
-        const float strikeRadius = tuningStrikeRadius();
-
-        DrumState referenceState;
-        resolveDrumGeometry (controls, 1.0f, 1.0f, tensionPitchFactor,
-                             referenceState);
-        const float reference =
-            observeMode (referenceState, referenceIdentity.entryIndex,
-                         referenceIdentity.branch, strikeRadius)
-                .frequencyHz;
-
-        if (! (reference > 0.0f))
-        {
-            transformed (octave, drum, true);
-        }
-        else
-        {
-            // The bracket is carried as a pair of resolved drums rather than as
-            // a pair of numbers, and the one that wins is the drum that is
-            // handed on. Re-resolving the winning amount at the end instead
-            // would be the same arithmetic written twice, and the two copies do
-            // not always round the same way: where the tracked mode steps - see
-            // below - a difference in the last place of the exponentials is
-            // enough to put the final resolve the other side of the step from
-            // the trial that chose it, and the drum that ships is then not the
-            // drum that was measured.
-            DrumState lowState;
-            DrumState highState;
-
-            // In octaves above where the reference drum sounds, so the answer
-            // wanted is exactly `octave` and the function is increasing in the
-            // amount of transform whichever side of zero it starts.
-            const auto reached = [&transformed, reference, identity, strikeRadius,
-                                  needsHigherTrackedEntry] (float amount,
-                                                            DrumState& state)
-            {
-                transformed (amount, state, needsHigherTrackedEntry);
-                const float sounded =
-                    observeMode (state, identity.entryIndex, identity.branch,
-                                 strikeRadius)
-                        .frequencyHz;
-                return sounded > 0.0f ? std::log2 (sounded / reference) : -100.0f;
-            };
-
-            // One octave either side of the answer if the drum were already in
-            // tune, which straddles it for every drum in the table at Octave
-            // Body 1 and is widened for the settings where it does not - at
-            // Octave Body 0 the drum has not changed at all and the whole octave
-            // has to come out of the tension.
-            float low = octave - 1.0f;
-            float high = octave + 1.0f;
-            float atLow = reached (low, lowState);
-            float atHigh = reached (high, highState);
-
-            for (int widen = 0; widen < 5 && atLow > octave; ++widen)
-            {
-                high = low;
-                atHigh = atLow;
-                highState = lowState;
-                low -= 1.0f;
-                atLow = reached (low, lowState);
-            }
-
-            for (int widen = 0; widen < 5 && atHigh < octave; ++widen)
-            {
-                low = high;
-                atLow = atHigh;
-                lowState = highState;
-                high += 1.0f;
-                atHigh = reached (high, highState);
-            }
-
-            DrumState middleState;
-
-            for (int iteration = 0; iteration < 24; ++iteration)
-            {
-                const float middle = 0.5f * (low + high);
-                const float here = reached (middle, middleState);
-
-                if (here < octave)
-                {
-                    low = middle;
-                    atLow = here;
-                    lowState = middleState;
-                }
-                else
-                {
-                    high = middle;
-                    atHigh = here;
-                    highState = middleState;
-                }
-            }
-
-            // Whichever end of the converged bracket is nearer, rather than its
-            // midpoint. Wherever the tracked mode is continuous in the transform
-            // the two ends agree to a ten-millionth of an octave and this is the
-            // same answer either way.
-            //
-            // Where they do not agree, the bracket has not failed to converge -
-            // it has found a step in the quantity being solved for, and the drum
-            // is saying that the octave it is being asked for does not exist. At
-            // the transform where the air column reaches its quarter-wave the
-            // two heads stop being tied together; the lower branch becomes the
-            // far head's alone, a stroke on the batter head can no longer sound
-            // it, and the mode being tracked steps up to the batter head's own.
-            // There is a band of pitches on the far side of that step which no
-            // amount of transform reaches. The near side of it is the closest an
-            // octave can be got to, and taking the midpoint would land past it.
-            const bool takeLow =
-                std::abs (atLow - octave) <= std::abs (atHigh - octave);
-            drum = takeLow ? lowState : highState;
-
-            if (! needsHigherTrackedEntry)
-                resolveCavityStiffnesses (applied, drum, 1,
-                                          axisymmetricSlotCount);
-        }
-    }
-
-    // The wooden shell's ring modes. This is the standard thin-cylinder result
-    // f_n = n(n^2-1)/sqrt(n^2+1) * h/(2 pi R^2) * sqrt(E/(12 rho (1-nu^2))),
-    // so the shell material moves both the frequencies and their spacing.
-    const float youngsModulus = lerp (4.0e9f, 14.0e9f, applied.shellMaterial);
-    const float woodDensity = lerp (450.0f, 850.0f, applied.shellMaterial);
-    constexpr float poisson = 0.30f;
-    const float plateSpeed = std::sqrt (
-        youngsModulus / (12.0f * woodDensity * (1.0f - poisson * poisson)));
-    const float wallThickness = 2.0f * drum.radius
-                              * (0.035f + 0.045f * applied.shellMaterial);
-    const float geometry = wallThickness / (2.0f * piFloat * drum.radius * drum.radius);
-    // A drum shell is a thick, short, heavily loaded piece of wood clamped at
-    // both ends by the hoops, not a free bar, so it does not ring for long. It
-    // used to, and on a large drum its ring outlasted the head's - which put a
-    // wooden pitch on top of the drum where the body should only be adding
-    // weight, and left a hand laid on the head unable to damp what anyone could
-    // still hear, because a hand on the head does not touch the body.
-    const float shellQ = 12.0f + 40.0f * applied.shellMaterial;
-
+    // A reduced orthotropic wall, with separate effective carved, stave and
+    // tensioned-hoop construction. The same modal masses drive the direct rim
+    // contact and reciprocal boundary; radiation belongs to the observer.
+    const auto shell = shellboundary::makeModes ({
+        drum.radius, drum.depth, applied.shellMaterial,
+        drum.physicalFamily, drum.physicalFamilyMix });
+    static_assert (shellboundary::modeCount == shellResonatorCount);
     for (int index = 0; index < shellResonatorCount; ++index)
     {
-        const auto n = static_cast<float> (index + 2);
-        const float coefficient = n * (n * n - 1.0f) / std::sqrt (n * n + 1.0f);
-        const float frequency = coefficient * geometry * plateSpeed;
-        drum.shellFrequencies[static_cast<std::size_t> (index)] = frequency;
-        drum.shellDecays[static_cast<std::size_t> (index)] = piFloat * frequency / shellQ;
+        const auto slot = static_cast<std::size_t> (index);
+        drum.shellFrequencies[slot] = static_cast<float> (shell.frequencyHz[slot]);
+        drum.shellDecays[slot] = static_cast<float> (shell.amplitudeDecay[slot]);
+        drum.shellModalMasses[slot] = static_cast<float> (shell.modalMassKg[slot]);
+        drum.shellBoundaryDamping[slot] = shell.boundaryDampingNsPerMetre[slot];
     }
-
-    // Half the mass of the cylinder wall, which is what a ring mode actually
-    // has to move. A carved zelkova body is heavy and barely responds; a light
-    // laminated shell rings far more for the same stroke.
-    drum.shellModalMass = std::max (
-        0.5f * woodDensity * 2.0f * piFloat * drum.radius * drum.depth * wallThickness,
-        0.05f);
+    // Retained as the reference-ring readout; construction and excitation use
+    // each entry's mass, which includes its tangential ring displacement.
+    drum.shellModalMass = drum.shellModalMasses[0];
+    drum.shellObservationCalibration = static_cast<float> (shell.observationCalibration);
 
     drum.shellLevel = applied.shellResonance;
 
@@ -3378,9 +3108,7 @@ void TaikoEngine::refreshDrumIfNeeded() noexcept
 void TaikoEngine::drumContactTerms (const DrumState& drum, float& strikerMass,
                                     float& impedance) noexcept
 {
-    strikerMass = bachiMass
-                * clampFloat (drum.radius / referenceRadius, minimumBachiScale,
-                              maximumBachiScale);
+    strikerMass = std::max (drum.bachi.massKg, 1.0e-6f);
     // Legacy per-unit-length mobility calibration used only to scale the
     // observed statistical tail and the direct-path contact estimate. It is
     // not loaded into the reciprocal resolved-mode solve: a physical point
@@ -3391,11 +3119,13 @@ void TaikoEngine::drumContactTerms (const DrumState& drum, float& strikerMass,
 float TaikoEngine::contactCollisionMass (const DrumState& drum,
                                          const StrikeProfile& profile,
                                          float strikeRadius,
-                                         float strikerMass) noexcept
+                                         float strikerMass, bool rearStrike) noexcept
 {
     const float area = membraneAreaFor (drum.radius);
     const float rho = clampFloat (strikeRadius, 0.0f, 0.995f);
     const float coupling = profile.membraneGain * profile.levelScale;
+    const double footprintRadius = bachi::contactRadius (drum.bachi,
+        drum.radius, rho);
     double inverseHeadMass = 0.0;
 
     // Over the twenty entries the contact is solved against - see the note
@@ -3409,11 +3139,13 @@ float TaikoEngine::contactCollisionMass (const DrumState& drum,
         const auto& entry = membraneModes()[static_cast<std::size_t> (entryIndex)];
         const int order = entry.circumferentialOrder;
         const double lambda = entry.besselZero;
-        const double shape = besselJ (order, lambda * rho);
+        const double shape = besselJ (order, lambda * rho)
+            * bachi::diskProjection (lambda * footprintRadius / drum.radius);
         const double boundary = besselJ (order + 1, lambda);
         const double angularNorm = order == 0 ? 1.0 : 0.5;
         const double modalMass = angularNorm * static_cast<double> (area)
-                               * boundary * boundary * drum.batterDensity;
+                               * boundary * boundary
+                               * (rearStrike ? drum.resonantDensity : drum.batterDensity);
         if (modalMass > 0.0)
             inverseHeadMass += static_cast<double> (coupling) * coupling
                              * shape * shape / modalMass;
@@ -3426,14 +3158,12 @@ float TaikoEngine::contactCollisionMass (const DrumState& drum,
     return static_cast<float> (1.0 / (inverseStickMass + inverseHeadMass));
 }
 
-double TaikoEngine::contactExponentFor (float bachiHardness) noexcept
+double TaikoEngine::contactExponentFor (float bachiHardness,
+                                        bachi::Covering covering) noexcept
 {
-    const float hardness = clampFloat (bachiHardness, 0.0f, 1.0f);
-    if (hardness >= feltHardnessLimit || ! hasRealismFeature (feltContact))
+    if (! hasRealismFeature (feltContact))
         return hertzContactExponent;
-    return hertzContactExponent
-         + (feltContactExponent - hertzContactExponent)
-               * static_cast<double> (1.0f - hardness / feltHardnessLimit);
+    return bachi::contactExponent (covering, bachiHardness);
 }
 
 double TaikoEngine::powerLawDurationConstant (double alpha) noexcept
@@ -3468,11 +3198,12 @@ double TaikoEngine::pulseMeanSquare (double alpha) noexcept
 TaikoEngine::ContactLaw TaikoEngine::contactLawFor (const StrikeProfile& profile,
                                                     float bachiHardness,
                                                     float stiffnessScale,
-                                                    float collisionMass) noexcept
+                                                    float collisionMass,
+                                                    const bachi::Profile& stick) noexcept
 {
     const float hertzStiffness =
-        contactStiffnessFor (profile, bachiHardness) * stiffnessScale;
-    const double alpha = contactExponentFor (bachiHardness);
+        contactStiffnessFor (profile, bachiHardness, stick) * stiffnessScale;
+    const double alpha = contactExponentFor (bachiHardness, stick.covering);
     if (alpha == hertzContactExponent)
         return { hertzStiffness, alpha };
 
@@ -3496,10 +3227,11 @@ TaikoEngine::ContactLaw TaikoEngine::contactLawFor (const StrikeProfile& profile
 void TaikoEngine::solveContact (float collisionMass, float targetImpedance,
                                 const StrikeProfile& profile, float bachiHardness,
                                 float impactSpeed, float& contactSeconds,
-                                float& peakForce, float stiffnessScale) noexcept
+                                float& peakForce, float stiffnessScale,
+                                const bachi::Profile& stick) noexcept
 {
-    const float stiffness = contactStiffnessFor (profile, bachiHardness) * stiffnessScale;
-    const double alpha = contactExponentFor (bachiHardness);
+    const float stiffness = contactStiffnessFor (profile, bachiHardness, stick) * stiffnessScale;
+    const double alpha = contactExponentFor (bachiHardness, stick.covering);
 
     // Hertz impact of a rounded tip against a stiff surface. The contact time
     // falls as the fifth root of the impact speed, which is the whole reason a
@@ -3543,12 +3275,14 @@ void TaikoEngine::solveContact (float collisionMass, float targetImpedance,
 }
 
 float TaikoEngine::contactStiffnessFor (const StrikeProfile& profile,
-                                        float bachiHardness) noexcept
+                                        float bachiHardness,
+                                        const bachi::Profile& stick) noexcept
 {
     return clampFloat (
         geometricLerp (minimumContactStiffness, maximumContactStiffness,
                        bachiHardness) * profile.hardnessScale,
-        minimumContactStiffness * 0.25f, maximumContactStiffness * 4.0f);
+        minimumContactStiffness * 0.25f, maximumContactStiffness * 4.0f)
+        * bachi::contactStiffnessScale (stick);
 }
 
 float TaikoEngine::shapeVelocity (float rawVelocity, float velocityCurve) noexcept
@@ -3588,7 +3322,7 @@ float TaikoEngine::measureContact (const EngineParameters& raw,
     float contactSeconds = 0.0f;
     float peakForce = 0.0f;
     solveContact (collisionMass, impedance, profile, parameters.bachiHardness, speed,
-                  contactSeconds, peakForce);
+                  contactSeconds, peakForce, 1.0f, drum.bachi);
     return contactSeconds;
 }
 
@@ -3649,6 +3383,7 @@ void TaikoEngine::configureResonator (Resonator& resonator, float frequencyHz,
 
 void TaikoEngine::updateQuadratureScales (Mode& mode) noexcept
 {
+    mode.shellBoundaryVelocityToPrevious = 0.0;
     const double sine = mode.resonator.b0;
     const double radius = mode.poleRadius;
     if (! (radius > 0.0) || std::abs (sine) <= 1.0e-12)
@@ -3661,6 +3396,80 @@ void TaikoEngine::updateQuadratureScales (Mode& mode) noexcept
     mode.quadratureFromCurrent =
         -mode.resonator.a1 / (2.0 * radius * sine);
     mode.quadratureFromPrevious = -radius / sine;
+    mode.shellBoundaryVelocityToPrevious = shellboundary::velocityToPreviousScale (
+        mode.liveOmega, mode.quadratureFromPrevious);
+}
+
+void TaikoEngine::configureShellBoundary (Voice& voice) const noexcept
+{
+    std::array<double, shellResonatorCount> inverseBoundaryMass {};
+    std::array<bool, shellResonatorCount> headPresent {}, shellPresent {};
+    for (int index = 0; index < voice.modeCount; ++index)
+    {
+        auto& mode = voice.modes[static_cast<std::size_t> (index)];
+        mode.shellBoundaryImpulseScale = 0.0;
+        const int group = mode.shellBoundaryGroup;
+        if (group < 0 || group >= shellResonatorCount
+            || ! (mode.inverseModalMass > 0.0f)
+            || mode.shellBoundaryVelocityToPrevious == 0.0)
+            continue;
+        const double projection = mode.shellBoundaryProjection;
+        if (projection == 0.0)
+            continue;
+        (mode.membrane ? headPresent : shellPresent)[static_cast<std::size_t> (group)] = true;
+        inverseBoundaryMass[static_cast<std::size_t> (group)] +=
+            projection * projection * static_cast<double> (mode.inverseModalMass);
+    }
+
+    std::array<double, shellResonatorCount> impulseCoefficient {};
+    for (std::size_t group = 0; group < impulseCoefficient.size(); ++group)
+        if (headPresent[group] && shellPresent[group])
+            impulseCoefficient[group] = shellboundary::makeDashpot (
+                inverseBoundaryMass[group], voice.shellBoundaryDamping[group],
+                1.0 / sampleRate_).impulsePerVelocity;
+
+    for (int index = 0; index < voice.modeCount; ++index)
+    {
+        auto& mode = voice.modes[static_cast<std::size_t> (index)];
+        const int group = mode.shellBoundaryGroup;
+        if (group < 0 || group >= shellResonatorCount
+            || ! (mode.inverseModalMass > 0.0f)
+            || mode.shellBoundaryVelocityToPrevious == 0.0)
+            continue;
+        mode.shellBoundaryImpulseScale = static_cast<double> (mode.shellBoundaryProjection)
+            * static_cast<double> (mode.inverseModalMass)
+            * impulseCoefficient[static_cast<std::size_t> (group)];
+    }
+}
+
+void TaikoEngine::applyShellBoundary (Voice& voice) noexcept
+{
+    std::array<double, shellResonatorCount> relativeVelocity {};
+    for (int index = 0; index < voice.activeModeCount; ++index)
+    {
+        const auto& mode = voice.modes[static_cast<std::size_t> (index)];
+        if (mode.shellBoundaryImpulseScale == 0.0)
+            continue;
+        const double velocity = shellboundary::modalVelocity (
+            mode.liveOmega, static_cast<double> (mode.decayRate + mode.appliedPalmDecay),
+            mode.quadratureFromCurrent, mode.quadratureFromPrevious,
+            mode.resonator.y1, mode.resonator.y2);
+        relativeVelocity[static_cast<std::size_t> (mode.shellBoundaryGroup)] +=
+            static_cast<double> (mode.shellBoundaryProjection) * velocity;
+    }
+    // Every group sees the same pre-impulse velocities. These disjoint groups
+    // use exactly opposite mechanical ports on head and shell, so the kinetic
+    // energy removed by the cached dashpot cannot become a duplicated source.
+    // Stored coordinates share modelScale; that common scale cancels here.
+    for (int index = 0; index < voice.activeModeCount; ++index)
+    {
+        auto& mode = voice.modes[static_cast<std::size_t> (index)];
+        if (mode.shellBoundaryImpulseScale == 0.0)
+            continue;
+        const double velocityChange = mode.shellBoundaryImpulseScale
+            * relativeVelocity[static_cast<std::size_t> (mode.shellBoundaryGroup)];
+        mode.resonator.y2 += velocityChange * mode.shellBoundaryVelocityToPrevious;
+    }
 }
 
 void TaikoEngine::setPalmDecay (Mode& mode, float amplitudeDecay) noexcept
@@ -3818,7 +3627,6 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
     const float referenceMicProximity =
         micProximityFor (continuumReferenceDistanceMetres);
 
-    const std::uint32_t hideSeed = hideSeedFor (drum);
     const float edgeLoss = drum.edgeLoss * (1.0f + 3.0f * extraDamping);
     // The hide's own loss, kept as the two coefficients materialDamping sums
     // rather than as that sum, so a retuned mode can be re-damped at its new
@@ -3830,6 +3638,7 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
     voice.mountCorner = drum.mountCorner;
     voice.radiusMetres = drum.radius;
     voice.radiationDelaySeconds = drum.depth / soundSpeed;
+    voice.shellBoundaryDamping = drum.shellBoundaryDamping;
 
     int count = 0;
     float peakMagnitude = 1.0e-12f;
@@ -3850,6 +3659,67 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
     // distance law below, rather than inheriting one resolved partial's gain.
     float membranePeakAtReferenceDistance = 1.0e-12f;
 
+    if (drum.sharedAirValid)
+    {
+        for (std::size_t index = 0; index < drum.sharedAir.coordinateCount; ++index)
+        {
+            const auto data = sharedModeData (drum, static_cast<int> (index), rho,
+                                               micDistance, voice.rearStrike);
+            const float frequency = data.omega / (2.0f * piFloat);
+            if (! (frequency > 0.0f) || frequency >= nyquist * 0.98f)
+                continue;
+            const float radiatedLoss = coherentRadiationPower (
+                data.radiationSelf, data.radiationCross,
+                data.omega * voice.radiationDelaySeconds)
+                * radiationEfficiency (0, data.omega * radius / soundSpeed);
+            const float fixedLoss = data.fixedLoss * (1.0f + 3.0f * extraDamping);
+            const float damping = fixedLoss + radiatedLoss
+                + handShare * (data.lossOmega * data.omega
+                              + data.lossOmegaSquared * data.omega * data.omega)
+                + mountingLoss (drum, frequency) * data.headFraction;
+            auto& mode = voice.modes[static_cast<std::size_t> (count++)];
+            beginMode (mode, data.omega, frequency, damping);
+            mode.sharedCavityMode = true;
+            mode.cavityBasis = data.basis;
+            mode.cavityStretchNorm = data.stretchNorm;
+            mode.cavityTensionWeights = data.tensionWeights;
+            mode.cavityRearTensionWeights = data.rearTensionWeights;
+            mode.rearTensionFraction = data.rearTensionFraction;
+            mode.headEnergyFraction = data.headFraction;
+            mode.membrane = true;
+            mode.circumferentialOrder = 0;
+            mode.modeEntry = static_cast<std::uint8_t> (std::min<std::size_t> (index / 2, 3));
+            mode.physicalIndex = static_cast<std::uint8_t> (index < 8 ? index : 152 + index - 8);
+            mode.inverseModalMass = 1.0f;
+            mode.contactShape = data.contact * profile.membraneGain * profile.levelScale;
+            mode.batterParticipation = data.basis[0];
+            mode.resonantParticipation = data.basis[cavity::radialModeCount];
+            mode.stretchNorm = 0.0f;
+            mode.batterTensionFraction = data.tensionFraction;
+            mode.localMuteDampingRate = 0.0f;
+            mode.handDampingRate = 0.0f;
+            mode.decayFixed = fixedLoss;
+            mode.lossOmega = data.lossOmega * handShare;
+            mode.lossOmegaSquared = data.lossOmegaSquared * handShare;
+            mode.radiationPrefactor = data.radiationSelf;
+            mode.radiationCrossPrefactor = data.radiationCross;
+            mode.drive = data.contact * profile.membraneGain * modelScale / (data.omega * rate);
+            const float proximity = proximityLift (drum.micProximity, frequency);
+            mode.micLeft = mode.micRight = data.observed * proximity * drum.acousticRadiationGain;
+            mode.micLeftQuadrature = mode.micRightQuadrature =
+                data.quadrature * proximity * drum.acousticRadiationGain;
+            configureResonator (mode.resonator, frequency, damping, 1.0f, &mode.poleRadius);
+            updateQuadratureScales (mode);
+            peakMagnitude = std::max (peakMagnitude,
+                std::abs (mode.drive) * std::hypot (mode.micLeft, mode.micLeftQuadrature));
+            const auto referenceData = sharedModeData (
+                drum, static_cast<int> (index), rho, continuumReferenceDistanceMetres);
+            membranePeakAtReferenceDistance = std::max (membranePeakAtReferenceDistance,
+                std::abs (mode.drive * rate) * std::hypot (referenceData.observed,
+                    referenceData.quadrature) * proximityLift (referenceMicProximity, frequency));
+        }
+    }
+
     const int entryLimit =
         hasRealismFeature (extendedBank) ? modeEntryCount : legacyModeEntryCount;
     for (int entryIndex = 0; entryIndex < entryLimit; ++entryIndex)
@@ -3857,6 +3727,9 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
         const auto& entry = entries[static_cast<std::size_t> (entryIndex)];
         const int order = entry.circumferentialOrder;
         const auto lambda = static_cast<float> (entry.besselZero);
+
+        if (drum.sharedAirValid && order == 0 && entryIndex < axisymmetricEntryCount)
+            continue;
 
         // Membrane modes: f = c * lambda / (2 pi a), opened out by the head's
         // own bending stiffness. The Bessel zeros set the wavenumbers, and
@@ -3886,8 +3759,10 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
         const float besselSquared = std::max (besselAtZero * besselAtZero, 1.0e-9f);
 
         // Mode shape at the strike point and at each microphone.
-        const auto shapeStrike =
-            static_cast<float> (besselJ (order, entry.besselZero * rho));
+        const auto shapeStrike = static_cast<float> (
+            besselJ (order, entry.besselZero * rho)
+            * bachi::diskProjection (entry.besselZero * bachi::contactRadius (
+                  drum.bachi, radius, rho) / radius));
         const auto shapeMic =
             static_cast<float> (besselJ (order, entry.besselZero * micRho));
 
@@ -3975,7 +3850,8 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
                                   + materialDamping (drum, omega, extraDamping)
                                   + mountingLoss (drum, frequency);
 
-                const float drive = shapeStrike * batterShare
+                const float contactShare = voice.rearStrike ? resonantShare : batterShare;
+                const float drive = shapeStrike * contactShare
                                   / (geometricMass * omega * rate);
 
                 // What a microphone in front of the head actually receives.
@@ -4042,7 +3918,7 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
                 mode.inverseModalMass = 1.0f / std::max (geometricMass, 1.0e-9f);
                 mode.contactShape = entryIndex < legacyModeEntryCount
                                         || hasRealismFeature (fullBankContact)
-                    ? shapeStrike * batterShare
+                    ? shapeStrike * contactShare
                           * profile.membraneGain * profile.levelScale
                     : 0.0f;
                 mode.batterParticipation = batterShare;
@@ -4051,6 +3927,10 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
                 mode.batterTensionFraction = clampFloat (
                     vectorB * vectorB * omegaBatter * omegaBatter
                         * batterTensileShare / eigenvalue, 0.0f, 1.0f);
+                mode.rearTensionFraction = clampFloat (
+                    vectorR * vectorR * omegaResonant * omegaResonant
+                        / ((1.0f + drum.stiffnessResonant * lambda * lambda) * eigenvalue),
+                    0.0f, 1.0f);
                 mode.drive = drive * profile.membraneGain * modelScale;
                 // Axisymmetric modes look identical from both sides of the
                 // head, so they are the part of the image that stays centred.
@@ -4085,173 +3965,196 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
             // real head is never quite uniform, so the pair sits a fraction of
             // a percent apart and beats - which is most of what makes a drum
             // sound like an object rather than an oscillator.
-            const float geometricMass = 0.5f * area * besselSquared * sigmaB;
-            const auto orderFloat = static_cast<float> (order);
-
-            for (int branch = 0; branch < 2; ++branch)
+            // Each head owns both members of its angular pair. A rear stroke
+            // drives its own skin; the common air/shell carry energy between
+            // heads instead of relocating the existing batter oscillators.
+            const int headCount = hasRealismFeature (sharedCavity) ? 2 : 1;
+            for (int head = 0; head < headCount; ++head)
             {
-                if (count >= membraneResonatorCount)
-                    break;
+                const bool rear = head != 0;
+                const bool struck = rear == voice.rearStrike;
+                const float density = rear ? sigmaR : sigmaB;
+                const float geometricMass = 0.5f * area * besselSquared * density;
+                const float headLossOmega = rear ? 0.5f * drum.rearHeadLossFactor * handShare : lossOmega;
+                const float headLossSquared = rear ? drum.rearHeadViscousFactor * handShare : lossOmegaSquared;
+                const float headEdgeLoss = rear ? drum.rearEdgeLoss * (1.0f + 3.0f * extraDamping) : edgeLoss;
+                const float observerDistance = rear
+                    ? drum.depth + std::hypot (std::max (radius - drum.micRadius, 0.0f), micDistance)
+                    : micDistance;
+                const auto orderFloat = static_cast<float> (order);
+                const auto basis = basisForEntry (drum, entryIndex);
 
-                const float detune = nonAxisymmetricDetune (entryIndex, branch,
-                                                            hideSeed);
-                const float omega = omegaBatter * detune;
-                const float frequency = omega / (2.0f * piFloat);
-                if (frequency >= nyquist * 0.98f)
-                    continue;
-
-                // Branch 0 is the cos(m theta) member, branch 1 the sin one.
-                const float strikeAngular =
-                    branch == 0 ? std::cos (orderFloat * theta)
-                                : std::sin (orderFloat * theta);
-                const float micAngularL =
-                    branch == 0 ? std::cos (orderFloat * micAngleL)
-                                : std::sin (orderFloat * micAngleL);
-                const float micAngularR =
-                    branch == 0 ? std::cos (orderFloat * micAngleR)
-                                : std::sin (orderFloat * micAngleR);
-
-                const float ka = omega * radius / soundSpeed;
-                const float efficiency = radiationEfficiency (order, ka);
-                const float radiationPrefactor =
-                    drum.radiationScale * airDensity * soundSpeed / (2.0f * sigmaB);
-                const float radiationLoss = radiationPrefactor * efficiency;
-                const float decayFixed =
-                    edgeLoss * (1.0f + edgeOrderFactor * orderFloat);
-                const float decay = decayFixed + radiationLoss
-                                  + materialDamping (drum, omega, extraDamping)
-                                  + mountingLoss (drum, frequency);
-
-                const float drive = shapeStrike * strikeAngular
-                                  / (geometricMass * omega * rate);
-
-                // Preserve the former scalar observation only as the anchor
-                // for the unresolved continuum. That statistical tail is not
-                // a coherent resolved mode and needs its own measured spatial
-                // transfer; letting one resolved mode's new complex pressure
-                // revoice all five noise bands would pretend otherwise.
-                const float nearField = nearFieldAttenuation (lambda, radius, omega,
-                                                              micDistance);
-                const float proximity = proximityLift (drum.micProximity, frequency);
-                const float propagating =
-                    0.35f * efficiency * propagatingSpread;
-                const float continuumAnchorL =
-                    nearField * shapeMic * micAngularL * proximity + propagating;
-                const float continuumAnchorR =
-                    nearField * shapeMic * micAngularR * proximity + propagating;
-                const float releasedObservedRadial =
-                    nearField * shapeMic * proximity + propagating;
-                const float releasedObservedL =
-                    releasedObservedRadial * micAngularL;
-                const float releasedObservedR =
-                    releasedObservedRadial * micAngularR;
-
-                float continuumObservedL = continuumAnchorL;
-                float continuumObservedR = continuumAnchorR;
-                if (micDistance != continuumReferenceDistanceMetres)
+                for (int branch = 0; branch < 2; ++branch)
                 {
-                    const float referenceNearField = nearFieldAttenuation (
-                        lambda, radius, omega, continuumReferenceDistanceMetres);
-                    const float referenceProximity = proximityLift (
-                        referenceMicProximity, frequency);
-                    const float referencePropagating =
-                        0.35f * efficiency * referencePropagatingSpread;
-                    continuumObservedL =
-                        referenceNearField * shapeMic * micAngularL
-                            * referenceProximity
-                        + referencePropagating;
-                    continuumObservedR =
-                        referenceNearField * shapeMic * micAngularR
-                            * referenceProximity
-                        + referencePropagating;
-                }
+                    if (count >= membraneResonatorCount)
+                        break;
 
-                // Resolved multipoles are coherent radiators, so observe the
-                // whole moving disc rather than blending a point sample with a
-                // frequency-only efficiency. The Rayleigh integral supplies
-                // near-to-far cancellation, 1/R spreading and propagation
-                // phase together. Circular symmetry means the expensive part
-                // is shared by both capsules; their two orientations are the
-                // real angular factors above.
-                const auto pressure = buildComplexObservation
-                    ? baffledModeObservation (radius, drum.micRadius, micDistance,
-                                               order, lambda, omega)
-                    : ComplexObservation {};
+                    const float detune = basis.frequencyScale[static_cast<std::size_t> (branch)];
+                    const float omega = (rear ? omegaResonant : omegaBatter) * detune;
+                    const float frequency = omega / (2.0f * piFloat);
+                    if (frequency >= nyquist * 0.98f)
+                        continue;
 
-                auto& mode = voice.modes[static_cast<std::size_t> (count)];
-                beginMode (mode, omega, frequency, decay);
-                mode.decayFixed = decayFixed;
-                mode.lossOmega = lossOmega;
-                mode.lossOmegaSquared = lossOmegaSquared;
-                mode.radiationPrefactor = radiationPrefactor;
-                mode.radiationCrossPrefactor = 0.0f;
-                mode.circumferentialOrder = static_cast<std::uint8_t> (order);
-                mode.modeEntry = static_cast<std::uint8_t> (entryIndex);
-                mode.physicalIndex = static_cast<std::uint8_t> (2 * entryIndex + branch);
-                mode.membrane = true;
-                mode.localMuteDampingRate = 0.0f;
-                mode.handDampingRate = 0.0f;
-                mode.inverseModalMass = 1.0f / std::max (geometricMass, 1.0e-9f);
-                mode.contactShape = entryIndex < legacyModeEntryCount
-                                        || hasRealismFeature (fullBankContact)
-                    ? shapeStrike * strikeAngular
-                          * profile.membraneGain * profile.levelScale
-                    : 0.0f;
-                mode.batterParticipation = 1.0f;
-                mode.resonantParticipation = 0.0f;
-                mode.batterTensionFraction = batterTensileShare;
-                mode.stretchNorm = 0.5f * lambda * lambda * besselSquared;
-                // A head clamped at the rim cannot move there, but it pulls:
-                // the tension times the mode's own slope at r = a is a radial
-                // line force on the shell. For a mode sitting at a zero of
-                // J_m that slope is -(lambda/a) J_(m+1)(lambda), and
-                // integrating it against a ring mode's cos(n theta) over the
-                // circumference gives -pi T lambda J_(m+1)(lambda) where the
-                // orders match and exactly zero where they do not. The radius
-                // cancels: the arc length restores the a the slope divided
-                // out. Carrying 1/modelScale turns the resonator state into
-                // the metres the derivation is written in.
-                if (branch == 0 && hasRealismFeature (headToShellPath))
-                {
-                    const int ring = order - 2;
-                    if (ring >= 0 && ring < shellResonatorCount)
+                    // Frequency, contact and both capsules see the same rotated
+                    // principal shapes; authored strike coordinates stay fixed.
+                    const float strikeAngular = basis.project (theta, branch);
+                    const float micAngularL = basis.project (micAngleL, branch);
+                    const float micAngularR = basis.project (micAngleR, branch);
+
+                    const float ka = omega * radius / soundSpeed;
+                    const float efficiency = radiationEfficiency (order, ka);
+                    const float radiationPrefactor =
+                        drum.radiationScale * airDensity * soundSpeed / (2.0f * density);
+                    const float radiationLoss = radiationPrefactor * efficiency;
+                    const float decayFixed =
+                        headEdgeLoss * (1.0f + edgeOrderFactor * orderFloat);
+                    const float decay = decayFixed + radiationLoss
+                                      + headLossOmega * omega + headLossSquared * omega * omega
+                                      + mountingLoss (drum, frequency);
+
+                    const float drive = (struck ? shapeStrike * strikeAngular : 0.0f)
+                                      / (geometricMass * omega * rate);
+
+                    // Preserve the former scalar observation only as the anchor
+                    // for the unresolved continuum. That statistical tail is not
+                    // a coherent resolved mode and needs its own measured spatial
+                    // transfer; letting one resolved mode's new complex pressure
+                    // revoice all five noise bands would pretend otherwise.
+                    const float nearField = nearFieldAttenuation (lambda, radius, omega,
+                                                                  observerDistance);
+                    const float proximity = proximityLift (
+                        rear ? micProximityFor (observerDistance) : drum.micProximity, frequency);
+                    const float propagating =
+                        0.35f * efficiency * (rear ? propagatingSpreadFor (observerDistance)
+                                                  : propagatingSpread);
+                    const float continuumAnchorL =
+                        nearField * shapeMic * micAngularL * proximity + propagating;
+                    const float continuumAnchorR =
+                        nearField * shapeMic * micAngularR * proximity + propagating;
+                    const float releasedObservedRadial =
+                        nearField * shapeMic * proximity + propagating;
+                    const float releasedObservedL =
+                        releasedObservedRadial * micAngularL;
+                    const float releasedObservedR =
+                        releasedObservedRadial * micAngularR;
+
+                    float continuumObservedL = continuumAnchorL;
+                    float continuumObservedR = continuumAnchorR;
+                    if (micDistance != continuumReferenceDistanceMetres)
                     {
-                        mode.shellRingIndex = static_cast<std::int8_t> (ring);
-                        mode.shellRimCoupling =
-                            -piFloat * drum.tension * lambda * besselAtZero
-                            / modelScale;
+                        const float referenceNearField = nearFieldAttenuation (
+                            lambda, radius, omega, continuumReferenceDistanceMetres);
+                        const float referenceProximity = proximityLift (
+                            referenceMicProximity, frequency);
+                        const float referencePropagating =
+                            0.35f * efficiency * referencePropagatingSpread;
+                        continuumObservedL =
+                            referenceNearField * shapeMic * micAngularL
+                                * referenceProximity
+                            + referencePropagating;
+                        continuumObservedR =
+                            referenceNearField * shapeMic * micAngularR
+                                * referenceProximity
+                            + referencePropagating;
                     }
-                }
-                mode.drive = drive * profile.membraneGain * modelScale;
-                if (buildComplexObservation)
-                {
-                    mode.micLeft = pressure.real * micAngularL * drum.acousticRadiationGain;
-                    mode.micRight = pressure.real * micAngularR * drum.acousticRadiationGain;
-                    mode.micLeftQuadrature = pressure.quadrature * micAngularL * drum.acousticRadiationGain;
-                    mode.micRightQuadrature = pressure.quadrature * micAngularR * drum.acousticRadiationGain;
-                }
-                else
-                {
-                    mode.micLeft = releasedObservedL * drum.acousticRadiationGain;
-                    mode.micRight = releasedObservedR * drum.acousticRadiationGain;
-                    mode.micLeftQuadrature = 0.0f;
-                    mode.micRightQuadrature = 0.0f;
-                }
-                configureResonator (mode.resonator, frequency, decay, 1.0f,
-                                   &mode.poleRadius);
-                updateQuadratureScales (mode);
-                ++count;
 
-                peakMagnitude = std::max (
-                    peakMagnitude,
-                    std::abs (mode.drive) * std::max (
-                        std::hypot (mode.micLeft, mode.micLeftQuadrature),
-                        std::hypot (mode.micRight, mode.micRightQuadrature)));
-                if (entryIndex < legacyModeEntryCount)
-                    membranePeakAtReferenceDistance = std::max (
-                        membranePeakAtReferenceDistance,
-                        std::max (std::abs (mode.drive * rate * continuumObservedL),
-                                  std::abs (mode.drive * rate * continuumObservedR)));
+                    // Resolved multipoles are coherent radiators, so observe the
+                    // whole moving disc rather than blending a point sample with a
+                    // frequency-only efficiency. The Rayleigh integral supplies
+                    // near-to-far cancellation, 1/R spreading and propagation
+                    // phase together. Circular symmetry means the expensive part
+                    // is shared by both capsules; their two orientations are the
+                    // real angular factors above.
+                    // The rear disc reaches the front pair through the same
+                    // effective rim-path distance as the cavity observer. This
+                    // is a reduced diffraction path, not a full barrel BEM.
+                    const auto pressure = buildComplexObservation
+                        ? baffledModeObservation (radius, drum.micRadius, observerDistance,
+                                                   order, lambda, omega)
+                        : ComplexObservation {};
+
+                    auto& mode = voice.modes[static_cast<std::size_t> (count)];
+                    beginMode (mode, omega, frequency, decay);
+                    mode.decayFixed = decayFixed;
+                    mode.lossOmega = headLossOmega;
+                    mode.lossOmegaSquared = headLossSquared;
+                    mode.radiationPrefactor = radiationPrefactor;
+                    mode.radiationCrossPrefactor = 0.0f;
+                    mode.circumferentialOrder = static_cast<std::uint8_t> (order);
+                    mode.angularBasis = basis.rotation[static_cast<std::size_t> (branch)];
+                    mode.modeEntry = static_cast<std::uint8_t> (entryIndex);
+                    mode.physicalIndex = static_cast<std::uint16_t> (
+                        (rear ? rearMembraneOffset : 0) + 2 * entryIndex + branch);
+                    mode.rearHeadMode = rear;
+                    if (order >= 2 && order <= 7
+                        && (entryIndex < legacyModeEntryCount || hasRealismFeature (fullBankContact)))
+                    {
+                        // Effective rounded bearing-edge transformer, averaged
+                        // over the two ends of the shell. This signed projection
+                        // couples only mechanical contact coordinates.
+                        const float rimWidth = clampFloat (0.025f * radius, 0.004f, 0.018f);
+                        const float rimRho = clampFloat (1.0f - rimWidth / radius, 0.85f, 0.995f);
+                        mode.shellBoundaryGroup = static_cast<std::int8_t> (order - 2);
+                        mode.shellBoundaryProjection = 0.5f * static_cast<float> (
+                            besselJ (order, lambda * rimRho)) * mode.angularBasis[0];
+                    }
+                    mode.membrane = true;
+                    mode.localMuteDampingRate = 0.0f;
+                    mode.handDampingRate = 0.0f;
+                    mode.inverseModalMass = 1.0f / std::max (geometricMass, 1.0e-9f);
+                    mode.contactShape = struck && (entryIndex < legacyModeEntryCount
+                                            || hasRealismFeature (fullBankContact))
+                        ? shapeStrike * strikeAngular
+                              * profile.membraneGain * profile.levelScale
+                        : 0.0f;
+                    if (! rear && hasRealismFeature (headToShellPath)
+                        && order >= 2 && order <= 7)
+                    {
+                        mode.shellRingIndex = static_cast<std::int8_t> (order - 2);
+                        mode.shellRimCoupling = -piFloat * drum.tension * lambda
+                            * besselAtZero * mode.angularBasis[0] / modelScale;
+                    }
+                    mode.batterParticipation = rear ? 0.0f : 1.0f;
+                    mode.resonantParticipation = rear ? 1.0f : 0.0f;
+                    mode.batterTensionFraction = rear ? 0.0f : batterTensileShare;
+                    mode.rearTensionFraction = rear
+                        ? 1.0f / (1.0f + drum.stiffnessResonant * lambda * lambda) : 0.0f;
+                    mode.stretchNorm = 0.5f * lambda * lambda * besselSquared;
+                    mode.drive = drive * profile.membraneGain * modelScale;
+                    if (buildComplexObservation)
+                    {
+                        mode.micLeft = pressure.real * micAngularL * drum.acousticRadiationGain;
+                        mode.micRight = pressure.real * micAngularR * drum.acousticRadiationGain;
+                        mode.micLeftQuadrature = pressure.quadrature * micAngularL * drum.acousticRadiationGain;
+                        mode.micRightQuadrature = pressure.quadrature * micAngularR * drum.acousticRadiationGain;
+                    }
+                    else
+                    {
+                        const float rearPhase = rear
+                            ? omega * (observerDistance - micDistance) / soundSpeed : 0.0f;
+                        const float inPhase = std::cos (rearPhase) * drum.acousticRadiationGain;
+                        const float quadrature = -std::sin (rearPhase) * drum.acousticRadiationGain;
+                        mode.micLeft = releasedObservedL * inPhase;
+                        mode.micRight = releasedObservedR * inPhase;
+                        mode.micLeftQuadrature = releasedObservedL * quadrature;
+                        mode.micRightQuadrature = releasedObservedR * quadrature;
+                    }
+                    configureResonator (mode.resonator, frequency, decay, 1.0f,
+                                       &mode.poleRadius);
+                    updateQuadratureScales (mode);
+                    ++count;
+
+                    peakMagnitude = std::max (
+                        peakMagnitude,
+                        std::abs (mode.drive) * std::max (
+                            std::hypot (mode.micLeft, mode.micLeftQuadrature),
+                            std::hypot (mode.micRight, mode.micRightQuadrature)));
+                    if (struck && entryIndex < legacyModeEntryCount)
+                        membranePeakAtReferenceDistance = std::max (
+                            membranePeakAtReferenceDistance,
+                            std::max (std::abs (mode.drive * rate * continuumObservedL),
+                                      std::abs (mode.drive * rate * continuumObservedR)));
+                }
             }
         }
     }
@@ -4272,20 +4175,18 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
     // they replace was. See advancePhysicalContacts and renderVoice.
     //
     // The wooden bank: the drum's own shell. A Don Rim catches the hoop and the
-    // body as well as the head, so it has a direct shell force. Don, Ka and Tsu
-    // hit only the membrane. Its boundary loss already accounts for work sent
-    // into the mounting; copying the solved normal force into ring modes as
-    // well was a one-way, non-reciprocal source that made the light Okedo body
-    // overwhelm its head. A future audible head-to-shell path needs a measured
-    // mechanical projection rather than that duplicate force.
+    // body as well as the head, so it has a direct shell force. Ordinary head
+    // strikes reach the shell only through the passive bearing-edge port.
+    // Their external contact force must not be duplicated into this bank.
+    // Shell Resonance changes acoustic observation, not the moving wall's mass
+    // or its mechanical coupling back into the head.
     const float bodyLevel = 0.30f + 0.70f * drum.shellLevel;
     const float shellGain = profile.strikesHoop
-        ? profile.shellGain * bodyLevel + profile.rimGain * 0.35f
+        ? profile.shellGain + profile.rimGain * 0.35f
         : 0.0f;
     // The head's own volume displacement gives the membrane modes their
     // radiating area for free; the wooden bank has to be told what it is.
     const float radiatingArea = drum.radius * drum.radius;
-    const float woodModalMass = drum.shellModalMass;
 
     for (int index = 0; index < shellResonatorCount; ++index)
     {
@@ -4293,6 +4194,7 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
             break;
 
         const auto slot = static_cast<std::size_t> (index);
+        const float woodModalMass = std::max (drum.shellModalMasses[slot], 1.0e-9f);
         const float frequency =
             drum.shellFrequencies[slot] * profile.shellFrequencyScale;
         if (! (frequency > 0.0f) || frequency >= nyquist * 0.98f)
@@ -4312,13 +4214,11 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
         const float shellL = (1.0f - spread) + spread * std::cos (ring * micAngleL);
         const float shellR = (1.0f - spread) + spread * std::cos (ring * micAngleR);
         const float omega = 2.0f * piFloat * frequency;
-        // Same force-over-modal-mass path the head uses, so a heavy body
-        // genuinely refuses to move and a light one genuinely rings - times the
-        // area it radiates from, which is the term the membrane modes get for
-        // free through their own volume displacement and the shell was missing.
-        const float effectiveWoodMass = std::max (woodModalMass, 3.2f);
-        const float level = shellGain * shellCalibration * radiatingArea
-                          / (effectiveWoodMass * omega * rate)
+        // q is a physical modal displacement scaled only by modelScale, just
+        // like a membrane coordinate. A velocity impulse between the two is
+        // meaningful only when the radiation calibration is outside q.
+        const float level = shellGain / (woodModalMass * omega * rate);
+        const float observation = bodyLevel * drum.shellObservationCalibration * radiatingArea
                           / (1.0f + 0.35f * static_cast<float> (index))
                           * shellPerspectiveGain (drum, index + 2, omega,
                                                   frequency, micDistance);
@@ -4329,31 +4229,24 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
         mode.membrane = false;
         mode.circumferentialOrder = 0;
         mode.modeEntry = 0;
-        mode.physicalIndex = static_cast<std::uint8_t> (
+        mode.physicalIndex = static_cast<std::uint16_t> (
             membraneResonatorCount + index);
         mode.localMuteDampingRate = 0.0f;
         mode.handDampingRate = 0.0f;
         mode.inverseModalMass = 1.0f / std::max (woodModalMass, 1.0e-9f);
+        mode.shellBoundaryGroup = static_cast<std::int8_t> (index);
+        mode.shellBoundaryProjection = -1.0f;
         mode.contactShape = 0.0f;
         mode.batterParticipation = 0.0f;
         mode.resonantParticipation = 0.0f;
         mode.stretchNorm = 0.0f;
         mode.batterTensionFraction = 0.0f;
         mode.drive = level * modelScale;
-        // The identical force-over-modal-mass path the hoop drive above uses,
-        // but gated on the body's own level instead of on the stroke catching
-        // the hoop, because the rim shear is there on every stroke.
         mode.shellRingIndex = static_cast<std::int8_t> (index);
         mode.rimDrive = hasRealismFeature (headToShellPath)
-            ? bodyLevel * shellCalibration * radiatingArea
-                  / (effectiveWoodMass * omega * rate)
-                  / (1.0f + 0.35f * static_cast<float> (index))
-                  * shellPerspectiveGain (drum, index + 2, omega, frequency,
-                                          micDistance)
-                  * modelScale
-            : 0.0f;
-        mode.micLeft = shellL;
-        mode.micRight = shellR;
+            ? modelScale / (woodModalMass * omega * rate) : 0.0f;
+        mode.micLeft = shellL * observation;
+        mode.micRight = shellR * observation;
         mode.micLeftQuadrature = 0.0f;
         mode.micRightQuadrature = 0.0f;
         configureResonator (mode.resonator, frequency, decay, 1.0f,
@@ -4366,6 +4259,7 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
     }
 
     voice.modeCount = count;
+    configureShellBoundary (voice);
 
     // The head's high-frequency continuum. The resolved bank stops at the
     // highest Bessel zero in the table, which on a large drum is only a few
@@ -4392,15 +4286,27 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
         // layer as before.
         float highestResolved = 0.0f;
         float highestInBank = 0.0f;
-        for (int index = 0; index < count; ++index)
+        // This is the batter skin's unresolved population. An arbitrarily
+        // weakly coupled air pole must not relocate all five noise bands when
+        // it first becomes excitable, nor may the other skin set its cutoff.
+        // Follow the head's own spatial dispersion at the selected last entry.
+        for (int entryIndex = 0; entryIndex < entryLimit; ++entryIndex)
         {
-            const auto& mode = voice.modes[static_cast<std::size_t> (index)];
-            if (! mode.membrane)
-                continue;
-            const float frequency = mode.omega / (2.0f * piFloat);
-            highestInBank = std::max (highestInBank, frequency);
-            if (mode.modeEntry < legacyModeEntryCount)
-                highestResolved = std::max (highestResolved, frequency);
+            const auto& entry = entries[static_cast<std::size_t> (entryIndex)];
+            const auto order = entry.circumferentialOrder;
+            const auto frequencies = membraneModeOmegas (
+                drum, radius, static_cast<float> (entry.besselZero), static_cast<float> (order));
+            const auto basis = basisForEntry (drum, entryIndex);
+            for (int branch = 0; branch < (order == 0 ? 1 : 2); ++branch)
+            {
+                const float split = order == 0 ? 1.0f : basis.frequencyScale[branch];
+                const float frequency = frequencies.batter * split / (2.0f * piFloat);
+                if (frequency >= nyquist * 0.98f)
+                    continue;
+                highestInBank = std::max (highestInBank, frequency);
+                if (entryIndex < legacyModeEntryCount)
+                    highestResolved = std::max (highestResolved, frequency);
+            }
         }
 
         // The selected handoff tracks the highest resolved mode; this is not
@@ -4486,10 +4392,9 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
             // the spectrum, not a partial. The asymmetric order spends the
             // extra states on the upper skirt, where energy from a lower band
             // could otherwise masquerade as all the octaves above it.
-            const float low = centre / continuumBandwidth;
-            const float high = centre * continuumBandwidth;
-            entry.lowCoefficient = continuumEdgeCoefficient (low, nyquist, rate);
-            entry.highCoefficient = continuumEdgeCoefficient (high, nyquist, rate);
+            const auto coefficients = continuumBandCoefficients (centre / rate);
+            entry.lowCoefficient = coefficients[0];
+            entry.highCoefficient = coefficients[1];
             entry.centre = centre;
             resetContinuumBandFilterState (entry);
 
@@ -4642,12 +4547,8 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
             std::abs (mode.drive) * std::max (
                 std::hypot (mode.micLeft, mode.micLeftQuadrature),
                 std::hypot (mode.micRight, mode.micRightQuadrature));
-        // A rim-fed shell mode is driven by the head for as long as the head
-        // rings, so its lifetime cannot be read from a stroke drive that is
-        // zero on every stroke which misses the hoop. Six resonators out of a
-        // hundred and fifty-eight is a cheap exemption.
-        const bool rimFed = ! mode.membrane && mode.rimDrive != 0.0f;
-        const float relative = rimFed ? 1.0f : magnitude / peakMagnitude;
+        const float relative = ! mode.membrane && mode.rimDrive != 0.0f
+            ? 1.0f : magnitude / peakMagnitude;
 
         if (mode.decayRate <= 0.0f || relative <= modeRetirementFloor)
         {
@@ -4702,7 +4603,9 @@ void TaikoEngine::ensurePhysicalDrum (int octave, const DrumState& drum) noexcep
     auto& physical = physicalDrums_[drumIndex];
     if (physical.modeCount > 0
         && physical.configurationRevision == physicalConfigurationRevision_
-        && physical.configurationPitch == applied_.pitch)
+        && physical.configurationPitch == applied_.pitch
+        && std::abs (physical.tuningAtStrike - (applied_.pitch + 2.0f * pitchBend_))
+               < 0.0005f)
         return;
 
     struct SavedModeState
@@ -4713,6 +4616,9 @@ void TaikoEngine::ensurePhysicalDrum (int octave, const DrumState& drum) noexcep
         float muteDampingRate { 0.0f };
         float batterParticipation { 0.0f };
         float resonantParticipation { 0.0f };
+        bool sharedCavityMode { false };
+        std::array<float, cavity::maximumCoordinates> cavityBasis {};
+        std::array<float, 2> angularBasis { 1.0f, 0.0f };
         std::uint8_t circumferentialOrder { 0 };
         std::uint8_t modeEntry { 0 };
         bool membrane { false };
@@ -4727,6 +4633,7 @@ void TaikoEngine::ensurePhysicalDrum (int octave, const DrumState& drum) noexcep
     const auto savedCountdown = physical.controlCountdown;
     const auto savedContinuum = physical.continuum;
     const float savedTensionEnvelope = physical.tensionEnvelope;
+    const float savedRearTensionEnvelope = physical.rearTensionEnvelope;
     const int savedMuteTicks = physical.localMuteTicksRemaining;
     const float savedContinuumMute = physical.continuumMuteDampingRate;
     const bool savedPalmActive = physical.palmDampingActive;
@@ -4749,6 +4656,9 @@ void TaikoEngine::ensurePhysicalDrum (int octave, const DrumState& drum) noexcep
             saved.muteDampingRate = mode.localMuteDampingRate;
             saved.batterParticipation = mode.batterParticipation;
             saved.resonantParticipation = mode.resonantParticipation;
+            saved.sharedCavityMode = mode.sharedCavityMode;
+            saved.cavityBasis = mode.cavityBasis;
+            saved.angularBasis = mode.angularBasis;
             saved.circumferentialOrder = mode.circumferentialOrder;
             saved.modeEntry = mode.modeEntry;
             saved.membrane = mode.membrane;
@@ -4809,7 +4719,9 @@ void TaikoEngine::ensurePhysicalDrum (int octave, const DrumState& drum) noexcep
     {
         auto& mode = physical.modes[static_cast<std::size_t> (index)];
         const float batterFraction = batterFractionFor (drum, mode);
-        mode.handDampingRate = mode.membrane
+        mode.handDampingRate = mode.sharedCavityMode
+            ? sharedPalmDamping (drum, mode, strikeProfile (Articulation::Tsu).radius)
+            : mode.membrane
             ? handRates[static_cast<std::size_t> (mode.modeEntry)] * batterFraction
             : 0.0f;
     }
@@ -4823,6 +4735,7 @@ void TaikoEngine::ensurePhysicalDrum (int octave, const DrumState& drum) noexcep
     physical.tuningAtStrike = applied_.pitch + 2.0f * pitchBend_;
     physical.appliedTensionShift = 1.0f;
     physical.appliedTensionRise = 0.0f;
+    physical.appliedRearTensionRise = 0.0f;
 
     // Map a physical coordinate and velocity into one newly built pole. The
     // pending input is stored as its actual additive displacement increment,
@@ -4873,20 +4786,76 @@ void TaikoEngine::ensurePhysicalDrum (int octave, const DrumState& drum) noexcep
 
     if (rebuilding)
     {
-        // Non-axisymmetric head modes and shell modes keep one fixed physical
-        // basis, so their stable ID remains the exact coordinate map.
+        // Angular pairs may rotate when the family's structure changes. A
+        // newly in-band partner still receives the surviving old coordinate's
+        // projection, even though its own stable ID had no previous state.
+        // Shell modes retain their direct stable-ID coordinate map.
         for (auto* mode : rebuiltModes)
         {
             if (mode == nullptr
                 || (mode->membrane && mode->circumferentialOrder == 0))
                 continue;
             const auto id = static_cast<std::size_t> (mode->physicalIndex);
-            if (id >= savedModes.size() || ! savedModes[id].valid)
+            if (id >= savedModes.size())
                 continue;
             const auto& saved = savedModes[id];
-            restoreMode (*mode, saved.displacement, saved.velocity,
-                         saved.pendingIncrement, saved.muteDampingRate);
+            if (mode->membrane && mode->circumferentialOrder > 0)
+            {
+                double q = 0.0, v = 0.0, pending = 0.0;
+                float muteRate = saved.valid ? saved.muteDampingRate : 0.0f;
+                const auto first = static_cast<std::size_t> (
+                    (mode->rearHeadMode ? rearMembraneOffset : 0) + 2 * mode->modeEntry);
+                for (std::size_t branch = 0; branch < 2; ++branch)
+                {
+                    const auto& old = savedModes[first + branch];
+                    if (! old.valid)
+                        continue;
+                    if (! saved.valid)
+                        muteRate = std::max (muteRate, old.muteDampingRate);
+                    const double rotation = mode->angularBasis[0] * old.angularBasis[0]
+                                          + mode->angularBasis[1] * old.angularBasis[1];
+                    q += rotation * old.displacement;
+                    v += rotation * old.velocity;
+                    pending += rotation * old.pendingIncrement;
+                }
+                restoreMode (*mode, q, v, pending, muteRate);
+            }
+            else if (saved.valid)
+                restoreMode (*mode, saved.displacement, saved.velocity,
+                             saved.pendingIncrement, saved.muteDampingRate);
         }
+
+        // Reconstruct every physical head AND air coordinate before projecting
+        // into the new unit-mass eigensystem. Eigenvalue ordering may change;
+        // it never identifies a physical displacement.
+        cavity::Vector oldQ {}, oldV {}, oldPending {};
+        bool haveSharedState = false;
+        for (const auto& saved : savedModes)
+            if (saved.valid && saved.sharedCavityMode)
+            {
+                haveSharedState = true;
+                for (std::size_t coordinate = 0; coordinate < oldQ.size(); ++coordinate)
+                {
+                    oldQ[coordinate] += saved.cavityBasis[coordinate] * saved.displacement;
+                    oldV[coordinate] += saved.cavityBasis[coordinate] * saved.velocity;
+                    oldPending[coordinate] += saved.cavityBasis[coordinate] * saved.pendingIncrement;
+                }
+            }
+        if (haveSharedState && drum.sharedAirValid)
+            for (auto* mode : rebuiltModes)
+                if (mode != nullptr && mode->sharedCavityMode)
+                {
+                    double q = 0.0, v = 0.0, pending = 0.0;
+                    for (std::size_t i = 0; i < drum.sharedAir.coordinateCount; ++i)
+                        for (std::size_t j = 0; j < drum.sharedAir.coordinateCount; ++j)
+                        {
+                            const double projection = mode->cavityBasis[i] * drum.sharedAir.mass[i][j];
+                            q += projection * oldQ[j];
+                            v += projection * oldV[j];
+                            pending += projection * oldPending[j];
+                        }
+                    restoreMode (*mode, q, v, pending, 0.0f);
+                }
 
         struct PhysicalPairState
         {
@@ -4906,7 +4875,7 @@ void TaikoEngine::ensurePhysicalDrum (int octave, const DrumState& drum) noexcep
         // coordinates without retaining the old drum densities.
         for (const auto& saved : savedModes)
         {
-            if (! saved.valid || ! saved.membrane
+            if (! saved.valid || ! saved.membrane || saved.sharedCavityMode
                 || saved.circumferentialOrder != 0)
                 continue;
             const int savedSlot = axisymmetricSlotOf (saved.modeEntry);
@@ -4928,6 +4897,8 @@ void TaikoEngine::ensurePhysicalDrum (int octave, const DrumState& drum) noexcep
 
         for (int slotIndex = 0; slotIndex < axisymmetricSlotCount; ++slotIndex)
         {
+            if (drum.sharedAirValid && slotIndex < axisymmetricEntryCount)
+                continue;
             const auto slot = static_cast<std::size_t> (slotIndex);
             const int entryIndex = axisymmetricEntryForSlot (slotIndex);
             const auto& state = pairStates[slot];
@@ -5061,6 +5032,9 @@ void TaikoEngine::ensurePhysicalDrum (int octave, const DrumState& drum) noexcep
     physical.tensionDepth = tensionStretchCalibration
                           * drum.stretchStiffness * inverseModelScaleSquared
                           / std::max (drum.radius * drum.radius, 1.0e-6f);
+    physical.rearTensionDepth = tensionStretchCalibration
+                          * drum.resonantStretchStiffness * inverseModelScaleSquared
+                          / std::max (drum.radius * drum.radius, 1.0e-6f);
     physical.tensionDecay =
         std::exp (-static_cast<float> (controlPeriod)
                   / (tensionFollowerSeconds * static_cast<float> (sampleRate_)));
@@ -5070,8 +5044,11 @@ void TaikoEngine::ensurePhysicalDrum (int octave, const DrumState& drum) noexcep
     physical.controlCountdown = rebuilding && ! savedPalmActive ? savedCountdown : 0;
     physical.active = rebuilding ? wasActive : false;
     physical.tensionEnvelope = rebuilding ? savedTensionEnvelope : 0.0f;
+    physical.rearTensionEnvelope = rebuilding ? savedRearTensionEnvelope : 0.0f;
     physical.localMuteTicksRemaining = rebuilding ? savedMuteTicks : 0;
     physical.continuumMuteDampingRate = rebuilding ? savedContinuumMute : 0.0f;
+    if (physical.localMuteTicksRemaining > 0 && physical.localMutePatchCount > 0)
+        rebuildLocalPalmRates (physical, drum);
     physical.palmDampingActive = rebuilding ? savedPalmActive : false;
     physical.retireGain = rebuilding ? savedRetireGain : 1.0f;
     physical.retireStep = rebuilding ? savedRetireStep : 0.0f;
@@ -5095,6 +5072,7 @@ void TaikoEngine::ensurePhysicalDrum (int octave, const DrumState& drum) noexcep
             Voice rebuiltContact;
             rebuiltContact.strikeRadius = contact.strikeRadius;
             rebuiltContact.strikeAngle = contact.strikeAngle;
+            rebuiltContact.rearStrike = contact.rearStrike;
             const auto& profile = strikeProfile (contact.articulation);
             buildVoiceModes (rebuiltContact, drum, profile, profile.muteAmount,
                              false);
@@ -5118,8 +5096,19 @@ void TaikoEngine::ensurePhysicalDrum (int octave, const DrumState& drum) noexcep
 
 float TaikoEngine::batterFractionFor (const DrumState& drum, const Mode& mode) noexcept
 {
+    if (mode.sharedCavityMode)
+    {
+        float fraction = 0.0f;
+        for (std::size_t radial = 0; radial < cavity::radialModeCount; ++radial)
+        {
+            const float j1 = static_cast<float> (besselJ (1, membraneModes()[radial].besselZero));
+            fraction += membraneAreaFor (drum.radius) * j1 * j1 * drum.batterDensity
+                      * mode.cavityBasis[radial] * mode.cavityBasis[radial];
+        }
+        return clampFloat (fraction, 0.0f, 1.0f);
+    }
     if (mode.circumferentialOrder != 0)
-        return 1.0f;
+        return mode.rearHeadMode ? 0.0f : 1.0f;
     return clampFloat (
         drum.batterDensity * mode.batterParticipation * mode.batterParticipation,
         0.0f, 1.0f);
@@ -5128,8 +5117,9 @@ float TaikoEngine::batterFractionFor (const DrumState& drum, const Mode& mode) n
 void TaikoEngine::palmDampingRates (
     const DrumState& drum, float strikeRadius,
     std::array<float, modeEntryCount>& modeRates,
-    float& continuumRate) noexcept
+    float& continuumRate, bool rear) noexcept
 {
+    const float density = rear ? drum.resonantDensity : drum.batterDensity;
     const auto& entries = membraneModes();
     const float rho = clampFloat (strikeRadius, 0.0f, 0.995f);
     const float area = membraneAreaFor (drum.radius);
@@ -5151,7 +5141,7 @@ void TaikoEngine::palmDampingRates (
         // The same modal mass buildVoiceModes drives through, so the two cannot
         // disagree about how heavy a mode is.
         const float modalMass = (order == 0 ? 1.0f : 0.5f) * area * besselSquared
-                              * drum.batterDensity;
+                              * density;
         // Five-point area quadrature over a palm-sized patch. A point damper
         // disappears whenever it happens to land on a nodal line; a real hand
         // covers both sides and absorbs the surrounding motion. For a
@@ -5171,74 +5161,122 @@ void TaikoEngine::palmDampingRates (
         // Project the distributed viscous contact onto this mode. The patch
         // integral is A_p <phi^2>. Its share of the whole modal norm cannot
         // exceed one; c_A / sigma then gives a velocity-loss rate in 1/s.
-        const float modalNorm = modalMass / drum.batterDensity;
+        const float modalNorm = modalMass / density;
         const float participation = clampFloat (
             palmArea * meanSquare / std::max (modalNorm, 1.0e-9f), 0.0f, 1.0f);
         // Axisymmetric cavity branches apply their batter-head energy fraction
         // when this base rate is assigned; the table entry itself is shared by
         // both orthogonal eigen-coordinates.
         modeRates[static_cast<std::size_t> (index)] =
-            muteSurfaceDamping / drum.batterDensity * participation;
+            muteSurfaceDamping / density * participation;
     }
 
     // In the high-density limit the local mean square cancels between patch
     // and whole-head modal norms. The area ratio is the unresolved field's
     // physical size law.
-    continuumRate = muteSurfaceDamping / drum.batterDensity
+    continuumRate = muteSurfaceDamping / density
                   * clampFloat (palmArea / area, 0.0f, 1.0f);
+}
+
+float TaikoEngine::sharedPalmDamping (const DrumState& drum, const Mode& mode,
+                                      float strikeRadius, bool rear) noexcept
+{
+    const float patch = std::min (handPatchRadiusMetres, drum.radius * 0.45f);
+    const float patchRho = patch / drum.radius;
+    const auto radii = palmPatchRadii (std::min (strikeRadius, 1.0f - patchRho), patchRho);
+    double meanSquare = 0.0;
+    for (const float r : radii)
+    {
+        double shape = 0.0;
+        for (std::size_t radial = 0; radial < cavity::radialModeCount; ++radial)
+            shape += mode.cavityBasis[(rear ? cavity::radialModeCount : 0) + radial]
+                   * besselJ (0, membraneModes()[radial].besselZero * r);
+        meanSquare += shape * shape / static_cast<double> (radii.size());
+    }
+    return static_cast<float> (muteSurfaceDamping * membraneAreaFor (patch) * meanSquare);
+}
+
+void TaikoEngine::rebuildLocalPalmRates (Voice& physical, const DrumState& drum) noexcept
+{
+    physical.localMuteBaseDampingRates.fill (0.0f);
+    physical.continuumMuteDampingRate = 0.0f;
+    for (int index = 0; index < physical.modeCount; ++index)
+        physical.modes[static_cast<std::size_t> (index)].localMuteDampingRate = 0.0f;
+    for (std::size_t patchIndex = 0; patchIndex < physical.localMutePatchCount; ++patchIndex)
+    {
+        const auto& patch = physical.localMutePatches[patchIndex];
+        std::array<float, modeEntryCount> dampingRates {};
+        float continuumRate = 0.0f;
+        palmDampingRates (drum, patch.radius, dampingRates, continuumRate, patch.rear);
+        if (! patch.rear)
+            for (int slotIndex = 0; slotIndex < axisymmetricSlotCount; ++slotIndex)
+            {
+                const auto slot = static_cast<std::size_t> (slotIndex);
+                const auto entryIndex = static_cast<std::size_t> (axisymmetricEntryForSlot (slotIndex));
+                physical.localMuteBaseDampingRates[slot] = std::max (
+                    physical.localMuteBaseDampingRates[slot], dampingRates[entryIndex] * patch.strength);
+            }
+        for (int index = 0; index < physical.modeCount; ++index)
+        {
+            auto& mode = physical.modes[static_cast<std::size_t> (index)];
+            if (! mode.membrane)
+                continue;
+            const float fraction = mode.circumferentialOrder != 0
+                ? (mode.rearHeadMode == patch.rear ? 1.0f : 0.0f)
+                : patch.rear ? clampFloat (drum.resonantDensity
+                    * mode.resonantParticipation * mode.resonantParticipation, 0.0f, 1.0f)
+                : batterFractionFor (drum, mode);
+            const float rate = mode.sharedCavityMode
+                ? sharedPalmDamping (drum, mode, patch.radius, patch.rear)
+                : dampingRates[static_cast<std::size_t> (mode.modeEntry)] * fraction;
+            mode.localMuteDampingRate = std::max (mode.localMuteDampingRate, rate * patch.strength);
+        }
+        // The current statistical field is the batter continuation; a rear
+        // palm must not directly damp that independent head.
+        if (! patch.rear)
+            physical.continuumMuteDampingRate = std::max (
+                physical.continuumMuteDampingRate, continuumRate * patch.strength);
+    }
 }
 
 void TaikoEngine::dampPhysicalDrum (Voice& physical,
                                     const StrikeProfile& profile, float strikeRadius,
-                                    const DrumState& drum) noexcept
+                                    const DrumState& drum, bool rear) noexcept
 {
-    // Bachi/head momentum exchange belongs to the coupled dynamic contact.
-    // This function is only the free hand that remains on the hide for a Tsu.
     if (! (profile.membraneGain > 0.0f) || ! profile.palmContact)
         return;
-
-    std::array<float, modeEntryCount> dampingRates {};
-    float continuumRate = 0.0f;
-    palmDampingRates (drum, strikeRadius, dampingRates, continuumRate);
-    const float muteAmount = profile.muteAmount * profile.muteAmount;
-
-    if (muteAmount > 0.0f)
+    const float strength = profile.muteAmount * profile.muteAmount;
+    if (! (strength > 0.0f))
+        return;
+    const float radius = clampFloat (strikeRadius, 0.0f, 0.995f);
+    std::size_t slot = physical.localMutePatchCount;
+    for (std::size_t index = 0; index < physical.localMutePatchCount; ++index)
+        if (physical.localMutePatches[index].rear == rear
+            && physical.localMutePatches[index].radius == radius)
+        {
+            slot = index;
+            break;
+        }
+    if (slot == physical.localMutePatchCount)
     {
-        for (int slotIndex = 0; slotIndex < axisymmetricSlotCount; ++slotIndex)
+        if (slot < physical.localMutePatches.size())
+            ++physical.localMutePatchCount;
+        else
         {
-            const auto slot = static_cast<std::size_t> (slotIndex);
-            const auto entryIndex =
-                static_cast<std::size_t> (axisymmetricEntryForSlot (slotIndex));
-            physical.localMuteBaseDampingRates[slot] = std::max (
-                physical.localMuteBaseDampingRates[slot],
-                dampingRates[entryIndex] * muteAmount);
+            slot = physical.nextLocalMutePatch;
+            physical.nextLocalMutePatch = static_cast<std::uint8_t> (
+                (physical.nextLocalMutePatch + 1) % physical.localMutePatches.size());
         }
-
-        for (int index = 0; index < physical.activeModeCount; ++index)
-        {
-            auto& mode = physical.modes[static_cast<std::size_t> (index)];
-            if (mode.membrane)
-            {
-                const float batterFraction = batterFractionFor (drum, mode);
-                const auto entry = static_cast<std::size_t> (mode.modeEntry);
-                mode.localMuteDampingRate = std::max (
-                    mode.localMuteDampingRate,
-                    dampingRates[entry] * batterFraction * muteAmount);
-            }
-        }
-
-        physical.continuumMuteDampingRate = std::max (
-            physical.continuumMuteDampingRate, continuumRate * muteAmount);
-        const int ticks = std::max (
-            1, static_cast<int> (std::ceil (
-                   muteContactSeconds * static_cast<float> (sampleRate_)
-                   / static_cast<float> (controlPeriod))));
-        physical.localMuteTicksRemaining =
-            std::max (physical.localMuteTicksRemaining, ticks);
-        // The held palm must reach the pole before the next audio sample, not
-        // whenever this drum's previous control interval happens to end.
-        physical.controlCountdown = 0;
+        physical.localMutePatches[slot] = { radius, strength, rear };
     }
+    else
+        physical.localMutePatches[slot].strength = std::max (
+            physical.localMutePatches[slot].strength, strength);
+    rebuildLocalPalmRates (physical, drum);
+    const int ticks = std::max (1, static_cast<int> (std::ceil (
+        muteContactSeconds * static_cast<float> (sampleRate_) / static_cast<float> (controlPeriod))));
+    physical.localMuteTicksRemaining = std::max (physical.localMuteTicksRemaining, ticks);
+    physical.controlCountdown = 0;
 }
 
 void TaikoEngine::scheduleContacts (Voice& voice, const StrikeProfile& profile,
@@ -5381,6 +5419,7 @@ void TaikoEngine::trigger (Articulation articulation, int octaveOffset,
         for (std::size_t index = 0; index < physical.continuum.size(); ++index)
             scaleContinuumEnvelope (physical, index, gain);
         physical.tensionEnvelope *= gain * gain;
+        physical.rearTensionEnvelope *= gain * gain;
     }
 
     const int slot = findVoiceSlot();
@@ -5398,6 +5437,7 @@ void TaikoEngine::trigger (Articulation articulation, int octaveOffset,
 
     voice.startOrder = order;
     voice.articulation = articulation;
+    voice.rearStrike = rearHeadStrike_;
     voice.articulationLevelScale = profile.levelScale;
     voice.octaveOffset = octave;
     voice.physicalDrumIndex = static_cast<std::uint8_t> (cacheIndex);
@@ -5471,18 +5511,19 @@ void TaikoEngine::trigger (Articulation articulation, int octaveOffset,
         geometricLerp (minimumImpactSpeed, maximumImpactSpeed, shaped) * speedJitter,
         0.05f, 12.0f);
 
-    // What is being struck: a bachi scaled to this drum, meeting a head whose
-    // own resistive impedance is the floor on how fast the stick can leave it.
+    // What is being struck: the family's physical reference bachi. Its mass is
+    // independent of drum diameter; the residual duration estimate also sees
+    // the head's legacy impedance (not a mechanical load in the live solve).
     float strikerMass = 0.0f;
     float targetImpedance = 0.0f;
     drumContactTerms (drum, strikerMass, targetImpedance);
     const float collisionMass = contactCollisionMass (
-        drum, profile, voice.strikeRadius, strikerMass);
+        drum, profile, voice.strikeRadius, strikerMass, voice.rearStrike);
 
     // A Tsu leaves the free hand on the one canonical head, so it damps motion
     // already ringing on this physical drum as well as energy the new contact
     // injects while the palm remains there.
-    dampPhysicalDrum (physical, profile, voice.strikeRadius, drum);
+    dampPhysicalDrum (physical, profile, voice.strikeRadius, drum, voice.rearStrike);
 
     const float extraDamping = profile.muteAmount;
     // Observation belongs to the canonical physical bank already built just
@@ -5540,7 +5581,8 @@ void TaikoEngine::trigger (Articulation articulation, int octaveOffset,
         1.0f + 0.08f * contactVariation * signedUnitFromHash (seed + 4u);
     const float stiffnessScale = std::pow (contactTimeFactor, -2.5f);
     solveContact (collisionMass, targetImpedance, profile, applied_.bachiHardness,
-                  relativeImpactSpeed, contactSeconds, peakForce, stiffnessScale);
+                  relativeImpactSpeed, contactSeconds, peakForce, stiffnessScale,
+                  drum.bachi);
     const float noiseLevel = applied_.strikeNoise * profile.noiseGain * 0.35f;
     const float excitationScale = peakForce * profile.levelScale;
     scheduleContacts (voice, profile, contactSeconds, excitationScale, noiseLevel);
@@ -5552,7 +5594,7 @@ void TaikoEngine::trigger (Articulation articulation, int octaveOffset,
     // six-sample pulse instead made the stick follow the returning fundamental
     // for seventeen milliseconds at 8 kHz; preserve the physical stiffness.
     const auto contactLaw = contactLawFor (profile, applied_.bachiHardness,
-                                           stiffnessScale, collisionMass);
+                                           stiffnessScale, collisionMass, drum.bachi);
     voice.contactStiffness = contactLaw.stiffness;
     voice.contactExponent = contactLaw.exponent;
     voice.contactDamping = contactDampingFactor
@@ -5631,7 +5673,8 @@ void TaikoEngine::trigger (Articulation articulation, int octaveOffset,
     for (std::size_t index = 0; index < voice.continuum.size(); ++index)
     {
         auto& band = voice.continuum[index];
-        band.level *= static_cast<float> (excitationScale / referenceImpulse);
+        band.level *= voice.rearStrike ? 0.0f
+            : static_cast<float> (excitationScale / referenceImpulse);
         voice.continuumInjection[index] = band.level;
     }
 
@@ -5682,6 +5725,9 @@ void TaikoEngine::trigger (Articulation articulation, int octaveOffset,
     physical.tensionDepth = tensionStretchCalibration
                           * drum.stretchStiffness * inverseModelScaleSquared
                           / std::max (drum.radius * drum.radius, 1.0e-6f);
+    physical.rearTensionDepth = tensionStretchCalibration
+                          * drum.resonantStretchStiffness * inverseModelScaleSquared
+                          / std::max (drum.radius * drum.radius, 1.0e-6f);
     physical.tensionDecay =
         std::exp (-static_cast<float> (controlPeriod)
                   / (tensionFollowerSeconds * static_cast<float> (sampleRate_)));
@@ -5694,7 +5740,7 @@ void TaikoEngine::trigger (Articulation articulation, int octaveOffset,
     {
         const float strikeX = drum.radius * voice.strikeRadius * std::cos (voice.strikeAngle);
         const float strikeY = drum.radius * voice.strikeRadius * std::sin (voice.strikeAngle);
-        const float height = drum.micDistanceMetres;
+        const float height = drum.micDistanceMetres + (voice.rearStrike ? drum.depth : 0.0f);
 
         const auto pathTo = [&] (float angle) noexcept
         {
@@ -5817,13 +5863,16 @@ bool TaikoEngine::triggerMidi (int midiNote, float velocity) noexcept
 // https://home.mit.bme.hu/~bank/publist/jasa12.pdf
 // ponytail: fixed modal eigenvectors give a first-order cavity projection;
 // a full nonlinear two-head solve is needed for large-deflection energy transfer.
-// `shift` includes the ideal batter stretch; dividing that part out preserves
-// the existing musical Pitch/wheel transposition independently of the physics.
+// `shift` includes the ideal batter stretch. The remaining authored Pitch or
+// wheel change scales both head tensions, while air and bending stiffness stay
+// fixed. Project that stiffness increment in the current mass-normalized basis;
+// a subsequent structural refresh resolves the full changed eigenvectors.
 void TaikoEngine::applyTensionShift (Voice& voice, float shift,
-                                    float tensionRise) noexcept
+                                    float tensionRise, float rearTensionRise) noexcept
 {
     const float musicalShift = shift / std::sqrt (1.0f + tensionRise);
     voice.appliedTensionRise = tensionRise;
+    voice.appliedRearTensionRise = rearTensionRise;
     const auto rate = static_cast<float> (sampleRate_);
     const float nyquist = 0.5f * rate;
 
@@ -5836,8 +5885,14 @@ void TaikoEngine::applyTensionShift (Voice& voice, float shift,
         if (! mode.membrane)
             continue;
 
-        const float modalShift = musicalShift * std::sqrt (
-            1.0f + tensionRise * mode.batterTensionFraction);
+        const float tensionScale = musicalShift * musicalShift;
+        // Keep tiny transient strains out of a subtract-nearly-equal-values
+        // expression; at neutral Pitch this retains the exact strain path.
+        const float batterRise = (tensionScale - 1.0f) + tensionScale * tensionRise;
+        const float rearRise = (tensionScale - 1.0f) + tensionScale * rearTensionRise;
+        const float modalShift = std::sqrt (std::max (1.0e-12f,
+            1.0f + batterRise * mode.batterTensionFraction
+                 + rearRise * mode.rearTensionFraction));
         const float frequency = mode.omega * modalShift / (2.0f * piFloat);
         if (frequency >= nyquist * 0.98f || ! (frequency > 0.0f))
         {
@@ -5897,6 +5952,12 @@ void TaikoEngine::applyTensionShift (Voice& voice, float shift,
         // is under gap 14 in the second pass of the plan.
     }
 
+    // Retuning can move a port through the represented bandwidth. Recompute
+    // the six cached relative-velocity impulses from the remaining physical
+    // ports; a disabled head must not become an immovable boundary load.
+    if (voice.physicalBank)
+        configureShellBoundary (voice);
+
     // The continuum is the same head above where its modes can be told apart,
     // so it moves with them. Leaving it fixed let a two-octave Pitch move carry
     // the resolved bank away while the region that now dominates the upper
@@ -5919,10 +5980,9 @@ void TaikoEngine::applyTensionShift (Voice& voice, float shift,
         scaleContinuumEnvelope (voice, index, varianceGain);
         scaleContinuumFilterState (band, 1.0f / varianceGain);
         band.currentFilterVariance = nextVariance;
-        band.lowCoefficient =
-            continuumEdgeCoefficient (centre / continuumBandwidth, nyquist, rate);
-        band.highCoefficient =
-            continuumEdgeCoefficient (centre * continuumBandwidth, nyquist, rate);
+        const auto coefficients = continuumBandCoefficients (centre / rate);
+        band.lowCoefficient = coefficients[0];
+        band.highCoefficient = coefficients[1];
 
         // And its decay with it, for the same reason the modes' does: the loss
         // that empties this region is the head's own, and that is a function of
@@ -6009,7 +6069,7 @@ void TaikoEngine::applyTensionShift (Voice& voice, float shift,
     voice.appliedTensionShift = shift;
 }
 
-double TaikoEngine::membraneSquaredSlope (const Voice& voice) noexcept
+double TaikoEngine::membraneSquaredSlope (const Voice& voice, bool rear) noexcept
 {
     // The area-mean squared slope of the batter head, from the Bessel gradient
     // norm of every resolved membrane mode. The two cavity branches of an
@@ -6027,16 +6087,24 @@ double TaikoEngine::membraneSquaredSlope (const Voice& voice) noexcept
         if (! mode.membrane || mode.modeEntry >= legacyModeEntryCount)
             continue;
         const double state = mode.resonator.y1;
-        if (mode.circumferentialOrder == 0)
+        if (mode.sharedCavityMode)
+        {
+            for (std::size_t radial = 0; radial < cavity::radialModeCount; ++radial)
+            {
+                axisymmetricAmplitude[radial] += mode.cavityBasis[(rear ? cavity::radialModeCount : 0) + radial] * state;
+                axisymmetricNorm[radial] = mode.cavityStretchNorm[radial];
+            }
+        }
+        else if (mode.circumferentialOrder == 0)
         {
             const int slot = axisymmetricSlotOf (mode.modeEntry);
             if (slot < 0)
                 continue;
             axisymmetricAmplitude[static_cast<std::size_t> (slot)] +=
-                static_cast<double> (mode.batterParticipation) * state;
+                static_cast<double> (rear ? mode.resonantParticipation : mode.batterParticipation) * state;
             axisymmetricNorm[static_cast<std::size_t> (slot)] = mode.stretchNorm;
         }
-        else
+        else if (mode.rearHeadMode == rear)
         {
             squaredSlope += static_cast<double> (mode.stretchNorm)
                           * state * state;
@@ -6050,7 +6118,7 @@ double TaikoEngine::membraneSquaredSlope (const Voice& voice) noexcept
 }
 
 void TaikoEngine::membraneSquaredSlopePerEntry (
-    const Voice& voice, std::array<float, modeEntryCount>& strain) noexcept
+    const Voice& voice, std::array<float, modeEntryCount>& strain, bool rear) noexcept
 {
     strain.fill (0.0f);
     std::array<double, axisymmetricSlotCount> axisymmetricAmplitude {};
@@ -6060,14 +6128,19 @@ void TaikoEngine::membraneSquaredSlopePerEntry (
         if (! mode.membrane || mode.modeEntry >= legacyModeEntryCount)
             continue;
         const double state = mode.resonator.y1;
-        if (mode.circumferentialOrder == 0)
+        if (mode.sharedCavityMode)
+        {
+            for (std::size_t radial = 0; radial < cavity::radialModeCount; ++radial)
+                axisymmetricAmplitude[radial] += mode.cavityBasis[(rear ? cavity::radialModeCount : 0) + radial] * state;
+        }
+        else if (mode.circumferentialOrder == 0)
         {
             const int slot = axisymmetricSlotOf (mode.modeEntry);
             if (slot >= 0)
                 axisymmetricAmplitude[static_cast<std::size_t> (slot)] +=
-                    static_cast<double> (mode.batterParticipation) * state;
+                    static_cast<double> (rear ? mode.resonantParticipation : mode.batterParticipation) * state;
         }
-        else
+        else if (mode.rearHeadMode == rear)
         {
             strain[mode.modeEntry] += static_cast<float> (
                 static_cast<double> (mode.stretchNorm) * state * state);
@@ -6079,6 +6152,13 @@ void TaikoEngine::membraneSquaredSlopePerEntry (
         if (! mode.membrane || mode.circumferentialOrder != 0
             || mode.modeEntry >= legacyModeEntryCount)
             continue;
+        if (mode.sharedCavityMode)
+        {
+            for (std::size_t radial = 0; radial < cavity::radialModeCount; ++radial)
+                strain[radial] = static_cast<float> (mode.cavityStretchNorm[radial]
+                    * axisymmetricAmplitude[radial] * axisymmetricAmplitude[radial]);
+            continue;
+        }
         const int slot = axisymmetricSlotOf (mode.modeEntry);
         if (slot < 0)
             continue;
@@ -6164,6 +6244,8 @@ void TaikoEngine::updateVoiceControl (Voice& voice) noexcept
             for (int index = 0; index < voice.modeCount; ++index)
                 voice.modes[static_cast<std::size_t> (index)].localMuteDampingRate = 0.0f;
             voice.localMuteBaseDampingRates.fill (0.0f);
+            voice.localMutePatches = {};
+            voice.localMutePatchCount = voice.nextLocalMutePatch = 0;
             voice.continuumMuteDampingRate = 0.0f;
         }
     }
@@ -6185,6 +6267,12 @@ void TaikoEngine::updateVoiceControl (Voice& voice) noexcept
     // a slack o-daiko bends further and for longer than a shime-daiko does at
     // four times the tension.
     const float liveTensionDepth = voice.tensionDepth * applied_.tensionModulation;
+    const float liveRearDepth = voice.rearTensionDepth * applied_.tensionModulation;
+    voice.rearTensionEnvelope = liveRearDepth > 0.0f
+        ? std::max (static_cast<float> (membraneSquaredSlope (voice, true)),
+                    voice.rearTensionEnvelope * voice.tensionDecay) : 0.0f;
+    if (liveRearDepth <= 0.0f)
+        voice.rearParametricMeanStrain.fill (0.0f);
     if (liveTensionDepth > 0.0f)
     {
         voice.tensionEnvelope = std::max (
@@ -6204,12 +6292,14 @@ void TaikoEngine::updateVoiceControl (Voice& voice) noexcept
     // together as one offset in semitones.
     const float tuningNow = applied_.pitch + 2.0f * pitchBend_;
     const float rise = tensionRiseFor (liveTensionDepth * voice.tensionEnvelope);
+    const float rearRise = tensionRiseFor (liveRearDepth * voice.rearTensionEnvelope);
     const float stretch = std::sqrt (1.0f + rise);
     const float shift = stretch * std::exp2 ((tuningNow - voice.tuningAtStrike) / 12.0f);
 
     if (std::abs (shift - voice.appliedTensionShift) > 1.0e-5f
-        || std::abs (rise - voice.appliedTensionRise) > 1.0e-5f)
-        applyTensionShift (voice, shift, rise);
+        || std::abs (rise - voice.appliedTensionRise) > 1.0e-5f
+        || std::abs (rearRise - voice.appliedRearTensionRise) > 1.0e-5f)
+        applyTensionShift (voice, shift, rise, rearRise);
 }
 
 void TaikoEngine::advancePhysicalContacts (Voice& physical) noexcept
@@ -6944,7 +7034,9 @@ float TaikoEngine::renderVoice (Voice& voice, Voice* physical,
                 for (std::size_t index = 0; index < voice.modeProjection.size(); ++index)
                 {
                     float input = noise * voice.modeProjection[index];
-                    if (oneWay && index >= firstOneWayIndex)
+                    if (index >= static_cast<std::size_t> (membraneResonatorCount)
+                        || (oneWay && index >= firstOneWayIndex
+                            && voice.contactProjection[index] == 0.0f))
                         input += force * voice.modeProjection[index];
                     physical->modalInput[index] += input;
                 }
@@ -6980,7 +7072,7 @@ float TaikoEngine::renderVoice (Voice& voice, Voice* physical,
     // Applied implicitly, dividing the mode's free response by (1 + K) with K
     // the matched-compliance stiffness increment, so a deep dip cannot run
     // away.
-    std::array<float, modeEntryCount> entryRipple {};
+    std::array<float, modeEntryCount> entryRipple {}, rearEntryRipple {};
     const bool parametricActive =
         voice.physicalBank && applied_.tensionModulation > 0.0f
         && voice.tensionDepth > 0.0f && renderModeCount > 0
@@ -6997,14 +7089,21 @@ float TaikoEngine::renderVoice (Voice& voice, Voice* physical,
             entryRipple[entry] = tensionRiseFor (depth * strain[entry])
                                - tensionRiseFor (depth * mean);
         }
+        const float rearDepth = voice.rearTensionDepth * applied_.tensionModulation;
+        membraneSquaredSlopePerEntry (voice, strain, true);
+        for (std::size_t entry = 0; entry < strain.size(); ++entry)
+        {
+            auto& mean = voice.rearParametricMeanStrain[entry];
+            mean += parametricMeanCoefficient_ * (strain[entry] - mean);
+            rearEntryRipple[entry] = tensionRiseFor (rearDepth * strain[entry])
+                                   - tensionRiseFor (rearDepth * mean);
+        }
     }
     const double parametricScale = 0.25 / (sampleRate_ * sampleRate_);
-
-    // The head's pull on the shell, gathered last sample and spent now. Read
-    // and cleared here so the loop below can refill it in the same pass,
-    // whatever order the sort left the shell modes in.
-    const bool rimPathActive = voice.physicalBank && renderModeCount > 0
-                            && hasRealismFeature (headToShellPath);
+    // Historical one-way shell candidate: spend the preceding sample's shear
+    // without also running the production reciprocal boundary. It remains an
+    // explicitly non-passive comparison, disabled in the plug-in.
+    const bool rimPathActive = voice.physicalBank && hasRealismFeature (headToShellPath);
     std::array<float, shellResonatorCount> rimForce {};
     if (rimPathActive)
     {
@@ -7029,17 +7128,22 @@ float TaikoEngine::renderVoice (Voice& voice, Voice* physical,
         {
             const auto ring = static_cast<std::size_t> (mode.shellRingIndex);
             if (mode.membrane)
-                voice.shellRimForce[ring] +=
-                    mode.shellRimCoupling * static_cast<float> (mode.resonator.y1);
+                voice.shellRimForce[ring] += mode.shellRimCoupling
+                    * static_cast<float> (mode.resonator.y1);
             else
-                voice.modalInput[static_cast<std::size_t> (mode.physicalIndex)]
-                    += mode.rimDrive * rimForce[ring];
+                voice.modalInput[mode.physicalIndex] += mode.rimDrive * rimForce[ring];
         }
-
-        float value = 0.0f;
-        const float ripple = parametricActive && mode.membrane
-            ? entryRipple[mode.modeEntry] : 0.0f;
-        if (ripple != 0.0f && mode.batterTensionFraction > 0.0f)
+        float ripple = parametricActive && mode.membrane
+            ? entryRipple[mode.modeEntry] * mode.batterTensionFraction
+                + rearEntryRipple[mode.modeEntry] * mode.rearTensionFraction : 0.0f;
+        if (parametricActive && mode.sharedCavityMode)
+        {
+            ripple = 0.0f;
+            for (std::size_t radial = 0; radial < cavity::radialModeCount; ++radial)
+                ripple += mode.cavityTensionWeights[radial] * entryRipple[radial]
+                        + mode.cavityRearTensionWeights[radial] * rearEntryRipple[radial];
+        }
+        if (ripple != 0.0f)
         {
             // Exactly tick(), with the current sample's own displacement
             // pushed back by the ripple in the batter tension: the same
@@ -7048,7 +7152,6 @@ float TaikoEngine::renderVoice (Voice& voice, Voice* physical,
             auto& resonator = mode.resonator;
             const double stiffnessIncrement =
                 parametricScale * static_cast<double> (ripple)
-                * mode.batterTensionFraction
                 * mode.liveOmega * mode.liveOmega
                 * (1.0 + resonator.a2 - resonator.a1);
             const double free =
@@ -7058,13 +7161,24 @@ float TaikoEngine::renderVoice (Voice& voice, Voice* physical,
             const double output = free / std::max (1.0 + stiffnessIncrement, 0.05);
             resonator.y2 = resonator.y1;
             resonator.y1 = output;
-            value = static_cast<float> (output);
         }
         else
         {
-            value = mode.resonator.tick (
+            (void) mode.resonator.tick (
                 voice.modalInput[static_cast<std::size_t> (mode.physicalIndex)]);
         }
+    }
+
+    // Advance the free modal bank first, then exchange a single passive
+    // bearing-edge impulse before observing either surface. Every connected
+    // mode sees the same pre-impulse state, independent of storage order.
+    if (voice.physicalBank && ! rimPathActive)
+        applyShellBoundary (voice);
+
+    for (int index = 0; index < renderModeCount; ++index)
+    {
+        const auto& mode = voice.modes[static_cast<std::size_t> (index)];
+        const float value = static_cast<float> (mode.resonator.y1);
         if (mode.membrane)
         {
             if (mode.micLeftQuadrature != 0.0f
@@ -7541,6 +7655,7 @@ TaikoEngine::SoundingMode TaikoEngine::dynamicSoundingMode (
         float pitchBend { 0.0f };
         double sampleRate { 0.0 };
         SoundingMode result {};
+        std::uint32_t featureMask { 0 };
         bool valid { false };
     };
     static thread_local ReadoutCache cache;
@@ -7548,7 +7663,7 @@ TaikoEngine::SoundingMode TaikoEngine::dynamicSoundingMode (
                                    highestOctaveOffset);
     if (cache.valid && cache.parameters == parameters && cache.octave == octave
         && cache.pitchBend == pitchBendSemitones
-        && cache.sampleRate == sampleRateHz)
+        && cache.sampleRate == sampleRateHz && cache.featureMask == realismFeatures())
         return cache.result;
 
     const auto cacheResult = [&] (SoundingMode result) noexcept
@@ -7558,6 +7673,7 @@ TaikoEngine::SoundingMode TaikoEngine::dynamicSoundingMode (
         cache.pitchBend = pitchBendSemitones;
         cache.sampleRate = sampleRateHz;
         cache.result = result;
+        cache.featureMask = realismFeatures();
         cache.valid = true;
         return result;
     };
@@ -7656,9 +7772,7 @@ TaikoEngine::SoundingMode TaikoEngine::dynamicSoundingMode (
         bestWeight = weight;
         best.frequencyHz = mode.omega / (2.0f * piFloat);
         best.weight = static_cast<float> (weight);
-        best.identity.entryIndex = mode.modeEntry;
-        best.identity.branch = static_cast<std::uint8_t> (
-            static_cast<int> (mode.physicalIndex) - 2 * mode.modeEntry);
+        best.identity = identityForMode (mode);
     }
 
     if (bestWeight > 0.0)
@@ -7696,14 +7810,7 @@ TaikoEngine::DrumMeasurements TaikoEngine::measure (const EngineParameters& para
     result.idealFundamentalHz =
         drum.waveSpeed * lambda / (2.0f * piFloat * drum.radius);
 
-    // Both branches, solved through the same routine the render path and the
-    // octave transform use, so the readout, the audio and the keyboard cannot
-    // disagree about the drum - including at zero coupling, where the pair is
-    // degenerate. The transform reads the same drum through the same
-    // observeMode this readout does - it differs only in tracking a latched mode
-    // at the centred stroke rather than the loudest one at the player's - so the
-    // keyboard's octave and the panel's figures stay one claim about one drum
-    // rather than two that have to be kept in step by hand.
+    // Legacy pair diagnostics are overwritten below by the active shared bank.
     const auto pair = solveAxisymmetricPair (drum);
     // The tail sweep below solves every mode's own branches, including this
     // one's, so it needs the threshold rather than the pair's own verdict.
@@ -7711,27 +7818,79 @@ TaikoEngine::DrumMeasurements TaikoEngine::measure (const EngineParameters& para
 
     result.breathingModeHz = pair.breathingHz;
     result.loadedFundamentalHz = pair.loadedFundamentalHz;
-    // What the panel should say the drum is at: the mode it is actually heard
-    // at rather than the lowest one it has, and heard under the stroke the
-    // controls currently describe rather than under a centred one.
-    //
-    // Strike Position is the reason those are two different questions. An
-    // off-centre stroke drives a different balance of modes - it is why a Ka out
-    // by the tacks is thin and cutting - and on the two large drums of this
-    // family it moves which mode wins by a fourth and more. The readout has to
-    // follow that, or the number on the panel is the pitch of a stroke nobody
-    // played. The octave transform deliberately does not: it is anchored at the
-    // centred stroke inside resolveDrumFor, so Strike Position stays a timbre
-    // control and cannot retune the keyboard. See tuningStrikeRadius.
-    //
-    // Bounded to the modes this sample rate will actually put a resonator on.
-    // The drum has whatever modes it has, but the render refuses every one at
-    // or above 0.98 of Nyquist, and on a very small head at the tension ceiling
-    // that can be all of them - at which point this is zero, which is the
-    // marker for a drum with no membrane tone rather than a frequency. See
-    // soundingMode and DrumMeasurements::soundingHz.
+    // Audit a neutral contact against the rendered bank. This observation can
+    // change with strike position; it never feeds back into physical tuning.
     result.soundingHz = dynamicSoundingMode (
         applied, octaveOffset, pitchBendSemitones, sampleRateHz).frequencyHz;
+
+    if (drum.sharedAirValid)
+    {
+        // Inspect the poles the renderer actually builds at this host rate.
+        // The old independent-pair diagnostic above is retained only for the
+        // explicitly selected legacy ablation; it cannot describe mixed air.
+        static thread_local TaikoEngine builder;
+        static thread_local Voice bank;
+        builder.prepare (sampleRateHz, 1);
+        bank.physicalBank = true;
+        bank.rearStrike = false;
+        bank.strikeRadius = 0.23f;
+        bank.strikeAngle = 0.37f;
+        builder.buildVoiceModes (bank, drum, strikeProfile (Articulation::Don), 0.0f, false);
+        result.sharedCavityActive = true;
+        result.loadedFundamentalHz = 0.0f;
+        result.breathingModeHz = 0.0f;
+        result.tailSeconds = 0.0f;
+        double strongestVolumeCompliance = 0.0;
+        for (int index = 0; index < bank.modeCount; ++index)
+        {
+            const auto& mode = bank.modes[static_cast<std::size_t> (index)];
+            if (! mode.membrane || mode.rearHeadMode || ! (mode.omega > 0.0f)
+                || std::abs (mode.contactShape) < 1.0e-10f)
+                continue;
+            const float frequency = mode.omega / (2.0f * piFloat);
+            const float observed = std::max (std::hypot (mode.micLeft, mode.micLeftQuadrature),
+                                            std::hypot (mode.micRight, mode.micRightQuadrature));
+            if (mode.decayRate > 0.0f && observed > 0.0f)
+                result.tailSeconds = std::max (result.tailSeconds,
+                    std::min (static_cast<float> (maximumTailSeconds), 6.9078f / mode.decayRate));
+            if (mode.circumferentialOrder == 0
+                && (result.loadedFundamentalHz == 0.0f || frequency < result.loadedFundamentalHz))
+                result.loadedFundamentalHz = frequency;
+            if (! mode.sharedCavityMode)
+                continue;
+            double volume = 0.0, headRestoringEnergy = 0.0;
+            for (std::size_t radial = 0; radial < cavity::radialModeCount; ++radial)
+            {
+                const double zero = membraneModes()[radial].besselZero;
+                const double j1 = besselJ (1, zero);
+                const double geometricMass = membraneAreaFor (drum.radius) * j1 * j1;
+                const double b = mode.cavityBasis[radial];
+                const double r = mode.cavityBasis[cavity::radialModeCount + radial];
+                volume += 2.0 * j1 / zero * (b + r);
+                const auto omega = membraneModeOmegas (drum, drum.radius, static_cast<float> (zero), 0.0f);
+                headRestoringEnergy += geometricMass
+                    * (drum.batterDensity * b * b * omega.batter * omega.batter
+                       + drum.resonantDensity * r * r * omega.resonant * omega.resonant);
+            }
+            const double squaredOmega = static_cast<double> (mode.omega) * mode.omega;
+            // Net head-volume displacement per unit restoring energy identifies
+            // the principal breathing response without inventing a two-mode pair.
+            const double compliance = volume * volume / squaredOmega;
+            if (compliance > strongestVolumeCompliance)
+            {
+                strongestVolumeCompliance = compliance;
+                result.breathingModeHz = frequency;
+                result.cavityEnergyFraction = clampFloat (static_cast<float> (
+                    1.0 - headRestoringEnergy / squaredOmega), 0.0f, 1.0f);
+            }
+        }
+        if (drum.airCoupling == 0.0f || result.breathingModeHz == 0.0f)
+        {
+            result.breathingModeHz = result.loadedFundamentalHz;
+            result.cavityEnergyFraction = 0.0f;
+        }
+        return result;
+    }
 
     // How long a branch rings, with its own radiation share. Two branches of the
     // same mode differ a great deal on a sealed drum: a pair that changes the

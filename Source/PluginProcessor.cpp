@@ -493,6 +493,7 @@ void TaikorAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         discardUiTriggers();
         engine.allSoundsOff();
         engine.clearStrikeOverrides();
+        engine.setRearHeadStrike (false);
     }
 
     // Editor pad strokes are deliberately quantised to the next block boundary.
@@ -577,6 +578,10 @@ void TaikorAudioProcessor::dispatchMidiData (const juce::uint8* data,
             strikePositionController.store (rawValue, std::memory_order_relaxed);
             engine.setStrikePositionOverride (bipolarValue);
         }
+        else if (controller == 18u)
+        {
+            engine.setRearHeadStrike (rawValue >= 64);
+        }
         else if (controller == 121u)
         {
             // Reset All Controllers returns every live gesture to its host
@@ -584,6 +589,7 @@ void TaikorAudioProcessor::dispatchMidiData (const juce::uint8* data,
             engine.setHandDamping (0.0f);
             engine.setPitchBend (0.0f);
             engine.clearStrikeOverrides();
+            engine.setRearHeadStrike (false);
             strikeAzimuthController.store (-1, std::memory_order_relaxed);
             strikePositionController.store (-1, std::memory_order_relaxed);
         }
