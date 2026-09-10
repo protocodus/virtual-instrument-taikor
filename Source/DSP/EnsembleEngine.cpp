@@ -37,6 +37,7 @@ void EnsembleEngine::reset() noexcept
     panTarget.fill ({});
     updateStage (true);
     clearStrikeOverrides();
+    rearHeadStrike = false;
     publishVoices();
 }
 
@@ -152,6 +153,7 @@ void EnsembleEngine::fire (const Hit& hit) noexcept
     // move an already-scheduled player's hand to a different point.
     player.setStrikePositionOverride (hit.position);
     player.setStrikeAzimuthOverride (hit.azimuth);
+    player.setRearHeadStrike (hit.rear);
     player.trigger (hit.articulation, hit.octave, hit.velocity,
                     hit.radial, hit.tangential);
     player.clearStrikeOverrides();
@@ -185,6 +187,7 @@ void EnsembleEngine::trigger (Articulation articulation, int octave, float veloc
         hit.velocity = std::clamp (velocity, 0.0f, 1.0f);
         hit.position = positionOverridden ? positionOverride : parameters.strikePosition;
         hit.azimuth = azimuthOverridden ? azimuthOverride : parameters.strikeAzimuth;
+        hit.rear = rearHeadStrike;
         if (member > 0)
         {
             const auto seed = hash (static_cast<std::uint32_t> (sequence))

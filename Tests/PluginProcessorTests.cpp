@@ -475,6 +475,51 @@ void testParameterLayoutAndDefaults()
             "the cavity must lift the breathing mode above the fundamental");
 }
 
+void testRearHeadController()
+{
+    const auto stroke = [] (int cc, bool afterNote, bool reset)
+    {
+        auto processor = std::make_unique<TaikorAudioProcessor>();
+        processor->prepareToPlay (sampleRate, blockSize);
+        setParameterValue (*processor, taikor::parameters::humanise, 0.0f);
+        juce::AudioBuffer<float> buffer { 2, blockSize };
+        juce::MidiBuffer midi;
+        constexpr int offset = 37;
+        const auto control = [&]
+        {
+            if (cc >= 0)
+                midi.addEvent (juce::MidiMessage::controllerEvent (1, 18, cc), offset);
+            if (reset)
+                midi.addEvent (juce::MidiMessage::controllerEvent (1, 121, 0), offset);
+        };
+        if (! afterNote)
+            control();
+        midi.addEvent (juce::MidiMessage::noteOn (
+            1, taikor::midiNoteFor (taikor::Articulation::Don, 2), 0.8f), offset);
+        if (afterNote)
+            control();
+        processor->processBlock (buffer, midi);
+        std::vector<float> audio;
+        for (int channel = 0; channel < 2; ++channel)
+            for (int sample = 0; sample < blockSize; ++sample)
+            {
+                const auto value = buffer.getSample (channel, sample);
+                expect (std::isfinite (value), "CC18 produced a nonfinite output");
+                if (sample < offset)
+                    expect (value == 0.0f, "CC18 stroke sounded before its MIDI timestamp");
+                audio.push_back (value);
+            }
+        return audio;
+    };
+    const auto front = stroke (-1, false, false);
+    const auto rear = stroke (64, false, false);
+    expect (front != rear, "CC18 must select the rear head before the following stroke");
+    expect (front == stroke (63, false, false), "CC18 values below64 must select the front");
+    expect (rear == stroke (127, false, false), "CC18 values64..127 must select the same rear head");
+    expect (front == stroke (127, true, false), "CC18 must not relocate an earlier simultaneous stroke");
+    expect (front == stroke (127, false, true), "CC121 must return subsequent strokes to the front head");
+}
+
 void testStrikeControllers()
 {
     TaikorAudioProcessor processor;
@@ -1669,6 +1714,7 @@ int main()
     testNoteMappingAndRendering();
     testOctavesRaisePitchThroughThePlugin();
     testStrikeControllers();
+    testRearHeadController();
     testControllersAndPitchBend();
     testParametersReachTheEngine();
     testOutputLimiterAtMaximumLevel();
