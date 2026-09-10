@@ -781,7 +781,7 @@ SHA-256 checksums. Individual platform packages remain available if another
 platform fails. Distribution artifacts are retained for 30 days.
 
 Package filenames include the version and workflow build number, for example
-`Taikor-0.1.0-build-123-Windows-x64.zip`. Local packaging uses `build-local`
+`Taikor-1.0.0-build-123-Windows-x64.zip`. Local packaging uses `build-local`
 when `GITHUB_RUN_NUMBER` is unset. The download link above is updated to the
 final combined artifact only after all packages and previews are uploaded.
 
