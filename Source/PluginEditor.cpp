@@ -1099,7 +1099,7 @@ TaikorAudioProcessorEditor::TaikorAudioProcessorEditor (TaikorAudioProcessor& pr
     headCaption.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (headCaption);
 
-    gridCaption.setText ("01   /   THE DRUM ENSEMBLE", juce::dontSendNotification);
+    gridCaption.setText ("THE DRUM ENSEMBLE", juce::dontSendNotification);
     gridCaption.setFont (displayFont (19.0f, juce::Font::bold));
     gridCaption.setColour (juce::Label::textColourId, textColour);
     gridCaption.setJustificationType (juce::Justification::centredLeft);
@@ -1158,9 +1158,9 @@ TaikorAudioProcessorEditor::TaikorAudioProcessorEditor (TaikorAudioProcessor& pr
         addAndMakeVisible (label);
     };
 
-    deckLabel (drumDeckLabel, "02   /   BODY & TUNING");
-    deckLabel (strokeDeckLabel, "03   /   THE STROKE");
-    deckLabel (microphoneDeckLabel, "04   /   MICROPHONES & OUTPUT");
+    deckLabel (drumDeckLabel, "BODY & TUNING");
+    deckLabel (strokeDeckLabel, "THE STROKE");
+    deckLabel (microphoneDeckLabel, "MICROPHONES & OUTPUT");
 
     namespace ids = taikor::parameters;
     addKnob (sizeKnob, ids::headDiameter,
@@ -1398,9 +1398,10 @@ void TaikorAudioProcessorEditor::resized()
     meter.setBounds (rect (850, 44, 252, 34));
     panicButton.setBounds (rect (1130, 28, 124, 40));
 
-    auto grid = areas.gridArea.reduced (px (16), px (10));
+    auto grid = areas.gridArea.reduced (px (16), px (6));
     gridCaption.setBounds (grid.removeFromTop (px (40)).withWidth (px (520)));
     gridCaption.setFont (displayFont (34.0f * scale, juce::Font::bold));
+    grid.removeFromTop (px (8));
     const int gap = px (7);
     const int rowHeaderWidth = px (280);
     auto headings = grid.removeFromTop (px (27));
@@ -1426,10 +1427,10 @@ void TaikorAudioProcessorEditor::resized()
                 cells.cellSize, line.getHeight());
     }
 
-    auto head = areas.head.reduced (px (10), px (10));
+    auto head = areas.head.reduced (px (10), px (6));
     headCaption.setBounds (head.removeFromTop (px (34)));
     headCaption.setFont (controlFont (22.0f * scale, true));
-    head.removeFromTop (px (8));
+    head.removeFromTop (px (12));
     headDisplay.setBounds (head);
 
     struct Cell
@@ -1440,10 +1441,10 @@ void TaikorAudioProcessorEditor::resized()
     const auto layoutDeck = [&px, scale] (juce::Rectangle<int> area, juce::Label& label,
                                           std::initializer_list<Cell> cells, int columnsCount)
     {
-        auto working = area.reduced (px (12), px (9));
+        auto working = area.reduced (px (12), px (6));
         label.setBounds (working.removeFromTop (px (42)).withTrimmedLeft (px (4)));
         label.setFont (displayFont (32.0f * scale, juce::Font::bold));
-        working.removeFromTop (px (10));
+        working.removeFromTop (px (16));
         int totalColumns = 0;
         for (const auto& cell : cells)
             totalColumns += cell.span;
