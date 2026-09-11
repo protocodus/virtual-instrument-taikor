@@ -689,6 +689,73 @@ fit to a controlled recording of an identified taiko.
 formula derivations and listening decisions. Their numerical results describe
 the preceding implementation.
 
+### Known gaps
+
+**The stick loads a quarter of the head, and the continuum fills the rest.**
+The mode table was taken from twenty entries to seventy-six, but only the
+renderer went with it. Five places still stop at the original twenty, and
+between them they are every place a mode does anything other than reach a
+microphone: the bachi's contact projection (`contactShape`), the head's inverse
+mass as the stick meets it (`contactCollisionMass`), the continuum's calibration
+anchor, the handoff frequency `highestResolved`, and the Berger/von Kármán
+strain that carries the attack glide. Measured on the factory patch in the
+projection that actually drives the bank, 112 of the front head's 154 resonator
+slots receive exactly zero force, on every stroke of every drum.
+
+What fills the hole is the statistical continuum, and on the large drums it is
+most of the sound. Silenced after the trigger and compared against the full
+take, it sits 3.9 dB (ō-daiko) and 6.3 dB (chū-daiko) above everything the 306
+resolved resonators produce together on a Don, and **14.7 and 14.2 dB above
+them on a Ka**. The okedo and the shime do not use it at all. The two findings
+are one: Ka is the edge stroke, so it drives the high circumferential orders,
+and those are exactly the entries above twenty whose contact projection is zero.
+The bank is starved where that stroke lives and the noise layer supplies the
+rest.
+
+Against real dry captures this shows up as a spectral tilt of about 17 dB —
+250 Hz–2 kHz sits at −14.0 dB re the take's own RMS where real holds −24.4, and
+50–160 Hz at −17.9 where real holds −11.5 — and as 102 prominent partials
+against a real 155. A room does not explain the tilt: a room adds midband to the
+reference, so it widens the gap rather than closing it.
+
+The two review switches that bear on this were both measured and both fail.
+`fullBankContact` makes the resolved bank *quieter*, by 10.9 dB on the ō-daiko's
+Don and 11.4 on the chū-daiko's, because a head presenting all its mass to the
+stick spreads one impulse over four times as many modes; the continuum keeps its
+twenty-entry anchor throughout, so its lead over the bank rises rather than
+falls. `continuumAboveBank` buys 2 dB of the midband and costs fourteen
+prominent partials. The fix is not a switch: the continuum's anchor, its handoff
+and the contact's collision mass have to be re-pinned against the bank the
+contact actually loads, and screened as one change, because each alone measures
+a drum the other two do not describe. See `Docs/decisions.md`.
+
+**Beating is an order of magnitude short.** Real captures hold 3.13 dB of
+pitch-band envelope ripple; the instrument holds 0.36. The per-family pair split
+and principal axes give each mode its own, which is the mechanism beating needs,
+but the splits are design priors rather than measurements of how far a real hide
+varies in thickness, and at their present depth the beat period is longer than
+the tail. Closing this needs hide-thickness measurements, not a fitted number.
+
+**Shared-stage acoustics are not modelled.** Drum rows and ensemble members do
+not transfer energy to one another. Each uses its own local close-pair
+observation and the outputs are summed without a shared room, stage coordinates,
+floor coupling, microphone spill or sympathetic excitation of unstruck drums.
+Performer changes gestures, not acoustic connections between instances. A real
+stage has shared paths — Kodo's sound engineer describes room microphones,
+reverberation and spill from a nearby ōdaiko in
+[Capturing Taiko](https://www.kodo.or.jp/archives/kodobeat/kb79.pdf) — and
+sympathetic vibration is a separate mechanical question whose strength needs
+measurement. A common reverb would not establish that the drums mechanically
+excite one another.
+
+**Several coefficients remain voicing choices** rather than identified physical
+parameters: radiation damping strength, shell and tack observation levels, the
+statistical layer's level relative to the resolved head, the skin and shell
+design priors, and the attack pitch glide's shape factor. Their values need
+controlled captures of a mounted drum and a known microphone arrangement.
+Everything about how those terms *vary* with size, material, position and stroke
+is computed.
+
 ### Rendered demo levels
 
 Twenty-seven takes are rendered by [`Tools/RenderDemos.cpp`](Tools/RenderDemos.cpp)

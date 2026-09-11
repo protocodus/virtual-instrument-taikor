@@ -331,3 +331,101 @@ one and a half prominent partials. Two interquartile ranges still separate it
 from real, so 2.5 % is smaller than real hide varies. The honest next step is
 to screen a range of depths and put the two or three that survive to the ear,
 rather than shipping the first one tried.
+
+## 2026-09-11 — why it reads as noise: the stick loads a quarter of the head, and the continuum fills the rest
+
+Screened, not rendered. Nothing ships. All four switch combinations available
+for this were measured and every one of them fails; what would work is named at
+the end.
+
+**The question.** Against real dry captures the instrument is short of prominent
+partials — 102 against 155 over 40 Hz–4 kHz — and its spectral balance is tilted
+the wrong way by about 17 dB: 250 Hz–2 kHz sits at −14.0 dB re the take's own
+RMS where real holds −24.4, and 50–160 Hz sits at −17.9 where real holds −11.5.
+A room cannot explain that tilt, because a room adds midband to the reference
+and so widens it rather than closing it. This is the measured form of the
+"white-noisey and cheap" complaint.
+
+**The stick loads a quarter of the head.** The mode table went from twenty
+entries to seventy-six, but only the renderer went with it. Five places still
+stop at twenty, and between them they are every place a mode does anything but
+radiate: `contactShape` in `buildVoiceModes`, the head's inverse mass in
+`contactCollisionMass`, the continuum's calibration anchor, the handoff
+frequency `highestResolved`, and the Berger/von Kármán strain. Measured on the
+factory patch at Humanise 0.4, in the contact projection that actually drives
+the bank: **112 of the front head's 154 slots receive exactly zero force**, on
+every stroke of every drum. With `fullBankContact` that falls to 4. The rear
+head's 152 are zero either way, which is correct — the bachi does not touch it.
+
+**What fills the hole.** Silencing the continuum after the trigger and comparing
+against the full take says how much of the drum it is. On the two large drums it
+is most of it:
+
+| stroke | ō-daiko | chū-daiko | okedo | shime |
+|---|---|---|---|---|
+| Don | +3.9 | +6.3 | +0.0 | +0.0 |
+| Ka | **+14.7** | **+14.2** | +0.4 | +0.2 |
+| Rimshot | +0.2 | +0.6 | −0.0 | −0.0 |
+
+dB by which the statistical continuum exceeds everything the 306 resolved
+resonators produce together, at velocity 1.0. On the large drums' Ka the
+resolved bank is fourteen decibels below the filtered noise standing in for it:
+that stroke is about 97 % continuum. The two small drums do not use it at all.
+
+The two findings are one finding. Ka is the edge stroke, so it drives the high
+circumferential orders, and those are exactly the entries above twenty whose
+contact projection is zero. The bank is starved precisely where that stroke
+lives, and the continuum — whose level was pinned against the bank in its
+starved state — supplies what is missing. Filtered noise fourteen decibels above
+the modes, on the two drums a listener cares most about, is the complaint.
+
+**Every available lever was measured, and every one fails.** Against the same
+45-hit dry reference, at the factory Humanise:
+
+| descriptor | real | shipping | fullBankContact | continuumAboveBank | both |
+|---|---|---|---|---|---|
+| prominent partials 40 Hz–4 kHz | 155 | 102 | 102 | 88.5 | 87.5 |
+| median peak Q | 189 | 132 | 131 | 151 | 136 |
+| pitch-band envelope ripple (dB) | 3.13 | 0.362 | 0.471 | 0.246 | 0.242 |
+| 250 Hz–2 kHz level re RMS (dB) | −24.4 | −14.0 | −15.1 | −16.0 | −16.4 |
+| 50–160 Hz level re RMS (dB) | −11.5 | −17.9 | −20.2 | −16.6 | −17.7 |
+
+Each closes 1 to 2.4 dB of the midband excess and each costs partial density and
+ripple. The trade is structural rather than incidental, and the component levels
+say why. Turning the contact loose on the whole bank makes the resolved bank
+**quieter**, not louder — 10.9 dB down on the ō-daiko's Don and 11.4 on the
+chū-daiko's — because a head that presents all of its mass to the stick spreads
+one impulse over four times as many modes and gives each of them less. The
+continuum keeps its twenty-entry anchor through all of that, so its dominance on
+Don rises from +3.9 to +7.3 dB and from +6.3 to +10.1. The switch's own note
+already said neither is re-pinned; this is what that costs.
+
+The one place it works is the chū-daiko's Ka, where the bank gains 7.2 dB and
+the continuum's lead collapses from +14.2 to +2.1 — the predicted behaviour,
+appearing on exactly the stroke the mechanism predicts and nowhere else.
+
+**What it licensed.** No switch changes. The fix is not a switch: the continuum's
+anchor and its handoff have to be re-pinned against the bank the contact
+actually loads, and the contact's collision mass has to be the head that rings
+rather than a fifth of it. Those three are one change and have to be screened as
+one, because each alone measures a drum the other two do not describe. Until
+then the released engine keeps the twenty-entry calibration it was pinned
+against, which is self-consistent even though it is not the drum.
+
+**Also measured, and worth knowing.** The 2026-09-09 engine work moved the
+balance away from the real captures while improving structure: partials 91 to
+102 and median peak Q 109 to 132, against midband −17.1 to −14.0 and pitch band
+−15.6 to −17.9. The gain is real and so is the cost.
+
+**Superseded.** A `hidePrincipalAxis` candidate was built on the previous engine,
+on the finding that all seventy-two degenerate pairs shared the drum frame's
+zero as their principal axis. `physical::basisForMode` now gives each mode its
+own axis and pair split and applies them to frequency, strike, microphone and
+contact together, which is the same fix done properly, so the candidate was
+dropped rather than rebased. Its screen is recorded for what it is worth: on the
+old engine the axis alone was a wash, because a humanised stroke already lands
+about 0.046 rad off the shared axis, and it earned its keep only alongside a
+pair split. An earlier reading of that work claimed 74 of 152 resonators were
+silent on every stroke; that was `Mode::drive` on the physical bank at Humanise
+0, which is neither the path a stroke takes nor the setting that ships, and it
+is withdrawn.
