@@ -245,6 +245,7 @@ private:
 
     juce::Label logoLabel;
     juce::Label editionLabel;
+    juce::Label buildLabel;
     TaikorStatusDisplay statusDisplay;
     TaikorMeter meter;
     juce::TextButton panicButton { "PANIC" };

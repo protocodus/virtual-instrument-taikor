@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 
 #include <BinaryData.h>
+#include <TaikorBuildInfo.h>
 
 #include <cmath>
 #include <initializer_list>
@@ -1069,6 +1070,13 @@ TaikorAudioProcessorEditor::TaikorAudioProcessorEditor (TaikorAudioProcessor& pr
     addAndMakeVisible (editionLabel);
 
     addAndMakeVisible (statusDisplay);
+    buildLabel.setText ("v" TAIKOR_BUILD_VERSION " / build " TAIKOR_BUILD_NUMBER,
+                        juce::dontSendNotification);
+    buildLabel.setName ("Version and build number");
+    buildLabel.setTooltip ("Build time (UTC): " TAIKOR_BUILD_NUMBER);
+    buildLabel.setColour (juce::Label::textColourId, mutedText);
+    buildLabel.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (buildLabel);
     addAndMakeVisible (meter);
     limiterLabel.setText ("OUTPUT  /  LIMIT -1 dB", juce::dontSendNotification);
     limiterLabel.setFont (juce::Font (juce::FontOptions (9.5f).withStyle ("Bold")));
@@ -1402,6 +1410,8 @@ void TaikorAudioProcessorEditor::resized()
     editionLabel.setBounds (rect (440, 25, 160, 46));
     editionLabel.setFont (controlFont (18.0f * scale));
     statusDisplay.setBounds (rect (608, 30, 234, 36));
+    buildLabel.setBounds (rect (608, 68, 234, 20));
+    buildLabel.setFont (controlFont (12.0f * scale));
     limiterLabel.setBounds (rect (850, 18, 252, 24));
     limiterLabel.setFont (controlFont (18.0f * scale, true));
     meter.setBounds (rect (850, 44, 252, 34));

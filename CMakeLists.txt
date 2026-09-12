@@ -157,6 +157,21 @@ if(TAIKOR_BUILD_PLUGIN)
 
     juce_generate_juce_header(Taikor)
 
+    # Generate at build time, not configure time: an incremental rebuild must
+    # carry a new visible identity too. All wrappers share the editor compiled
+    # into Taikor, so the VST3 and standalone from one build display the same ID.
+    set(TAIKOR_BUILD_INFO_DIR "${CMAKE_CURRENT_BINARY_DIR}/TaikorBuildInfo")
+    add_custom_target(TaikorBuildIdentity
+        COMMAND "${CMAKE_COMMAND}"
+            "-DTAIKOR_BUILD_INFO_DIR=${TAIKOR_BUILD_INFO_DIR}"
+            "-DTAIKOR_BUILD_VERSION=${PROJECT_VERSION}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateTaikorBuildInfo.cmake"
+        BYPRODUCTS "${TAIKOR_BUILD_INFO_DIR}/TaikorBuildInfo.h"
+        COMMENT "Generating Taikor build identity"
+        VERBATIM)
+    add_dependencies(Taikor TaikorBuildIdentity)
+    target_include_directories(Taikor PRIVATE "${TAIKOR_BUILD_INFO_DIR}")
+
     juce_add_binary_data(TaikorAssets
         SOURCES
             Assets/taikor-drum-studies.png
