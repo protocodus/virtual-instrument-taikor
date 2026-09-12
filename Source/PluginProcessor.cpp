@@ -42,6 +42,8 @@ enum Slot
     slotOutputHighPass,
     slotEnsembleSize,
     slotEnsembleVariation,
+    slotReverbRoom,
+    slotReverbMix,
     slotCount
 };
 
@@ -56,7 +58,7 @@ constexpr std::array<const char*, slotCount> parameterIds {
     ids::strikeNoise, ids::humanise, ids::octaveBody, ids::micDistance,
     ids::micSpread, ids::stereoWidth, ids::drive, ids::output,
     ids::strikeAzimuth, ids::performer, ids::velocityCurve, ids::outputHighPass,
-    ids::ensembleSize, ids::ensembleVariation
+    ids::ensembleSize, ids::ensembleVariation, ids::reverbRoom, ids::reverbMix
 };
 
 float bipolarControllerValue (int rawValue) noexcept
@@ -371,6 +373,12 @@ TaikorAudioProcessor::createParameterLayout()
     result.push_back (makePercentParameter (
         ids::ensembleVariation, "Ensemble Variation", 0.4f, 3));
 
+    // New controls stay after the existing slots, including AU's version sort.
+    result.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { ids::reverbRoom, 4 }, "Reverb Room",
+        juce::StringArray { "Off", "Hall", "Theater", "Opera" }, 0));
+    result.push_back (makePercentParameter (ids::reverbMix, "Reverb Dry/Wet", 0.2f, 4));
+
     jassert (static_cast<int> (result.size()) == ids::parameterCount);
     return { result.begin(), result.end() };
 }
@@ -448,6 +456,16 @@ void TaikorAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
     // first stroke starts at the restored gain rather than gliding to it.
     updateEngineParameters();
     engine.prepare (sampleRate, samplesPerBlock);
+    lastReverbRoom = static_cast<int> (parameterPointers[slotReverbRoom]->load (std::memory_order_relaxed));
+    lastReverbMix = parameterPointers[slotReverbMix]->load (std::memory_order_relaxed);
+    reverb.prepare (sampleRate, samplesPerBlock, lastReverbRoom, lastReverbMix);
+    setLatencySamples (reverb.getLatency());
+    const auto rate = std::isfinite (sampleRate)
+        ? std::clamp (sampleRate, 8000.0, 384000.0) : 48000.0;
+    meterRelease = static_cast<float> (std::exp (-1.0 / (0.22 * rate)));
+    meterLevels.fill (0.0f);
+    for (auto& level : outputLevels)
+        level.store (0.0f, std::memory_order_relaxed);
     strikeAzimuthController.store (-1, std::memory_order_relaxed);
     strikePositionController.store (-1, std::memory_order_relaxed);
     displaySampleRate.store (sampleRate, std::memory_order_relaxed);
@@ -462,6 +480,10 @@ void TaikorAudioProcessor::releaseResources()
     discardUiTriggers();
     engine.allSoundsOff();
     engine.reset();
+    reverb.reset();
+    meterLevels.fill (0.0f);
+    for (auto& level : outputLevels)
+        level.store (0.0f, std::memory_order_relaxed);
     strikeAzimuthController.store (-1, std::memory_order_relaxed);
     strikePositionController.store (-1, std::memory_order_relaxed);
     activeVoiceCount.store (0, std::memory_order_relaxed);
@@ -488,10 +510,20 @@ void TaikorAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     updateEngineParameters();
 
+    const int room = static_cast<int> (parameterPointers[slotReverbRoom]->load (std::memory_order_relaxed));
+    const float mix = parameterPointers[slotReverbMix]->load (std::memory_order_relaxed);
+    if (room != lastReverbRoom || mix != lastReverbMix)
+    {
+        reverb.setParameters (room, mix);
+        lastReverbRoom = room;
+        lastReverbMix = mix;
+    }
+
     if (panicRequested.exchange (false, std::memory_order_acq_rel))
     {
         discardUiTriggers();
         engine.allSoundsOff();
+        reverb.reset();
         engine.clearStrikeOverrides();
         engine.setRearHeadStrike (false);
     }
@@ -509,9 +541,7 @@ void TaikorAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
         if (eventSample > renderedTo)
         {
-            engine.process (buffer.getWritePointer (0, renderedTo),
-                            buffer.getWritePointer (1, renderedTo),
-                            eventSample - renderedTo);
+            renderAudio (buffer, renderedTo, eventSample - renderedTo);
             renderedTo = eventSample;
         }
 
@@ -519,11 +549,40 @@ void TaikorAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     }
 
     if (renderedTo < numSamples)
-        engine.process (buffer.getWritePointer (0, renderedTo),
-                        buffer.getWritePointer (1, renderedTo),
-                        numSamples - renderedTo);
+        renderAudio (buffer, renderedTo, numSamples - renderedTo);
 
     activeVoiceCount.store (engine.getActiveVoiceCount(), std::memory_order_relaxed);
+    for (std::size_t channel = 0; channel < meterLevels.size(); ++channel)
+        outputLevels[channel].store (meterLevels[channel], std::memory_order_relaxed);
+}
+
+void TaikorAudioProcessor::renderAudio (juce::AudioBuffer<float>& buffer,
+                                      int start, int samples) noexcept
+{
+    auto* left = buffer.getWritePointer (0, start);
+    auto* right = buffer.getWritePointer (1, start);
+    // Establish silence before rendering: a block that retires its last drum
+    // can still contain peaks. Pending ensemble hits also prevent this path.
+    const bool silent = reverb.isBypassed() && engine.isOutputFrozen();
+    engine.process (left, right, samples);
+    reverb.process (left, right, samples);
+    if (silent)
+    {
+        if (meterLevels[0] != 0.0f || meterLevels[1] != 0.0f)
+            for (int sample = 0; sample < samples; ++sample)
+            {
+                meterLevels[0] *= meterRelease;
+                meterLevels[1] *= meterRelease;
+            }
+        return;
+    }
+    // Meter the finished wet/dry output, including a room ringing after drums
+    // retire. Keeping processing inside MIDI slices makes panic sample-accurate.
+    for (int sample = 0; sample < samples; ++sample)
+    {
+        meterLevels[0] = std::max (std::abs (left[sample]), meterLevels[0] * meterRelease);
+        meterLevels[1] = std::max (std::abs (right[sample]), meterLevels[1] * meterRelease);
+    }
 }
 
 void TaikorAudioProcessor::dispatchMidiData (const juce::uint8* data,
@@ -596,6 +655,7 @@ void TaikorAudioProcessor::dispatchMidiData (const juce::uint8* data,
         else if (controller == 120u || controller == 123u)
         {
             engine.allSoundsOff();
+            reverb.reset();
         }
     }
 }

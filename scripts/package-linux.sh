@@ -17,7 +17,9 @@ mkdir -p "${dist}"
 archive="${dist}/${prefix}-Linux-x64.tar.gz"
 contents=("VST3/Taikor.vst3" "CLAP/Taikor.clap" "Standalone/Taikor")
 for notice in "${PROJECT_DIR}/LICENSE" "${PROJECT_DIR}/THIRD_PARTY_NOTICES.md" \
-              "${PROJECT_DIR}"/ThirdParty/*-LICENSE.md; do
+              "${PROJECT_DIR}"/ThirdParty/*-LICENSE.md \
+              "${PROJECT_DIR}/ThirdParty/ECHOTHIEF-LICENSE.pdf" \
+              "${PROJECT_DIR}/ThirdParty/VOXENGO-IMPULSES-LICENSE.txt"; do
     test -s "${notice}"
     cp "${notice}" "${artefacts}/$(basename "${notice}")"
     contents+=("$(basename "${notice}")")

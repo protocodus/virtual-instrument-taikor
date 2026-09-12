@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 
 #include "DSP/EnsembleEngine.h"
+#include "DSP/IRReverb.h"
 
 #include <array>
 #include <atomic>
@@ -43,8 +44,10 @@ inline constexpr auto velocityCurve = "velocityCurve";
 inline constexpr auto outputHighPass = "outputHighPass";
 inline constexpr auto ensembleSize = "ensembleSize";
 inline constexpr auto ensembleVariation = "ensembleVariation";
+inline constexpr auto reverbRoom = "reverbRoom";
+inline constexpr auto reverbMix = "reverbMix";
 
-inline constexpr int parameterCount = 28;
+inline constexpr int parameterCount = 30;
 
 // Head diameter is presented in centimetres because that is how drums are
 // sold; the engine works in metres.
@@ -75,7 +78,8 @@ public:
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override
-    { return taikor::maximumTailSeconds + taikor::maximumEnsembleDelaySeconds; }
+    { return taikor::maximumTailSeconds + taikor::maximumEnsembleDelaySeconds
+           + taikor::IRReverb::maximumTailSeconds; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -99,7 +103,8 @@ public:
     }
     [[nodiscard]] float getOutputLevel (int channel) const noexcept
     {
-        return engine.getOutputLevel (channel);
+        return outputLevels[static_cast<std::size_t> (channel == 0 ? 0 : 1)]
+            .load (std::memory_order_relaxed);
     }
     void getVisualState (taikor::DrumVisualState& destination) const noexcept
     {
@@ -144,6 +149,7 @@ private:
     void discardUiTriggers() noexcept;
     void dispatchMidiData (const juce::uint8* data, int numBytes) noexcept;
     void updateEngineParameters() noexcept;
+    void renderAudio (juce::AudioBuffer<float>&, int start, int samples) noexcept;
     void registerTrigger (taikor::Articulation articulation) noexcept;
 
     std::array<std::atomic<float>*, taikor::parameters::parameterCount>
@@ -157,6 +163,12 @@ private:
     std::array<std::atomic<std::uint32_t>, taikor::articulationCount> triggerCounters {};
 
     taikor::EnsembleEngine engine;
+    taikor::IRReverb reverb;
+    std::array<float, 2> meterLevels {};
+    std::array<std::atomic<float>, 2> outputLevels {};
+    float meterRelease = 0.999f;
+    int lastReverbRoom = -1;
+    float lastReverbMix = -1.0f;
     std::atomic<bool> panicRequested { false };
     std::atomic<bool> engineReady { false };
     std::atomic<int> activeVoiceCount { 0 };

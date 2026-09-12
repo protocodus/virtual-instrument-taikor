@@ -162,16 +162,27 @@ if(TAIKOR_BUILD_PLUGIN)
             Assets/taikor-drum-studies.png
             Assets/taikor-coastal-print.png)
 
+    juce_add_binary_data(TaikorImpulses
+        HEADER_NAME ImpulseData.h
+        NAMESPACE TaikorImpulseData
+        SOURCES
+            Assets/ImpulseResponses/hall.wav
+            Assets/ImpulseResponses/theater.wav
+            Assets/ImpulseResponses/opera.wav)
+
     target_sources(Taikor PRIVATE
         Source/PluginProcessor.cpp
         Source/PluginProcessor.h
         Source/PluginEditor.cpp
-        Source/PluginEditor.h)
+        Source/PluginEditor.h
+        Source/DSP/IRReverb.cpp
+        Source/DSP/IRReverb.h)
 
     target_link_libraries(Taikor
         PRIVATE
             TaikorDSP
             TaikorAssets
+            TaikorImpulses
             juce::juce_audio_utils
             juce::juce_dsp
         PUBLIC
@@ -193,6 +204,20 @@ endif()
 option(TAIKOR_BUILD_TOOLS "Build offline Taikor tools" ON)
 
 if(TAIKOR_BUILD_TOOLS)
+    add_executable(TaikorBenchmarkCPU Tools/BenchmarkCPU.cpp)
+    target_link_libraries(TaikorBenchmarkCPU PRIVATE TaikorDSP)
+    target_compile_features(TaikorBenchmarkCPU PRIVATE cxx_std_20)
+
+    if(TAIKOR_BUILD_PLUGIN)
+        add_executable(TaikorBenchmarkAudioPath Tools/BenchmarkAudioPath.cpp)
+        target_link_libraries(TaikorBenchmarkAudioPath PRIVATE Taikor)
+        target_include_directories(TaikorBenchmarkAudioPath PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/Source"
+            "$<TARGET_PROPERTY:Taikor,JUCE_GENERATED_SOURCES_DIRECTORY>"
+            "$<TARGET_PROPERTY:Taikor,INCLUDE_DIRECTORIES>")
+        target_compile_features(TaikorBenchmarkAudioPath PRIVATE cxx_std_20)
+    endif()
+
     add_executable(TaikorCavityStudy Tools/StudyCoupledCavity.cpp)
     target_link_libraries(TaikorCavityStudy PRIVATE TaikorDSP)
 
@@ -205,10 +230,12 @@ if(TAIKOR_BUILD_TOOLS)
     target_compile_features(TaikorValidateCalibrationCapture PRIVATE cxx_std_20)
 
     if(MSVC)
+        target_compile_options(TaikorBenchmarkCPU PRIVATE /W4 /permissive-)
         target_compile_options(TaikorRenderDemos PRIVATE /W4 /permissive-)
         target_compile_options(TaikorValidateCalibrationCapture PRIVATE
             /W4 /permissive-)
     else()
+        target_compile_options(TaikorBenchmarkCPU PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(TaikorRenderDemos PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(TaikorValidateCalibrationCapture PRIVATE
             -Wall -Wextra -Wpedantic)
@@ -216,6 +243,10 @@ if(TAIKOR_BUILD_TOOLS)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(TaikorParametricStrainTests Tests/ParametricStrainTests.cpp)
+    target_link_libraries(TaikorParametricStrainTests PRIVATE TaikorDSP)
+    add_test(NAME Taikor.ParametricStrain COMMAND TaikorParametricStrainTests)
+
     add_executable(TaikorAngularRebuildIntegrationTests Tests/AngularRebuildIntegrationTests.cpp)
     target_link_libraries(TaikorAngularRebuildIntegrationTests PRIVATE TaikorDSP)
     add_test(NAME Taikor.AngularRebuildIntegration COMMAND TaikorAngularRebuildIntegrationTests)
@@ -290,6 +321,20 @@ if(BUILD_TESTING)
     set_tests_properties(Taikor.TaikoEngine PROPERTIES TIMEOUT 600)
 
     if(TAIKOR_BUILD_TOOLS)
+        # Exercise every benchmark score and its deterministic audio
+        # validation without asserting machine-dependent timing in CI.
+        add_test(NAME Taikor.BenchmarkCPU
+                 COMMAND TaikorBenchmarkCPU --seconds 0.08 --tail 0.02
+                         --warmup 0 --repeats 2)
+        set_tests_properties(Taikor.BenchmarkCPU PROPERTIES TIMEOUT 60)
+
+        if(TAIKOR_BUILD_PLUGIN)
+            add_test(NAME Taikor.BenchmarkAudioPath
+                     COMMAND TaikorBenchmarkAudioPath --seconds 0.08 --tail 0.02
+                             --warmup 0 --repeats 2)
+            set_tests_properties(Taikor.BenchmarkAudioPath PROPERTIES TIMEOUT 120)
+        endif()
+
         add_test(NAME Taikor.CavityStudy COMMAND TaikorCavityStudy)
         # Guards the renderer that produces the committed demonstration WAVs:
         # it renders a short take to a temporary directory and checks that the
@@ -306,6 +351,23 @@ if(BUILD_TESTING)
     endif()
 
     if(TAIKOR_BUILD_PLUGIN)
+        add_executable(TaikorIRReverbTests Tests/IRReverbTests.cpp)
+        target_link_libraries(TaikorIRReverbTests PRIVATE Taikor)
+        target_include_directories(TaikorIRReverbTests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/Source"
+            "$<TARGET_PROPERTY:Taikor,INCLUDE_DIRECTORIES>")
+        add_test(NAME Taikor.IRReverb COMMAND TaikorIRReverbTests)
+        set_tests_properties(Taikor.IRReverb PROPERTIES TIMEOUT 120)
+
+        add_executable(TaikorCPUFastPathTests Tests/CPUFastPathTests.cpp)
+        target_link_libraries(TaikorCPUFastPathTests PRIVATE Taikor)
+        target_include_directories(TaikorCPUFastPathTests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/Source"
+            "$<TARGET_PROPERTY:Taikor,JUCE_GENERATED_SOURCES_DIRECTORY>"
+            "$<TARGET_PROPERTY:Taikor,INCLUDE_DIRECTORIES>")
+        add_test(NAME Taikor.CPUFastPath COMMAND TaikorCPUFastPathTests)
+        set_tests_properties(Taikor.CPUFastPath PROPERTIES TIMEOUT 120)
+
         add_executable(TaikorPluginProcessorTests Tests/PluginProcessorTests.cpp)
         target_link_libraries(TaikorPluginProcessorTests PRIVATE Taikor)
         target_include_directories(TaikorPluginProcessorTests PRIVATE

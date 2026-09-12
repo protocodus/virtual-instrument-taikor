@@ -746,6 +746,23 @@ The same build produces `TaikorValidateCalibrationCapture`, the inventory
 preflight for the controlled capture described under
 [Known gaps](#known-gaps).
 
+`TaikorBenchmarkCPU` measures idle, solo, dense four-drum, ensemble and live
+automation workloads through the shipping engine. Run saved baseline and
+candidate executables alternately with identical options on an idle machine;
+its CSV reports CPU as a percentage of one audio thread. Preparation and file
+I/O are excluded, while strikes and control changes are included.
+
+```bash
+./build-dsp/TaikorBenchmarkCPU --rate 48000 --block 256 --repeats 5 \
+  --capture build-dsp/cpu-audio
+```
+
+Use `--rate 96000`, `--block 64` or `--case controls` for other workloads.
+Captures are unnormalised, interleaved stereo float32 little-endian files;
+compare matching baseline/candidate files byte-for-byte to verify unchanged
+audio. The measurement protocol and full options are in the tool's source
+and `--help`.
+
 The full plug-in requires CMake 3.22+, Git and a C++20 compiler. JUCE 8.0.14
 and clap-juce-extensions (including its CLAP submodules) are fetched at pinned
 commits during configuration. Local checkouts can be supplied with

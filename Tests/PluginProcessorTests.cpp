@@ -18,11 +18,11 @@ constexpr double sampleRate = 48000.0;
 constexpr int blockSize = 512;
 // Must stay in step with PluginEditor.cpp's design constants.
 constexpr int editorDesignWidth = 1280;
-constexpr int editorDesignHeight = 880;
+constexpr int editorDesignHeight = 920;
 constexpr int editorMinimumWidth = 1024;
-constexpr int editorMinimumHeight = 704;
+constexpr int editorMinimumHeight = 736;
 constexpr int editorMaximumWidth = 1472;
-constexpr int editorMaximumHeight = 1012;
+constexpr int editorMaximumHeight = 1058;
 constexpr double editorAspectRatio =
     static_cast<double> (editorDesignWidth) / static_cast<double> (editorDesignHeight);
 
@@ -241,7 +241,7 @@ void testParameterLayoutAndDefaults()
     expect (ids.size() == static_cast<std::size_t> (taikor::parameters::parameterCount),
             "parameter IDs are not unique");
 
-    const std::array<const char*, 28> expectedParameterIds {{
+    const std::array<const char*, 30> expectedParameterIds {{
         pids::headDiameter, pids::bodyDepth, pids::tension, pids::headMaterial,
         pids::shellMaterial, pids::resonantTension, pids::cavityCoupling,
         pids::headDamping, pids::shellResonance, pids::pitch,
@@ -251,6 +251,7 @@ void testParameterLayoutAndDefaults()
         pids::stereoWidth, pids::drive, pids::output, pids::strikeAzimuth,
         pids::performer, pids::velocityCurve, pids::outputHighPass,
         pids::ensembleSize, pids::ensembleVariation,
+        pids::reverbRoom, pids::reverbMix,
     }};
     for (std::size_t index = 0; index < expectedParameterIds.size(); ++index)
     {
@@ -259,7 +260,7 @@ void testParameterLayoutAndDefaults()
         expect (ranged != nullptr && ranged->paramID == expectedParameterIds[index],
                 "host parameter order changed at slot " + std::to_string (index));
         expect (ranged != nullptr
-                    && ranged->getVersionHint() == (index >= 26u ? 3 : index == 25u ? 2 : 1),
+                    && ranged->getVersionHint() == (index >= 28u ? 4 : index >= 26u ? 3 : index == 25u ? 2 : 1),
                 "AU parameter ordering changed at slot " + std::to_string (index));
     }
 
@@ -327,7 +328,7 @@ void testParameterLayoutAndDefaults()
         expect (false, "Velocity Curve is not a continuous float parameter");
     }
 
-    const std::array<std::pair<const char*, float>, 28> expectedDefaults {{
+    const std::array<std::pair<const char*, float>, 30> expectedDefaults {{
         { pids::headDiameter, 150.0f },  { pids::bodyDepth, 0.5f },
         { pids::tension, 0.62f },        { pids::headMaterial, 0.75f },
         { pids::shellMaterial, 0.8f },   { pids::resonantTension, 0.5f },
@@ -343,6 +344,7 @@ void testParameterLayoutAndDefaults()
         { pids::velocityCurve, 0.0f },
         { pids::outputHighPass, 0.0f },
         { pids::ensembleSize, 1.0f },    { pids::ensembleVariation, 0.4f },
+        { pids::reverbRoom, 0.0f },      { pids::reverbMix, 0.2f },
     }};
 
     for (const auto& [id, expected] : expectedDefaults)
@@ -439,6 +441,8 @@ void testParameterLayoutAndDefaults()
             "the ensemble must default to one player with 40 percent variation ready");
     setParameterValue (processor, pids::ensembleSize, 5.0f);
     setParameterValue (processor, pids::ensembleVariation, 0.73f);
+    setParameterValue (processor, pids::reverbRoom, 3.0f);
+    setParameterValue (processor, pids::reverbMix, 0.63f);
     const auto ensembleParameters = processor.snapshotEngineParameters();
     expect (ensembleParameters.ensembleSize == 5
                 && std::abs (ensembleParameters.ensembleVariation - 0.73f) < 1.0e-4f,
@@ -1108,6 +1112,10 @@ void testStateRoundTrip()
     setParameterValue (processor, pids::ensembleSize, 6.0f);
     setParameterValue (processor, pids::ensembleVariation, 0.73f);
 
+    // Exercise nondefault reverb values before asserting their restoration.
+    setParameterValue (processor, pids::reverbRoom, 3.0f);
+    setParameterValue (processor, pids::reverbMix, 0.63f);
+
     juce::MemoryBlock state;
     processor.getStateInformation (state);
 
@@ -1137,6 +1145,9 @@ void testStateRoundTrip()
                 && std::abs (parameterValue (restored, pids::ensembleVariation) - 0.73f)
                        < 1.0e-3f,
             "ensemble controls did not survive a state round trip");
+    expect (parameterValue (restored, pids::reverbRoom) == 3.0f
+                && std::abs (parameterValue (restored, pids::reverbMix) - 0.63f) < 1.0e-3f,
+            "reverb controls did not survive a state round trip");
 
     // A stored tree that predates a control must restore that control to its
     // default rather than to whatever the instance happened to be holding.
@@ -1148,6 +1159,8 @@ void testStateRoundTrip()
     setParameterValue (partial, pids::outputHighPass, 500.0f);
     setParameterValue (partial, pids::ensembleSize, 8.0f);
     setParameterValue (partial, pids::ensembleVariation, 1.0f);
+    setParameterValue (partial, pids::reverbRoom, 2.0f);
+    setParameterValue (partial, pids::reverbMix, 1.0f);
 
     juce::ValueTree trimmed { partial.parameters.state.getType() };
     juce::ValueTree keep { "PARAM" };
@@ -1179,6 +1192,9 @@ void testStateRoundTrip()
                 && std::abs (parameterValue (partial, pids::ensembleVariation) - 0.4f)
                        < 1.0e-3f,
             "a legacy state must restore a solo player and default ensemble variation");
+    expect (parameterValue (partial, pids::reverbRoom) == 0.0f
+                && std::abs (parameterValue (partial, pids::reverbMix) - 0.2f) < 1.0e-3f,
+            "legacy sessions must restore reverb Off with the default wet amount");
 
     // Octave Body was continuous in older sessions. The retained parameter ID
     // must let those raw values restore into the nearest Drum Layout endpoint.
@@ -1344,7 +1360,8 @@ void testEditorRendering()
 
     for (const auto& [name, id] : std::array {
              std::pair { "PERFORMER", taikor::parameters::performer },
-             std::pair { "DRUM LAYOUT", taikor::parameters::octaveBody } })
+             std::pair { "DRUM LAYOUT", taikor::parameters::octaveBody },
+             std::pair { "ROOM", taikor::parameters::reverbRoom } })
     {
         auto* control = findSwitch (name);
         auto* parameter = processor.parameters.getParameter (id);

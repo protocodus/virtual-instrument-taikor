@@ -33,6 +33,8 @@ def package(build_dir: Path, config: str) -> Path:
         "ThirdParty/CLAP-JUCE-EXTENSIONS-LICENSE.md",
         "ThirdParty/CLAP-LICENSE.md",
         "ThirdParty/CLAP-HELPERS-LICENSE.md",
+        "ThirdParty/ECHOTHIEF-LICENSE.pdf",
+        "ThirdParty/VOXENGO-IMPULSES-LICENSE.txt",
     )
     for source in [*(artefacts / name for name in required),
                    *(project_dir / name for name in notices)]:

@@ -49,5 +49,49 @@ submodules:
 Both dependencies are Copyright (c) 2021 Alexandre BIQUE. These licence files
 are included in the distribution archives and macOS installer packages.
 
-No third-party sample, impulse response, model, preset, or other sound asset is
-included in this repository.
+## Embedded room impulse responses
+
+The room reverb uses the following third-party impulse responses. The WAV
+contents are unaltered copies of the supplied originals; only their filenames
+have changed. These assets retain their authors' copyrights and are not
+relicensed under Taikor's source-code licence.
+
+| Embedded file | Original file | Source |
+| --- | --- | --- |
+| `Assets/ImpulseResponses/hall.wav` | `SteinmanHall.wav` | EchoThief Impulse Response Library, `Venues` |
+| `Assets/ImpulseResponses/theater.wav` | `MillsGreekTheater.wav` | EchoThief Impulse Response Library, `Venues` |
+| `Assets/ImpulseResponses/opera.wav` | `Scala Milan Opera Hall.wav` | Voxengo IM Reverbs Pack |
+
+### EchoThief: Hall and Theater
+
+EchoThief Impulse Response Library is copyright Dr. Chris Warren.
+Source: <https://www.echothief.com/downloads/>.
+
+The two embedded WAV files match the corresponding originals in the official
+[EchoThief library archive](https://www.echothief.com/wp-content/uploads/2024/07/EchoThiefImpulseResponseLibrary.zip).
+The archive's complete, unaltered licence is included at
+[`ThirdParty/ECHOTHIEF-LICENSE.pdf`](ThirdParty/ECHOTHIEF-LICENSE.pdf).
+
+That licence permits derivative artistic work, including using convolution to
+create reverberation. Other uses are subject to contacting the author at
+`cwarren@sdsu.edu`; the published licence does not grant permission to
+redistribute the original impulse responses inside another product. Separate
+permission is therefore needed before distributing these bundled originals.
+The licence also excludes AI training.
+
+### Voxengo: Opera
+
+The Scala Milan Opera Hall response was created with Voxengo Impulse Modeler.
+All copyrights and intellectual property rights in this impulse response
+remain exclusively owned by Aleksey Vaneev.
+Source and published terms: <https://www.voxengo.com/impulses/>.
+
+The complete licence supplied alongside the original WAV is preserved at
+[`ThirdParty/VOXENGO-IMPULSES-LICENSE.txt`](ThirdParty/VOXENGO-IMPULSES-LICENSE.txt).
+It grants royalty-free use, including commercial use, but redistribution has
+additional conditions: copies must remain complete and unaltered, include the
+copyright notice and all conditions, carry no charge, and generate no direct
+or indirect distribution profit. Both distributor and recipient must
+acknowledge Aleksey Vaneev's continuing exclusive ownership. Distribution of
+this asset is expressly subject to that acknowledgment and the complete
+licence; include the licence and this notice with every distributed copy.

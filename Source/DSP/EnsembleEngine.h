@@ -28,6 +28,7 @@ public:
     void setStrikeAzimuthOverride (float radians) noexcept;
     void clearStrikeOverrides() noexcept;
     void setRearHeadStrike (bool rear) noexcept { rearHeadStrike = rear; }
+    [[nodiscard]] bool isOutputFrozen() const noexcept;
 
     [[nodiscard]] int getActiveVoiceCount() const noexcept
     { return activeVoices.load (std::memory_order_relaxed); }

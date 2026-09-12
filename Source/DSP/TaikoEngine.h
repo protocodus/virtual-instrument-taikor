@@ -345,6 +345,7 @@ public:
                               const StereoPan* leadPan = nullptr) noexcept;
 
     [[nodiscard]] int getActiveVoiceCount() const noexcept;
+    [[nodiscard]] bool isOutputFrozen() const noexcept { return idleFrozen_; }
     [[nodiscard]] float getOutputLevel (int channel) const noexcept;
     // Lightweight analytic pitch estimate for the octave last played. This is
     // safe to publish from trigger(); use measureDrum().soundingHz when the
@@ -733,6 +734,13 @@ private:
         std::array<Mode, resonatorCount> modes {};
         int modeCount { 0 };
         int activeModeCount { 0 };
+        // Sparse traversals in ascending bank order, rebuilt after construction,
+        // sorting and boundary reconfiguration. These omit only modes the full
+        // scans would skip, never modes selected by amplitude or audibility.
+        std::array<std::uint16_t, resonatorCount> strainModeIndices {};
+        std::array<std::uint16_t, resonatorCount> boundaryModeIndices {};
+        int strainModeCount { 0 };
+        int boundaryModeCount { 0 };
         // Force already projected into stable physical-mode order. Every due
         // contact on this drum adds here, then the bank consumes and clears it
         // in one tick. This is the structural guarantee that two simultaneous
@@ -1625,6 +1633,7 @@ private:
     // no allocation, exponential or solve. Displacement is unchanged while
     // the exact passive relative-velocity impulse updates both connected sides.
     void configureShellBoundary (Voice& voice) const noexcept;
+    static void rebuildModeTraversals (Voice& voice) noexcept;
     static void applyShellBoundary (Voice& voice) noexcept;
     // A muted Tsu leaves a finite-area free-hand damper on the one canonical
     // head. This schedules that local passive loss; bachi/head momentum
@@ -1663,7 +1672,8 @@ private:
     // are left at zero: the glide's one chosen constant was pinned against the
     // strain of that bank, and the one-way entries stay outside it.
     static void membraneSquaredSlopePerEntry (
-        const Voice& voice, std::array<float, modeEntryCount>& strain, bool rear = false) noexcept;
+        const Voice& voice, std::array<float, modeEntryCount>& batterStrain,
+        std::array<float, modeEntryCount>& rearStrain) noexcept;
     void advancePhysicalContacts (Voice& physical) noexcept;
     static void configureContinuumForce (Voice::ContinuumBand& band,
                                          double rate, float shift = 1.0f) noexcept;
@@ -1709,6 +1719,7 @@ private:
                           const float* gain, bool extraActive, bool raw,
                           const StereoPan* leadPan) noexcept;
     void updateActiveVoiceCount() noexcept;
+    void refreshActiveLists() noexcept;
     void refreshDrumIfNeeded() noexcept;
     // Changes continuous pole loss while preserving instantaneous displacement
     // and physical velocity. `amplitudeDecay` is the palm's extra exponent.
@@ -1767,6 +1778,13 @@ private:
     // The four keyboard octaves are four physical instruments. Strikes are
     // transient contacts routed into these banks; they never own resonators.
     std::array<Voice, drumCount>& physicalDrums_;
+    // Compact, slot-ordered views preserve the original summation order.
+    // Rebuilt at block entry and after retirement, never allocated in render.
+    std::array<Voice*, maxVoices> activeContacts_ {};
+    std::array<Voice*, drumCount> activeDrums_ {};
+    int activeContactCount_ { 0 };
+    int activeDrumCount_ { 0 };
+    bool activeListsDirty_ { true };
     // Incremented only by controls that alter the physical bank. Pitch-bend
     // smoothing deliberately does not touch it: a wheel retunes the live poles
     // instead of rebuilding the complete bank at audio rate.
