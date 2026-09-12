@@ -15,6 +15,7 @@ from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
+IR_LICENSES = ("ECHOTHIEF-LICENSE.pdf", "VOXENGO-IMPULSES-LICENSE.txt")
 sys.path.insert(0, str(SCRIPTS))
 from release_metadata import build_number, package_prefix
 
@@ -62,6 +63,8 @@ class PackagingTests(unittest.TestCase):
             with ZipFile(archive) as contents:
                 for name in (*names, "LICENSE", "THIRD_PARTY_NOTICES.md"):
                     self.assertGreater(contents.getinfo(name).file_size, 0)
+                for name in IR_LICENSES:
+                    self.assertEqual(contents.read(name), (ROOT / "ThirdParty" / name).read_bytes())
 
     def test_linux_archive_uses_same_naming_and_contains_binaries(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -81,6 +84,22 @@ class PackagingTests(unittest.TestCase):
             with tarfile.open(archive) as contents:
                 for name in (*names, "LICENSE", "THIRD_PARTY_NOTICES.md"):
                     self.assertGreater(contents.getmember(name).size, 0)
+                for name in IR_LICENSES:
+                    self.assertEqual(contents.extractfile(name).read(),
+                                     (ROOT / "ThirdParty" / name).read_bytes())
+
+    def test_macos_license_list_includes_unaltered_ir_licenses(self):
+        # Exercise the actual declaration without signing or packaging binaries.
+        script = (SCRIPTS / "sign-and-package-macos.sh").read_text()
+        declaration = script.split("THIRD_PARTY_LICENSES=(", 1)[1].split("\n)", 1)[0]
+        command = 'THIRD_PARTY_LICENSES=(' + declaration + '\n)\nprintf "%s\\n" "${THIRD_PARTY_LICENSES[@]}"'
+        result = run("bash", "-c", command,
+                     env=dict(os.environ, PROJECT_DIR=str(ROOT)))
+        paths = {Path(line) for line in result.stdout.splitlines()}
+        for name in IR_LICENSES:
+            source = ROOT / "ThirdParty" / name
+            self.assertIn(source, paths)
+            self.assertGreater(source.stat().st_size, 0)
 
     def test_cross_platform_manifest_rejects_different_build(self):
         workflow = (ROOT / ".github/workflows/nightly.yml").read_text()

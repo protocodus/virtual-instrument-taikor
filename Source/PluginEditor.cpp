@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 
 #include <BinaryData.h>
+#include <TaikorBuildInfo.h>
 
 #include <cmath>
 #include <initializer_list>
@@ -12,11 +13,11 @@ namespace
 // tests read the same numbers, so a layout change that breaks the contract
 // fails the suite rather than the host.
 constexpr int designWidth = 1280;
-constexpr int designHeight = 880;
+constexpr int designHeight = 920;
 constexpr int minimumWidth = 1024;
-constexpr int minimumHeight = 704;
+constexpr int minimumHeight = 736;
 constexpr int maximumWidth = 1472;
-constexpr int maximumHeight = 1012;
+constexpr int maximumHeight = 1058;
 
 constexpr float pi = 3.14159265358979f;
 
@@ -1069,6 +1070,13 @@ TaikorAudioProcessorEditor::TaikorAudioProcessorEditor (TaikorAudioProcessor& pr
     addAndMakeVisible (editionLabel);
 
     addAndMakeVisible (statusDisplay);
+    buildLabel.setText ("v" TAIKOR_BUILD_VERSION " / build " TAIKOR_BUILD_NUMBER,
+                        juce::dontSendNotification);
+    buildLabel.setName ("Version and build number");
+    buildLabel.setTooltip ("Build time (UTC): " TAIKOR_BUILD_NUMBER);
+    buildLabel.setColour (juce::Label::textColourId, mutedText);
+    buildLabel.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (buildLabel);
     addAndMakeVisible (meter);
     limiterLabel.setText ("OUTPUT  /  LIMIT -1 dB", juce::dontSendNotification);
     limiterLabel.setFont (juce::Font (juce::FontOptions (9.5f).withStyle ("Bold")));
@@ -1160,7 +1168,7 @@ TaikorAudioProcessorEditor::TaikorAudioProcessorEditor (TaikorAudioProcessor& pr
 
     deckLabel (drumDeckLabel, "BODY & TUNING");
     deckLabel (strokeDeckLabel, "THE STROKE");
-    deckLabel (microphoneDeckLabel, "MICROPHONES & OUTPUT");
+    deckLabel (microphoneDeckLabel, "MICROPHONES, REVERB & OUTPUT");
 
     namespace ids = taikor::parameters;
     addKnob (sizeKnob, ids::headDiameter,
@@ -1238,7 +1246,7 @@ TaikorAudioProcessorEditor::TaikorAudioProcessorEditor (TaikorAudioProcessor& pr
     drumLayoutSwitch = std::make_unique<TaikorChoiceSwitch> (
         "DRUM LAYOUT", *audioProcessor.parameters.getParameter (ids::octaveBody),
         "1 Drum retunes one design across four rows. 4 Drums uses four taiko families. "
-        "Each row rings independently; there is no shared room or inter-drum resonance.");
+        "Each row rings independently.");
     addAndMakeVisible (*drumLayoutSwitch);
 
     addKnob (micDistanceKnob, ids::micDistance,
@@ -1250,6 +1258,15 @@ TaikorAudioProcessorEditor::TaikorAudioProcessorEditor (TaikorAudioProcessor& pr
              "stereo comes from: two points see different signs of every mode with a "
              "circumferential order.");
     addKnob (widthKnob, ids::stereoWidth, "Width trim on the finished pair.");
+    reverbRoomSwitch = std::make_unique<TaikorChoiceSwitch> (
+        "ROOM", *audioProcessor.parameters.getParameter (ids::reverbRoom),
+        "Choose the room around the drum ensemble: Hall, Theater or Opera. "
+        "Off keeps the output dry.");
+    addAndMakeVisible (*reverbRoomSwitch);
+    addKnob (reverbMixKnob, ids::reverbMix,
+             "Blend the dry drums with the selected room. 0% is dry; 100% is "
+             "room sound. Off keeps the output dry.");
+    reverbMixKnob.slider.setTitle ("Reverb Dry/Wet");
     addKnob (driveKnob, ids::drive, "Gentle output-stage saturation.");
     addKnob (outputHighPassKnob, ids::outputHighPass,
              "Gentle 6 dB/octave output high-pass filter, before the limiter. "
@@ -1334,11 +1351,11 @@ TaikorAudioProcessorEditor::calculateLayout() const
     areas.header = rect (0, 0, 1280, 96);
     areas.artwork = rect (24, 116, 272, 300);
     areas.head = rect (24, 432, 272, 260);
-    areas.switchDeck = rect (24, 708, 272, 148);
+    areas.switchDeck = rect (24, 708, 272, 188);
     areas.gridArea = rect (312, 116, 944, 300);
     areas.drumDeck = rect (312, 432, 464, 260);
     areas.strokeDeck = rect (792, 432, 464, 260);
-    areas.microphoneDeck = rect (312, 708, 944, 148);
+    areas.microphoneDeck = rect (312, 708, 944, 188);
     return areas;
 }
 
@@ -1393,6 +1410,8 @@ void TaikorAudioProcessorEditor::resized()
     editionLabel.setBounds (rect (440, 25, 160, 46));
     editionLabel.setFont (controlFont (18.0f * scale));
     statusDisplay.setBounds (rect (608, 30, 234, 36));
+    buildLabel.setBounds (rect (608, 68, 234, 20));
+    buildLabel.setFont (controlFont (12.0f * scale));
     limiterLabel.setBounds (rect (850, 18, 252, 24));
     limiterLabel.setFont (controlFont (18.0f * scale, true));
     meter.setBounds (rect (850, 44, 252, 34));
@@ -1474,7 +1493,8 @@ void TaikorAudioProcessorEditor::resized()
                   { velocityCurveSwitch.get(), 2 } }, 5);
     layoutDeck (areas.microphoneDeck, microphoneDeckLabel,
                 { { &micDistanceKnob, 1 }, { &micSpreadKnob, 1 }, { &widthKnob, 1 },
-                  { &driveKnob, 1 }, { &outputHighPassKnob, 1 }, { &outputKnob, 1 } }, 6);
+                  { reverbRoomSwitch.get(), 3 }, { &reverbMixKnob, 1 },
+                  { &driveKnob, 1 }, { &outputHighPassKnob, 1 }, { &outputKnob, 1 } }, 10);
 
     auto switches = areas.switchDeck.reduced (px (14), px (12));
     performerSwitch->setBounds (switches.removeFromTop (px (57)));

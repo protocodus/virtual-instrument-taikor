@@ -20,6 +20,20 @@ struct TaikoEngineTestAccess
             engine.physicalDrums_.begin(), engine.physicalDrums_.end(),
             [] (const auto& drum) { return drum.active; }));
     }
+    static void processGeneralPath (TaikoEngine& engine, float* left, float* right,
+                                    const float* zeros, int samples, bool raw)
+    {
+        // Supplying a zero auxiliary buffer exercises the full render loop,
+        // including its original sample-by-sample idle/control behavior.
+        engine.processInternal (left, right, samples, zeros, zeros,
+                                nullptr, false, raw, nullptr);
+    }
+    static std::array<double, 8> idleState (const TaikoEngine& engine)
+    {
+        return { engine.handDamping_, engine.pitchBend_, engine.smoothedOutputGain_,
+                 engine.smoothedDrive_, engine.smoothedWidth_, engine.meterLeft_,
+                 engine.meterRight_, engine.visualLevel_ };
+    }
 };
 
 struct EnsembleEngineTestAccess
@@ -191,6 +205,66 @@ void checkSoloAndReplay()
             "the multi-event ensemble performance must be audible, finite and limited");
 }
 
+void checkIdleAutomationContinuity()
+{
+    using EngineAccess = taikor::TaikoEngineTestAccess;
+    for (const double rate : { 8000.0, 48000.0, 192000.0 })
+        for (const bool raw : { false, true })
+        {
+            auto fast = std::make_unique<taikor::TaikoEngine>();
+            auto reference = std::make_unique<taikor::TaikoEngine>();
+            fast->prepare (rate, 512);
+            reference->prepare (rate, 512);
+            EngineParameters parameters;
+            const auto compare = [&] (int samples, bool expectSilence)
+            {
+                Audio actual (samples), expected (samples);
+                std::vector<float> zeros (static_cast<std::size_t> (samples));
+                if (raw)
+                    fast->processRaw (actual.left.data(), actual.right.data(), samples);
+                else
+                    fast->process (actual.left.data(), actual.right.data(), samples);
+                EngineAccess::processGeneralPath (*reference, expected.left.data(),
+                    expected.right.data(), zeros.data(), samples, raw);
+                expect (actual == expected && (! expectSilence || actual.silent()),
+                        "idle automation and the following contact must exactly match the general render path");
+                expect (EngineAccess::idleState (*fast) == EngineAccess::idleState (*reference),
+                        "idle optimization must retain exact gesture, output, meter and visual state");
+            };
+
+            // Cover both a fresh idle instance and silence after a played note:
+            // the latter retains a nonzero output meter and a solved drum cache.
+            for (int pass = 0; pass < 2; ++pass)
+            {
+                parameters.drive = 0.67f;
+                parameters.outputGain = 0.24f;
+                parameters.stereoWidth = 0.84f;
+                parameters.tension = 0.33f + 0.12f * pass;
+                parameters.outputHighPassHz = 80.0f;
+                fast->setParameters (parameters);
+                reference->setParameters (parameters);
+                fast->setPitchBend (0.27f);
+                reference->setPitchBend (0.27f);
+                fast->setHandDamping (0.41f);
+                reference->setHandDamping (0.41f);
+                for (const int samples : { 1, 7, 64, 257, 513 })
+                    compare (samples, true);
+
+                fast->setPitchBend (-0.13f);
+                reference->setPitchBend (-0.13f);
+                fast->setHandDamping (0.0f);
+                reference->setHandDamping (0.0f);
+                compare (125, true);
+                fast->trigger (Articulation::Don, pass, 0.83f);
+                reference->trigger (Articulation::Don, pass, 0.83f);
+                for (int block = 0; block < 16; ++block)
+                    compare (257, false);
+                fast->allSoundsOff();
+                reference->allSoundsOff();
+            }
+        }
+}
+
 double panDifference (const taikor::StereoPan& a, const taikor::StereoPan& b)
 {
     return std::max ({ std::abs (a.ll - b.ll), std::abs (a.lr - b.lr),
@@ -352,6 +426,21 @@ void checkPanAudioAndResize()
                 && ! Access::currentPan (*engine, 0).isCentered()
                 && panDifference ({}, Access::currentPan (*engine, 0)) < 0.01,
             "an immediate next stroke must start the added player at its final seat without jumping the already sounding lead");
+
+    parameters.ensembleSize = 4;
+    engine->setParameters (parameters);
+    auto silentMovingPan = Access::currentPan (*engine, 1);
+    const auto silentMovingTarget = Access::targetPan (*engine, 1);
+    Access::player (*engine, 1).allSoundsOff();
+    expect (panDifference (silentMovingPan, silentMovingTarget) > 0.1,
+            "the silent pan probe must start with a moving companion");
+    constexpr int silentSamples = 333;
+    const double smoothing = -std::expm1 (-1.0 / (0.015 * 48000.0));
+    for (int sample = 0; sample < silentSamples; ++sample)
+        silentMovingPan.approach (silentMovingTarget, smoothing);
+    render (*engine, silentSamples, 97);
+    expect (panDifference (silentMovingPan, Access::currentPan (*engine, 1)) == 0.0,
+            "skipping a silent companion's mix must still advance its pan exactly");
 
     const auto resizedPerformance = [&] (int blockSize)
     {
@@ -630,6 +719,7 @@ void reportRenderCost()
 int main()
 {
     checkSoloAndReplay();
+    checkIdleAutomationContinuity();
     checkPanLayoutsAndMatrix();
     checkPanAudioAndResize();
     checkMembersAndLimits();

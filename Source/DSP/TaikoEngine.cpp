@@ -1959,6 +1959,7 @@ void TaikoEngine::allSoundsOff() noexcept
 
 void TaikoEngine::silenceVoice (Voice& voice) noexcept
 {
+    activeListsDirty_ = true;
     voice.active = false;
     voice.configurationRevision = 0;
     voice.configurationPitch = 0.0f;
@@ -1966,6 +1967,7 @@ void TaikoEngine::silenceVoice (Voice& voice) noexcept
     voice.modeCount = 0;
     voice.activeModeCount = 0;
     voice.contactCount = 0;
+    voice.strainModeCount = voice.boundaryModeCount = 0;
     voice.nextContact = 0;
     voice.contactRemaining = 0u;
     voice.ageSamples = 0;
@@ -2084,6 +2086,18 @@ void TaikoEngine::updateActiveVoiceCount() noexcept
         if (drum.active)
             ++count;
     activeVoiceCount_.store (count, std::memory_order_relaxed);
+}
+
+void TaikoEngine::refreshActiveLists() noexcept
+{
+    activeContactCount_ = activeDrumCount_ = 0;
+    for (auto& voice : voices_)
+        if (voice.active)
+            activeContacts_[static_cast<std::size_t> (activeContactCount_++)] = &voice;
+    for (auto& drum : physicalDrums_)
+        if (drum.active)
+            activeDrums_[static_cast<std::size_t> (activeDrumCount_++)] = &drum;
+    activeListsDirty_ = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -3440,16 +3454,33 @@ void TaikoEngine::configureShellBoundary (Voice& voice) const noexcept
             * static_cast<double> (mode.inverseModalMass)
             * impulseCoefficient[static_cast<std::size_t> (group)];
     }
+    rebuildModeTraversals (voice);
+}
+
+void TaikoEngine::rebuildModeTraversals (Voice& voice) noexcept
+{
+    voice.strainModeCount = voice.boundaryModeCount = 0;
+    for (int index = 0; index < voice.modeCount; ++index)
+    {
+        const auto& mode = voice.modes[static_cast<std::size_t> (index)];
+        if (mode.membrane && mode.modeEntry < legacyModeEntryCount)
+            voice.strainModeIndices[static_cast<std::size_t> (voice.strainModeCount++)] =
+                static_cast<std::uint16_t> (index);
+        if (mode.shellBoundaryImpulseScale != 0.0)
+            voice.boundaryModeIndices[static_cast<std::size_t> (voice.boundaryModeCount++)] =
+                static_cast<std::uint16_t> (index);
+    }
 }
 
 void TaikoEngine::applyShellBoundary (Voice& voice) noexcept
 {
     std::array<double, shellResonatorCount> relativeVelocity {};
-    for (int index = 0; index < voice.activeModeCount; ++index)
+    for (int slot = 0; slot < voice.boundaryModeCount; ++slot)
     {
+        const auto index = voice.boundaryModeIndices[static_cast<std::size_t> (slot)];
+        if (index >= voice.activeModeCount)
+            break;
         const auto& mode = voice.modes[static_cast<std::size_t> (index)];
-        if (mode.shellBoundaryImpulseScale == 0.0)
-            continue;
         const double velocity = shellboundary::modalVelocity (
             mode.liveOmega, static_cast<double> (mode.decayRate + mode.appliedPalmDecay),
             mode.quadratureFromCurrent, mode.quadratureFromPrevious,
@@ -3461,11 +3492,12 @@ void TaikoEngine::applyShellBoundary (Voice& voice) noexcept
     // use exactly opposite mechanical ports on head and shell, so the kinetic
     // energy removed by the cached dashpot cannot become a duplicated source.
     // Stored coordinates share modelScale; that common scale cancels here.
-    for (int index = 0; index < voice.activeModeCount; ++index)
+    for (int slot = 0; slot < voice.boundaryModeCount; ++slot)
     {
+        const auto index = voice.boundaryModeIndices[static_cast<std::size_t> (slot)];
+        if (index >= voice.activeModeCount)
+            break;
         auto& mode = voice.modes[static_cast<std::size_t> (index)];
-        if (mode.shellBoundaryImpulseScale == 0.0)
-            continue;
         const double velocityChange = mode.shellBoundaryImpulseScale
             * relativeVelocity[static_cast<std::size_t> (mode.shellBoundaryGroup)];
         mode.resonator.y2 += velocityChange * mode.shellBoundaryVelocityToPrevious;
@@ -4581,6 +4613,7 @@ void TaikoEngine::buildVoiceModes (Voice& voice, const DrumState& drum,
         voice.modes[static_cast<std::size_t> (j + 1)] = key;
     }
 
+    rebuildModeTraversals (voice);
     voice.activeModeCount = count;
     while (! voice.physicalBank && voice.activeModeCount > 0
            && voice.modes[static_cast<std::size_t> (voice.activeModeCount - 1)]
@@ -6081,11 +6114,12 @@ double TaikoEngine::membraneSquaredSlope (const Voice& voice, bool rear) noexcep
     std::array<double, axisymmetricSlotCount> axisymmetricAmplitude {};
     std::array<double, axisymmetricSlotCount> axisymmetricNorm {};
     double squaredSlope = 0.0;
-    for (int index = 0; index < voice.activeModeCount; ++index)
+    for (int slot = 0; slot < voice.strainModeCount; ++slot)
     {
+        const auto index = voice.strainModeIndices[static_cast<std::size_t> (slot)];
+        if (index >= voice.activeModeCount)
+            break;
         const auto& mode = voice.modes[static_cast<std::size_t> (index)];
-        if (! mode.membrane || mode.modeEntry >= legacyModeEntryCount)
-            continue;
         const double state = mode.resonator.y1;
         if (mode.sharedCavityMode)
         {
@@ -6118,53 +6152,63 @@ double TaikoEngine::membraneSquaredSlope (const Voice& voice, bool rear) noexcep
 }
 
 void TaikoEngine::membraneSquaredSlopePerEntry (
-    const Voice& voice, std::array<float, modeEntryCount>& strain, bool rear) noexcept
+    const Voice& voice, std::array<float, modeEntryCount>& batterStrain,
+    std::array<float, modeEntryCount>& rearStrain) noexcept
 {
-    strain.fill (0.0f);
-    std::array<double, axisymmetricSlotCount> axisymmetricAmplitude {};
-    for (int index = 0; index < voice.activeModeCount; ++index)
+    batterStrain.fill (0.0f);
+    rearStrain.fill (0.0f);
+    std::array<double, axisymmetricEntryCount> batterAmplitude {}, rearAmplitude {};
+    std::array<float, axisymmetricEntryCount> axisymmetricNorm {};
+    static_assert (cavity::radialModeCount == axisymmetricEntryCount);
+
+    // Both heads read the same modal states. Keep each head's accumulation in
+    // bank order, collecting the last norm for each axisymmetric entry at the
+    // same time. The former separate head calls each rescanned the entire bank
+    // to assign those four final squared sums. Only the four leading entries
+    // are axisymmetric within the calibrated twenty-entry strain bank.
+    for (int slot = 0; slot < voice.strainModeCount; ++slot)
     {
+        const auto index = voice.strainModeIndices[static_cast<std::size_t> (slot)];
+        if (index >= voice.activeModeCount)
+            break;
         const auto& mode = voice.modes[static_cast<std::size_t> (index)];
-        if (! mode.membrane || mode.modeEntry >= legacyModeEntryCount)
-            continue;
         const double state = mode.resonator.y1;
         if (mode.sharedCavityMode)
         {
             for (std::size_t radial = 0; radial < cavity::radialModeCount; ++radial)
-                axisymmetricAmplitude[radial] += mode.cavityBasis[(rear ? cavity::radialModeCount : 0) + radial] * state;
+            {
+                batterAmplitude[radial] += mode.cavityBasis[radial] * state;
+                rearAmplitude[radial] += mode.cavityBasis[cavity::radialModeCount + radial] * state;
+                axisymmetricNorm[radial] = mode.cavityStretchNorm[radial];
+            }
         }
         else if (mode.circumferentialOrder == 0)
         {
             const int slot = axisymmetricSlotOf (mode.modeEntry);
             if (slot >= 0)
-                axisymmetricAmplitude[static_cast<std::size_t> (slot)] +=
-                    static_cast<double> (rear ? mode.resonantParticipation : mode.batterParticipation) * state;
+            {
+                batterAmplitude[static_cast<std::size_t> (slot)] +=
+                    static_cast<double> (mode.batterParticipation) * state;
+                rearAmplitude[static_cast<std::size_t> (slot)] +=
+                    static_cast<double> (mode.resonantParticipation) * state;
+                axisymmetricNorm[static_cast<std::size_t> (slot)] = mode.stretchNorm;
+            }
         }
-        else if (mode.rearHeadMode == rear)
+        else
         {
+            auto& strain = mode.rearHeadMode ? rearStrain : batterStrain;
             strain[mode.modeEntry] += static_cast<float> (
                 static_cast<double> (mode.stretchNorm) * state * state);
         }
     }
-    for (int index = 0; index < voice.activeModeCount; ++index)
+    for (std::size_t entry = 0; entry < axisymmetricNorm.size(); ++entry)
     {
-        const auto& mode = voice.modes[static_cast<std::size_t> (index)];
-        if (! mode.membrane || mode.circumferentialOrder != 0
-            || mode.modeEntry >= legacyModeEntryCount)
-            continue;
-        if (mode.sharedCavityMode)
-        {
-            for (std::size_t radial = 0; radial < cavity::radialModeCount; ++radial)
-                strain[radial] = static_cast<float> (mode.cavityStretchNorm[radial]
-                    * axisymmetricAmplitude[radial] * axisymmetricAmplitude[radial]);
-            continue;
-        }
-        const int slot = axisymmetricSlotOf (mode.modeEntry);
-        if (slot < 0)
-            continue;
-        const double amplitude = axisymmetricAmplitude[static_cast<std::size_t> (slot)];
-        strain[mode.modeEntry] = static_cast<float> (
-            static_cast<double> (mode.stretchNorm) * amplitude * amplitude);
+        batterStrain[entry] = static_cast<float> (
+            static_cast<double> (axisymmetricNorm[entry])
+                * batterAmplitude[entry] * batterAmplitude[entry]);
+        rearStrain[entry] = static_cast<float> (
+            static_cast<double> (axisymmetricNorm[entry])
+                * rearAmplitude[entry] * rearAmplitude[entry]);
     }
 }
 
@@ -6306,10 +6350,13 @@ void TaikoEngine::advancePhysicalContacts (Voice& physical) noexcept
 {
     std::array<Voice*, maxVoices> contacts {};
     int contactCount = 0;
-    for (auto& voice : voices_)
+    for (int index = 0; index < activeContactCount_; ++index)
+    {
+        auto& voice = *activeContacts_[static_cast<std::size_t> (index)];
         if (voice.active && voice.nonlinearContactActive
             && voice.octaveOffset == physical.octaveOffset)
             contacts[static_cast<std::size_t> (contactCount++)] = &voice;
+    }
 
     if (contactCount == 0)
         return;
@@ -7080,9 +7127,11 @@ float TaikoEngine::renderVoice (Voice& voice, Voice* physical,
     if (parametricActive)
     {
         const float depth = voice.tensionDepth * applied_.tensionModulation;
-        std::array<float, modeEntryCount> strain {};
-        membraneSquaredSlopePerEntry (voice, strain);
-        for (std::size_t entry = 0; entry < strain.size(); ++entry)
+        std::array<float, modeEntryCount> strain {}, rearStrain {};
+        membraneSquaredSlopePerEntry (voice, strain, rearStrain);
+        // Higher entries never contribute strain and their means start and
+        // remain zero. Their already-zero ripple needs no per-sample update.
+        for (std::size_t entry = 0; entry < legacyModeEntryCount; ++entry)
         {
             auto& mean = voice.parametricMeanStrain[entry];
             mean += parametricMeanCoefficient_ * (strain[entry] - mean);
@@ -7090,12 +7139,11 @@ float TaikoEngine::renderVoice (Voice& voice, Voice* physical,
                                - tensionRiseFor (depth * mean);
         }
         const float rearDepth = voice.rearTensionDepth * applied_.tensionModulation;
-        membraneSquaredSlopePerEntry (voice, strain, true);
-        for (std::size_t entry = 0; entry < strain.size(); ++entry)
+        for (std::size_t entry = 0; entry < legacyModeEntryCount; ++entry)
         {
             auto& mean = voice.rearParametricMeanStrain[entry];
-            mean += parametricMeanCoefficient_ * (strain[entry] - mean);
-            rearEntryRipple[entry] = tensionRiseFor (rearDepth * strain[entry])
+            mean += parametricMeanCoefficient_ * (rearStrain[entry] - mean);
+            rearEntryRipple[entry] = tensionRiseFor (rearDepth * rearStrain[entry])
                                    - tensionRiseFor (rearDepth * mean);
         }
     }
@@ -7321,21 +7369,77 @@ void TaikoEngine::processInternal (float* left, float* right, int numSamples,
     const float targetGain = applied_.outputGain;
     const float targetDrive = applied_.drive;
     const float targetWidth = applied_.stereoWidth;
+    // Test the actual next float step, not an epsilon or a snapped target:
+    // one-pole smoothers can settle one rounding unit short of their target.
+    // No setter runs inside this render slice, so a fixed point stays fixed.
+    const auto moving = [] (float current, float target, float coefficient) noexcept
+    { return current + coefficient * (target - current) != current; };
+    const bool smoothControls = moving (handDamping_, handDampingTarget_, handDampingCoefficient_)
+        || moving (pitchBend_, pitchBendTarget_, pitchBendCoefficient_)
+        || moving (smoothedOutputGain_, targetGain, gainSmoothing_)
+        || moving (smoothedDrive_, targetDrive, gainSmoothing_)
+        || moving (smoothedWidth_, targetWidth, gainSmoothing_);
+    if (! smoothControls && std::abs (pitchBend_ - drumCacheBend_) > 0.0005f)
+        drumCacheValid_ = false;
     if (extraActive)
         idleFrozen_ = false;
 
+    // Once the output path is frozen, trigger() is the only way to start a
+    // contact or a bank and it always clears idleFrozen_. Advance the same
+    // per-sample control and display recurrences without scanning the inactive
+    // voice pools eight times over for a silent ensemble. Keeping the original
+    // recurrence (rather than a block-rate exponential) also keeps a later
+    // strike after controller automation bit-for-bit identical.
+    if (idleFrozen_ && getActiveVoiceCount() == 0
+        && extraLeft == nullptr && extraRight == nullptr)
+    {
+        std::fill_n (left, numSamples, 0.0f);
+        std::fill_n (right, numSamples, 0.0f);
+        if (smoothControls)
+        {
+            for (int sample = 0; sample < numSamples; ++sample)
+            {
+                handDamping_ += handDampingCoefficient_ * (handDampingTarget_ - handDamping_);
+                pitchBend_ += pitchBendCoefficient_ * (pitchBendTarget_ - pitchBend_);
+                if (std::abs (pitchBend_ - drumCacheBend_) > 0.0005f)
+                    drumCacheValid_ = false;
+                smoothedOutputGain_ += gainSmoothing_ * (targetGain - smoothedOutputGain_);
+                smoothedDrive_ += gainSmoothing_ * (targetDrive - smoothedDrive_);
+                smoothedWidth_ += gainSmoothing_ * (targetWidth - smoothedWidth_);
+            }
+        }
+        if (meterLeft_ != 0.0f || meterRight_ != 0.0f || visualLevel_ != 0.0f)
+            for (int sample = 0; sample < numSamples; ++sample)
+            {
+                meterLeft_ *= meterReleaseMultiplier_;
+                meterRight_ *= meterReleaseMultiplier_;
+                visualLevel_ *= visualDecayMultiplier_;
+            }
+        outputLevelLeft_.store (meterLeft_, std::memory_order_relaxed);
+        outputLevelRight_.store (meterRight_, std::memory_order_relaxed);
+        visualStrikeLevel_.store (visualLevel_, std::memory_order_relaxed);
+        return;
+    }
+
+    refreshActiveLists();
     for (int sample = 0; sample < numSamples; ++sample)
     {
-        handDamping_ += handDampingCoefficient_ * (handDampingTarget_ - handDamping_);
-        pitchBend_ += pitchBendCoefficient_ * (pitchBendTarget_ - pitchBend_);
-        // A tenth of a cent, measured against where the cache actually stands.
-        if (std::abs (pitchBend_ - drumCacheBend_) > 0.0005f)
-            drumCacheValid_ = false;
+        if (smoothControls)
+        {
+            handDamping_ += handDampingCoefficient_ * (handDampingTarget_ - handDamping_);
+            pitchBend_ += pitchBendCoefficient_ * (pitchBendTarget_ - pitchBend_);
+            // A tenth of a cent, measured against where the cache actually stands.
+            if (std::abs (pitchBend_ - drumCacheBend_) > 0.0005f)
+                drumCacheValid_ = false;
 
-        smoothedOutputGain_ += gainSmoothing_ * (targetGain - smoothedOutputGain_);
-        smoothedDrive_ += gainSmoothing_ * (targetDrive - smoothedDrive_);
-        // Width multiplies the side signal, so a step in it steps the audio.
-        smoothedWidth_ += gainSmoothing_ * (targetWidth - smoothedWidth_);
+            smoothedOutputGain_ += gainSmoothing_ * (targetGain - smoothedOutputGain_);
+            smoothedDrive_ += gainSmoothing_ * (targetDrive - smoothedDrive_);
+            // Width multiplies the side signal, so a step in it steps the audio.
+            smoothedWidth_ += gainSmoothing_ * (targetWidth - smoothedWidth_);
+        }
+
+        if (activeListsDirty_)
+            refreshActiveLists();
 
         float mixLeft = 0.0f;
         float mixRight = 0.0f;
@@ -7345,8 +7449,9 @@ void TaikoEngine::processInternal (float* left, float* right, int numSamples,
         // compliance. Changing a1/a2 between the solve and the recurrence would
         // make the force step describe a different free system from the one
         // actually advanced below.
-        for (auto& physical : physicalDrums_)
+        for (int index = 0; index < activeDrumCount_; ++index)
         {
+            auto& physical = *activeDrums_[static_cast<std::size_t> (index)];
             if (! physical.active)
                 continue;
             if (physical.controlCountdown <= 0)
@@ -7370,21 +7475,25 @@ void TaikoEngine::processInternal (float* left, float* right, int numSamples,
         // Resetting all sixteen slots unconditionally, every sample, wrote
         // sixteen voices' worth of dead zeros on every silent sample of a
         // track that is silent most of the time.
-        for (auto& voice : voices_)
-            if (voice.active)
-            {
-                voice.solvedContactForce = 0.0f;
-                voice.solvedContactExposureStep = 0.0;
-            }
-        for (auto& physical : physicalDrums_)
+        for (int index = 0; index < activeContactCount_; ++index)
+        {
+            auto& voice = *activeContacts_[static_cast<std::size_t> (index)];
+            voice.solvedContactForce = 0.0f;
+            voice.solvedContactExposureStep = 0.0;
+        }
+        for (int index = 0; index < activeDrumCount_; ++index)
+        {
+            auto& physical = *activeDrums_[static_cast<std::size_t> (index)];
             if (physical.active)
                 advancePhysicalContacts (physical);
+        }
 
         // Gather every due contact before any physical recurrence advances.
         // Same-sample hits therefore see the same pre-step head and their
         // projected forces enter one canonical modal update.
-        for (auto& voice : voices_)
+        for (int index = 0; index < activeContactCount_; ++index)
         {
+            auto& voice = *activeContacts_[static_cast<std::size_t> (index)];
             if (! voice.active)
                 continue;
             anyVoiceActive = true;
@@ -7416,8 +7525,9 @@ void TaikoEngine::processInternal (float* left, float* right, int numSamples,
         // Now advance each sounding instrument once, regardless of how many
         // contacts fed it above. A dense roll costs one bank per drum, not one
         // bank per overlapping MIDI event.
-        for (auto& physical : physicalDrums_)
+        for (int index = 0; index < activeDrumCount_; ++index)
         {
+            auto& physical = *activeDrums_[static_cast<std::size_t> (index)];
             if (! physical.active)
                 continue;
             anyVoiceActive = true;

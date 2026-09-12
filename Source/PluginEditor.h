@@ -245,6 +245,7 @@ private:
 
     juce::Label logoLabel;
     juce::Label editionLabel;
+    juce::Label buildLabel;
     TaikorStatusDisplay statusDisplay;
     TaikorMeter meter;
     juce::TextButton panicButton { "PANIC" };
@@ -306,6 +307,8 @@ private:
                                TaikorKnob::VisualRole::Microphone };
     TaikorKnob widthKnob { "WIDTH", TaikorKnob::ValueStyle::Percent,
                            TaikorKnob::VisualRole::Microphone };
+    TaikorKnob reverbMixKnob { "DRY / WET", TaikorKnob::ValueStyle::Percent,
+                               TaikorKnob::VisualRole::Microphone };
     TaikorKnob driveKnob { "DRIVE", TaikorKnob::ValueStyle::Percent,
                            TaikorKnob::VisualRole::Master };
     TaikorKnob outputHighPassKnob { "LOW CUT", TaikorKnob::ValueStyle::Plain,
@@ -317,6 +320,7 @@ private:
     std::unique_ptr<TaikorChoiceSwitch> drumLayoutSwitch;
     std::unique_ptr<TaikorChoiceSwitch> velocityCurveSwitch;
     std::unique_ptr<TaikorChoiceSwitch> ensembleSizeSwitch;
+    std::unique_ptr<TaikorChoiceSwitch> reverbRoomSwitch;
     std::vector<std::unique_ptr<SliderAttachment>> attachments;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TaikorAudioProcessorEditor)

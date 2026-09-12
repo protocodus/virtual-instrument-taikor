@@ -248,13 +248,33 @@ void EnsembleEngine::process (float* left, float* right, int samples) noexcept
         std::fill_n (extraLeft.data(), count, 0.0f);
         std::fill_n (extraRight.data(), count, 0.0f);
         bool extraActive = false;
+        bool extraSilent = true;
+        const auto silent = [] (float value) { return value == 0.0f; };
         for (int member = 1; member < maximumEnsembleSize; ++member)
         {
             auto& player = *players[member];
-            extraActive = extraActive || player.getActiveVoiceCount() > 0;
+            const bool memberActive = player.getActiveVoiceCount() > 0;
+            extraActive = extraActive || memberActive;
             // Even silent players advance held-palm/pitch smoothers. Removing
             // a player from the size control lets their existing tail finish.
             player.processRaw (scratchLeft.data(), scratchRight.data(), count);
+            // The published count covers ringing drums, so also check the raw
+            // samples before skipping a possible remaining contact transient.
+            if (! memberActive
+                && std::all_of (scratchLeft.begin(), scratchLeft.begin() + count, silent)
+                && std::all_of (scratchRight.begin(), scratchRight.begin() + count, silent))
+            {
+                // A silent member may still be moving after a size change.
+                // Keep that recurrence exact; a settled matrix needs no work.
+                const auto& current = pan[member];
+                const auto& target = panTarget[member];
+                if (current.ll != target.ll || current.lr != target.lr
+                    || current.rl != target.rl || current.rr != target.rr)
+                    for (int sample = 0; sample < count; ++sample)
+                        pan[member].approach (target, gainSmoothing);
+                continue;
+            }
+            extraSilent = false;
             for (int sample = 0; sample < count; ++sample)
             {
                 pan[member].approach (panTarget[member], gainSmoothing);
@@ -266,28 +286,37 @@ void EnsembleEngine::process (float* left, float* right, int samples) noexcept
         const float target = 1.0f / std::sqrt (static_cast<float> (parameters.ensembleSize));
         const bool unityGain = gain == 1.0f && target == 1.0f;
         const bool centeredLead = pan[0].isCentered() && panTarget[0].isCentered();
-        for (int sample = 0; sample < count; ++sample)
-        {
-            pan[0].approach (panTarget[0], gainSmoothing);
-            leadPan[sample] = pan[0];
-            gain += gainSmoothing * (target - gain);
-            if (std::abs (gain - target) < 1.0e-10)
-                gain = target;
-            mixGain[sample] = static_cast<float> (gain);
-        }
-        const auto silent = [] (float value) { return value == 0.0f; };
         if (! extraActive && unityGain && centeredLead
-            && std::all_of (extraLeft.begin(), extraLeft.begin() + count, silent)
-            && std::all_of (extraRight.begin(), extraRight.begin() + count, silent))
+            && (extraSilent
+                || (std::all_of (extraLeft.begin(), extraLeft.begin() + count, silent)
+                    && std::all_of (extraRight.begin(), extraRight.begin() + count, silent))))
             players[0]->process (left + rendered, right + rendered, count);
         else
+        {
+            for (int sample = 0; sample < count; ++sample)
+            {
+                pan[0].approach (panTarget[0], gainSmoothing);
+                leadPan[sample] = pan[0];
+                gain += gainSmoothing * (target - gain);
+                if (std::abs (gain - target) < 1.0e-10)
+                    gain = target;
+                mixGain[sample] = static_cast<float> (gain);
+            }
             players[0]->processWithEnsemble (left + rendered, right + rendered, count,
-                extraLeft.data(), extraRight.data(), mixGain.data(), extraActive,
+                extraSilent ? nullptr : extraLeft.data(),
+                extraSilent ? nullptr : extraRight.data(), mixGain.data(), extraActive,
                 centeredLead ? nullptr : leadPan.data());
+        }
         rendered += count;
         sampleClock += static_cast<std::uint64_t> (count);
     }
     publishVoices();
+}
+
+bool EnsembleEngine::isOutputFrozen() const noexcept
+{
+    return pendingCount == 0 && std::all_of (players.begin(), players.end(),
+        [] (const auto& player) { return player->isOutputFrozen(); });
 }
 
 void EnsembleEngine::publishVoices() noexcept
