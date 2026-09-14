@@ -121,7 +121,12 @@ public:
 
     TaikorChoiceSwitch (juce::String name, juce::RangedAudioParameter& parameter,
                         const juce::String& description);
+    TaikorChoiceSwitch (juce::String name, juce::RangedAudioParameter* parameter,
+                        const juce::String& description);
     TaikorChoiceSwitch (juce::String name, juce::RangedAudioParameter& parameter,
+                        const juce::String& description,
+                        std::vector<Choice> choices);
+    TaikorChoiceSwitch (juce::String name, juce::RangedAudioParameter* parameter,
                         const juce::String& description,
                         std::vector<Choice> choices);
     void resized() override;
@@ -132,7 +137,8 @@ private:
     juce::Label label;
     std::vector<Choice> choices;
     juce::OwnedArray<juce::TextButton> buttons;
-    juce::ParameterAttachment attachment;
+    juce::RangedAudioParameter* parameter = nullptr;
+    std::unique_ptr<juce::ParameterAttachment> attachment;
 };
 
 // The drum, seen from the player's side. It draws the head, the tack ring, the
@@ -170,7 +176,8 @@ class TaikorStatusDisplay final : public juce::Component
 {
 public:
     TaikorStatusDisplay();
-    void setStatus (int activeVoices, bool ready, double sampleRate);
+    void setStatus (int activeVoices, bool ready, double sampleRate,
+                    taikor::AudioCpuMeter::Snapshot cpu);
     void paint (juce::Graphics&) override;
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
@@ -178,6 +185,7 @@ private:
     int voices = -1;
     bool isReady = false;
     double rate = 0.0;
+    taikor::AudioCpuMeter::Snapshot cpu {};
 };
 
 // Stereo output meter with peak hold. All ballistics and the decibel scale come

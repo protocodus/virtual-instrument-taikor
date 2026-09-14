@@ -10344,6 +10344,7 @@ void testSanitiseClampsEveryField()
         { "drive", &taikor::EngineParameters::drive, 0.0f, 1.0f },
         { "outputGain", &taikor::EngineParameters::outputGain, 0.0f, 2.0f },
         { "outputHighPassHz", &taikor::EngineParameters::outputHighPassHz, 0.0f, 500.0f },
+        { "ensembleVariation", &taikor::EngineParameters::ensembleVariation, 0.0f, 1.0f },
     };
 
     for (const auto& field : fields)
@@ -10728,6 +10729,87 @@ void testContinuumBandVarianceGuardsItsOwnDomain()
         checkedOne = true;
     }
     expect (checkedOne, "the cross-check must run on at least one live band");
+}
+
+void testPublicBoundaryHardening()
+{
+    const auto nan = std::numeric_limits<double>::quiet_NaN();
+    const auto infinity = std::numeric_limits<double>::infinity();
+    const std::array<std::array<double, 2>, 8> rates {{
+        { nan, 48000.0 }, { infinity, 384000.0 }, { -infinity, 8000.0 },
+        { 0.0, 8000.0 }, { -1.0, 8000.0 }, { 1.0, 8000.0 },
+        { std::numeric_limits<double>::max(), 384000.0 }, { 96000.0, 96000.0 }
+    }};
+    taikor::TaikoEngine engine, reference;
+    for (const auto& rate : rates)
+    {
+        engine.prepare (rate[0], std::numeric_limits<int>::max());
+        reference.prepare (rate[1], 1);
+        engine.trigger (taikor::Articulation::Don, 0, 0.8f);
+        reference.trigger (taikor::Articulation::Don, 0, 0.8f);
+        engine.process (nullptr, nullptr, std::numeric_limits<int>::max());
+        const auto actual = render (engine, 1024, 31);
+        const auto expected = render (reference, 1024, 31);
+        expect (actual.finite && actual.left == expected.left
+                    && actual.right == expected.right,
+                "sample-rate sanitization must exactly match the supported fallback");
+    }
+
+    for (int value = static_cast<int> (taikor::Articulation::Count); value < 256; ++value)
+        expect (taikor::midiNoteFor (static_cast<taikor::Articulation> (value),
+                                    std::numeric_limits<int>::max()) == -1,
+                "an invalid articulation must not map onto another drum or MIDI note");
+
+    taikor::EngineParameters hostile;
+    hostile.ensembleSize = std::numeric_limits<int>::min();
+    hostile.physicalFamily = std::numeric_limits<int>::max();
+    hostile.physicalFamilyMix = std::numeric_limits<float>::quiet_NaN();
+    hostile.physicalRearTensionScale = std::numeric_limits<float>::infinity();
+    auto safe = taikor::TaikoEngineTestAccess::sanitise (hostile);
+    expect (safe.ensembleSize == 1 && safe.physicalFamily == 0
+                && safe.physicalFamilyMix == 0.0f && safe.physicalRearTensionScale == 1.0f,
+            "sanitization must reset internal family coordinates and clamp ensemble size");
+    hostile.ensembleSize = std::numeric_limits<int>::max();
+    expect (taikor::TaikoEngineTestAccess::sanitise (hostile).ensembleSize
+                == taikor::maximumEnsembleSize,
+            "ensemble size must clamp without integer overflow");
+
+    const std::array<float, 4> poisons {{
+        std::numeric_limits<float>::quiet_NaN(),
+        std::numeric_limits<float>::infinity(),
+        -std::numeric_limits<float>::infinity(), std::numeric_limits<float>::max()
+    }};
+    for (const float poison : poisons)
+    {
+        engine.prepare (48000.0, 1);
+        reference.prepare (48000.0, 1);
+        float left = 0.0f, right = 0.0f, expectedLeft = 0.0f, expectedRight = 0.0f;
+        const float zero = 0.0f;
+        engine.processWithEnsemble (&left, &right, 1, &poison, &zero, nullptr, true);
+        reference.processWithEnsemble (&expectedLeft, &expectedRight, 1,
+                                       &zero, &zero, nullptr, true);
+        expect (left == expectedLeft && right == expectedRight,
+                "malformed ensemble samples must enter the output filters as silence");
+        const float impulse = 0.5f;
+        engine.processWithEnsemble (&left, &right, 1, &impulse, &impulse, nullptr, true);
+        reference.processWithEnsemble (&expectedLeft, &expectedRight, 1,
+                                       &impulse, &impulse, nullptr, true);
+        expect (left == expectedLeft && right == expectedRight && left != 0.0f,
+                "a malformed ensemble sample must not poison subsequent valid audio");
+    }
+
+    const auto neutral = taikor::TaikoEngine::measure ({}, 0, 0.0f, 48000.0);
+    const auto invalid = taikor::TaikoEngine::measure (
+        {}, std::numeric_limits<int>::min(), static_cast<float> (nan), nan);
+    expect (invalid.soundingHz == neutral.soundingHz
+                && invalid.idealFundamentalHz == neutral.idealFundamentalHz,
+            "NaN measurement inputs must use the same neutral drum and sample rate");
+    const auto upper = taikor::TaikoEngine::measure ({}, 0, 2.0f, 48000.0);
+    const auto excessive = taikor::TaikoEngine::measure (
+        {}, 0, std::numeric_limits<float>::max(), 48000.0);
+    expect (excessive.soundingHz == upper.soundingHz
+                && excessive.idealFundamentalHz == upper.idealFundamentalHz,
+            "analytic and contact measurements must agree on the supported bend range");
 }
 
 void testInvalidInputSafety()
@@ -11874,6 +11956,7 @@ int main (int argc, char** argv)
     run ("testMountingLossGuardsItsOwnDomain", testMountingLossGuardsItsOwnDomain);
     run ("testContinuumBandVarianceGuardsItsOwnDomain", testContinuumBandVarianceGuardsItsOwnDomain);
     run ("testInvalidInputSafety", testInvalidInputSafety);
+    run ("testPublicBoundaryHardening", testPublicBoundaryHardening);
     run ("testUiPresentationMath", testUiPresentationMath);
     run ("testControlEndpointsAndGestures", testControlEndpointsAndGestures);
     run ("testIdleCostAndStressPerformance", testIdleCostAndStressPerformance);
