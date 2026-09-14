@@ -122,6 +122,32 @@ void checkReverbLifecycle()
             require (reused->isBypassed(), "Reset must finish the fade to dry and clear its cached activity");
         }
 }
+void checkReadoutCache()
+{
+    auto processor = std::make_unique<TaikorAudioProcessor>();
+    for (double rate : { 48000.0, 96000.0 })
+    {
+        processor->prepareToPlay (rate, 64);
+        for (float tension : { 0.4f, 0.7f })
+        {
+            parameter (*processor, taikor::parameters::tension, tension);
+            for (int drum : { 0, 3, 0 })
+            {
+                const auto expected = taikor::TaikoEngine::measure (
+                    processor->snapshotEngineParameters(), drum, 0.0f, rate);
+                for (int repeat = 0; repeat < 2; ++repeat)
+                {
+                    const auto actual = processor->measureDrum (drum);
+                    require (same (actual.soundingHz, expected.soundingHz)
+                             && same (actual.breathingModeHz, expected.breathingModeHz)
+                             && same (actual.radiusMetres, expected.radiusMetres)
+                             && same (actual.tailSeconds, expected.tailSeconds),
+                             "Cached drum measurements must follow tuning, drum and sample-rate changes");
+                }
+            }
+        }
+    }
+}
 } // namespace
 
 int main()
@@ -131,6 +157,7 @@ int main()
     {
         checkMeterRecurrence();
         checkReverbLifecycle();
+        checkReadoutCache();
         std::cout << "CPU fast-path audio and meter checks passed\n";
         return 0;
     }
