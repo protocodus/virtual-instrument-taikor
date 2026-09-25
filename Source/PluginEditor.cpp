@@ -7,6 +7,14 @@
 #include <initializer_list>
 #include <limits>
 
+#ifndef TAIKOR_BUILD_VERSION
+#define TAIKOR_BUILD_VERSION "unknown"
+#endif
+
+#ifndef TAIKOR_BUILD_NUMBER
+#define TAIKOR_BUILD_NUMBER "unknown"
+#endif
+
 namespace
 {
 // Design size and the range the editor may be resized through. The plug-in
@@ -43,8 +51,16 @@ juce::Font controlFont (float height, bool bold = false)
 
 float editorScale (const juce::Component& component)
 {
-    if (const auto* editor = component.findParentComponentOfClass<juce::AudioProcessorEditor>())
-        return static_cast<float> (editor->getWidth()) / designWidth;
+    auto width = component.getWidth();
+    if (const auto* editor = dynamic_cast<const juce::AudioProcessorEditor*> (&component))
+        width = editor->getWidth();
+    else if (const auto* parentEditor =
+                 component.findParentComponentOfClass<juce::AudioProcessorEditor>())
+        width = parentEditor->getWidth();
+
+    if (width > 0)
+        return juce::jlimit (0.5f, 2.0f,
+                             static_cast<float> (width) / designWidth);
     return 1.0f;
 }
 
@@ -74,6 +90,22 @@ juce::Font displayFont (float height, int style = juce::Font::plain)
         juce::Font::getDefaultSerifFontName(), height, style));
 }
 
+int clampOctaveOffset (int octaveOffset) noexcept
+{
+    return juce::jlimit (taikor::lowestOctaveOffset,
+                         taikor::highestOctaveOffset, octaveOffset);
+}
+
+float finiteOr (float value, float fallback) noexcept
+{
+    return std::isfinite (value) ? value : fallback;
+}
+
+double finiteOr (double value, double fallback) noexcept
+{
+    return std::isfinite (value) ? value : fallback;
+}
+
 // Scientific pitch notation puts middle C (MIDI 60) at C4, which makes this
 // instrument's reference note - MIDI 48 - C3. Both the octave strip and the
 // pads derive their labels from that one constant rather than each carrying
@@ -91,7 +123,7 @@ static_assert (octaveNumberForMiddleC == 4,
 
 juce::String octaveName (int octaveOffset)
 {
-    return "C" + juce::String (referenceOctaveNumber + octaveOffset);
+    return "C" + juce::String (referenceOctaveNumber + clampOctaveOffset (octaveOffset));
 }
 
 // The drum an octave plays, read straight off the engine's own table rather
@@ -275,7 +307,7 @@ TaikorPad::TaikorPad (taikor::Articulation articulationToUse, int octaveOffsetTo
           taikor::getArticulationDisplayName (articulationToUse).data(),
           taikor::getArticulationDisplayName (articulationToUse).size())),
       articulation (articulationToUse),
-      octaveOffset (octaveOffsetToUse)
+      octaveOffset (clampOctaveOffset (octaveOffsetToUse))
 {
     refreshNoteText();
     setWantsKeyboardFocus (true);
@@ -300,6 +332,7 @@ void TaikorPad::setSelected (bool shouldBeSelected)
 
 void TaikorPad::setOctaveOffset (int newOctaveOffset)
 {
+    newOctaveOffset = clampOctaveOffset (newOctaveOffset);
     if (octaveOffset == newOctaveOffset)
         return;
     octaveOffset = newOctaveOffset;
@@ -398,7 +431,11 @@ std::unique_ptr<juce::AccessibilityHandler> TaikorPad::createAccessibilityHandle
                   padToUse, juce::AccessibilityRole::button,
                   juce::AccessibilityActions().addAction (
                       juce::AccessibilityActionType::press,
-                      [&padToUse] { padToUse.triggerClick(); })),
+                      [safePad = juce::Component::SafePointer<TaikorPad> (&padToUse)]
+                      {
+                          if (safePad != nullptr)
+                              safePad->triggerClick();
+                      })),
               pad (padToUse)
         {
         }
@@ -436,7 +473,8 @@ TaikorDrumButton::TaikorDrumButton (int octaveOffsetToUse, juce::Image atlas)
     }};
 
     const auto cropIndex = static_cast<std::size_t> (
-        juce::jlimit (0, 3, octaveOffsetToUse - taikor::lowestOctaveOffset));
+        juce::jlimit (0, 3, clampOctaveOffset (octaveOffsetToUse)
+                               - taikor::lowestOctaveOffset));
     const auto crop = crops[cropIndex];
     if (atlas.isValid())
     {
@@ -560,10 +598,13 @@ void TaikorKnob::resized()
 namespace
 {
 std::vector<TaikorChoiceSwitch::Choice> indexedChoices (
-    const juce::RangedAudioParameter& parameter)
+    const juce::RangedAudioParameter* parameter)
 {
     std::vector<TaikorChoiceSwitch::Choice> result;
-    const auto names = parameter.getAllValueStrings();
+    if (parameter == nullptr)
+        return result;
+
+    const auto names = parameter->getAllValueStrings();
     for (int index = 0; index < names.size(); ++index)
         result.push_back ({ names[index], static_cast<float> (index) });
     return result;
@@ -571,18 +612,35 @@ std::vector<TaikorChoiceSwitch::Choice> indexedChoices (
 } // namespace
 
 TaikorChoiceSwitch::TaikorChoiceSwitch (juce::String name,
-                                        juce::RangedAudioParameter& parameter,
+                                        juce::RangedAudioParameter& parameterToUse,
                                         const juce::String& description)
-    : TaikorChoiceSwitch (name, parameter, description, indexedChoices (parameter))
+    : TaikorChoiceSwitch (std::move (name), &parameterToUse, description)
 {
 }
 
 TaikorChoiceSwitch::TaikorChoiceSwitch (juce::String name,
-                                        juce::RangedAudioParameter& parameter,
+                                        juce::RangedAudioParameter* parameterToUse,
+                                        const juce::String& description)
+    : TaikorChoiceSwitch (std::move (name), parameterToUse, description,
+                          indexedChoices (parameterToUse))
+{
+}
+
+TaikorChoiceSwitch::TaikorChoiceSwitch (juce::String name,
+                                        juce::RangedAudioParameter& parameterToUse,
+                                        const juce::String& description,
+                                        std::vector<Choice> choicesToUse)
+    : TaikorChoiceSwitch (std::move (name), &parameterToUse, description,
+                          std::move (choicesToUse))
+{
+}
+
+TaikorChoiceSwitch::TaikorChoiceSwitch (juce::String name,
+                                        juce::RangedAudioParameter* parameterToUse,
                                         const juce::String& description,
                                         std::vector<Choice> choicesToUse)
     : choices (std::move (choicesToUse)),
-      attachment (parameter, [this] (float value) { selectNearest (value); })
+      parameter (parameterToUse)
 {
     setName (name);
     setTitle (name);
@@ -593,6 +651,22 @@ TaikorChoiceSwitch::TaikorChoiceSwitch (juce::String name,
     label.setJustificationType (juce::Justification::centredLeft);
     label.setInterceptsMouseClicks (false, false);
     addAndMakeVisible (label);
+
+    const auto fallbackValue = parameter != nullptr
+        ? parameter->convertFrom0to1 (parameter->getDefaultValue()) : 0.0f;
+    for (auto& choice : choices)
+    {
+        if (! std::isfinite (choice.value))
+            choice.value = fallbackValue;
+        if (choice.label.isEmpty())
+            choice.label = "Option";
+    }
+
+    if (parameter != nullptr)
+    {
+        attachment = std::make_unique<juce::ParameterAttachment> (
+            *parameter, [this] (float value) { selectNearest (value); });
+    }
 
     for (std::size_t index = 0; index < choices.size(); ++index)
     {
@@ -612,24 +686,51 @@ TaikorChoiceSwitch::TaikorChoiceSwitch (juce::String name,
         const float value = choice.value;
         button->onClick = [this, value]
         {
-            attachment.setValueAsCompleteGesture (value);
+            if (attachment != nullptr)
+                attachment->setValueAsCompleteGesture (value);
         };
         addAndMakeVisible (button);
     }
-    attachment.sendInitialUpdate();
+
+    if (choices.empty())
+    {
+        auto* unavailable = buttons.add (new juce::TextButton ("UNAVAILABLE"));
+        unavailable->setName ("Unavailable");
+        unavailable->setTitle (name + ": unavailable");
+        unavailable->setDescription ("No selectable values were published for this control.");
+        unavailable->setEnabled (false);
+        unavailable->setColour (juce::TextButton::buttonColourId, panelColour);
+        unavailable->setColour (juce::TextButton::textColourOffId, mutedText);
+        addAndMakeVisible (unavailable);
+    }
+
+    if (attachment != nullptr)
+        attachment->sendInitialUpdate();
+
+    if (parameter == nullptr || choices.empty())
+    {
+        setEnabled (false);
+        setDescription (description + " Unavailable in this plug-in build.");
+    }
 }
 
 void TaikorChoiceSwitch::selectNearest (float value)
 {
     int selected = -1;
     float nearest = std::numeric_limits<float>::infinity();
-    for (std::size_t index = 0; index < choices.size(); ++index)
+    if (! std::isfinite (value) && ! choices.empty())
+        selected = 0;
+
+    if (std::isfinite (value))
     {
-        const float distance = std::abs (choices[index].value - value);
-        if (distance < nearest)
+        for (std::size_t index = 0; index < choices.size(); ++index)
         {
-            nearest = distance;
-            selected = static_cast<int> (index);
+            const float distance = std::abs (choices[index].value - value);
+            if (distance < nearest)
+            {
+                nearest = distance;
+                selected = static_cast<int> (index);
+            }
         }
     }
     for (int index = 0; index < buttons.size(); ++index)
@@ -674,6 +775,7 @@ void TaikorHeadDisplay::setStrike (float normalisedRadius, float angleRadians,
                                    float level, taikor::Articulation articulation)
 {
     const auto radius = taikor::ui::clamp (normalisedRadius, 0.0f, 1.0f);
+    const auto safeAngle = finiteOr (angleRadians, 0.0f);
     const auto bounded = taikor::ui::clamp (level, 0.0f, 1.0f);
 
     // Every drawn property has to be in this decision, not just the level. A
@@ -682,12 +784,12 @@ void TaikorHeadDisplay::setStrike (float normalisedRadius, float angleRadians,
     // alone left the display showing the first stroke of the roll for as long
     // as it went on.
     const bool moved = std::abs (radius - strikeRadius) >= 0.002f
-                    || std::abs (angleRadians - strikeAngle) >= 0.002f
+                    || std::abs (safeAngle - strikeAngle) >= 0.002f
                     || articulation != lastArticulation
                     || std::abs (bounded - strikeLevel) >= 0.002f;
 
     strikeRadius = radius;
-    strikeAngle = angleRadians;
+    strikeAngle = safeAngle;
     lastArticulation = articulation;
     strikeLevel = bounded;
 
@@ -697,17 +799,24 @@ void TaikorHeadDisplay::setStrike (float normalisedRadius, float angleRadians,
 
 void TaikorHeadDisplay::setMicrophones (float spread, float normalisedDistance)
 {
+    spread = taikor::ui::clamp (finiteOr (spread, micSpread), 0.0f, 1.0f);
+    normalisedDistance = taikor::ui::clamp (
+        finiteOr (normalisedDistance, micDistance), 0.0f, 1.0f);
     if (std::abs (spread - micSpread) < 0.002f
         && std::abs (normalisedDistance - micDistance) < 0.002f)
         return;
-    micSpread = taikor::ui::clamp (spread, 0.0f, 1.0f);
-    micDistance = taikor::ui::clamp (normalisedDistance, 0.0f, 1.0f);
+    micSpread = spread;
+    micDistance = normalisedDistance;
     repaint();
 }
 
 void TaikorHeadDisplay::setMeasurements (float fundamentalHz, float breathingHz,
                                          float diameterCentimetres, float tailSeconds)
 {
+    fundamentalHz = juce::jmax (0.0f, finiteOr (fundamentalHz, 0.0f));
+    breathingHz = juce::jmax (0.0f, finiteOr (breathingHz, 0.0f));
+    diameterCentimetres = juce::jmax (0.0f, finiteOr (diameterCentimetres, 0.0f));
+    tailSeconds = juce::jmax (0.0f, finiteOr (tailSeconds, 0.0f));
     if (std::abs (fundamentalHz - fundamental) < 0.05f
         && std::abs (breathingHz - breathing) < 0.05f
         && std::abs (diameterCentimetres - diameter) < 0.05f
@@ -869,14 +978,28 @@ TaikorStatusDisplay::TaikorStatusDisplay()
     setTitle ("Engine status");
 }
 
-void TaikorStatusDisplay::setStatus (int activeVoices, bool ready, double sampleRate)
+void TaikorStatusDisplay::setStatus (int activeVoices, bool ready, double sampleRate,
+                                    taikor::AudioCpuMeter::Snapshot nextCpu)
 {
-    if (voices == activeVoices && isReady == ready
-        && std::abs (rate - sampleRate) < 0.5)
+    const auto safeRate = juce::jmax (0.0, finiteOr (sampleRate, 0.0));
+    const auto safeAverage = juce::jlimit (0.0f, 9999.0f,
+                                           finiteOr (nextCpu.average, 0.0f));
+    const auto safePeak = juce::jlimit (0.0f, 9999.0f,
+                                        finiteOr (nextCpu.peak, 0.0f));
+    const auto safeReady = ready && safeRate > 0.0;
+    nextCpu.average = safeAverage;
+    nextCpu.peak = safePeak;
+
+    if (voices == juce::jmax (0, activeVoices) && isReady == safeReady
+        && std::abs (rate - safeRate) < 0.5
+        && juce::roundToInt (cpu.average * 10.0f) == juce::roundToInt (nextCpu.average * 10.0f)
+        && juce::roundToInt (cpu.peak) == juce::roundToInt (nextCpu.peak)
+        && cpu.overruns == nextCpu.overruns)
         return;
-    voices = activeVoices;
-    isReady = ready;
-    rate = sampleRate;
+    voices = juce::jmax (0, activeVoices);
+    isReady = safeReady;
+    rate = safeRate;
+    cpu = nextCpu;
     repaint();
 }
 
@@ -884,10 +1007,12 @@ void TaikorStatusDisplay::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat();
     bounds = bounds.reduced (10.0f, 4.0f);
-    const auto statusDot = juce::jmin (6.0f, bounds.getHeight() * 0.32f);
+    auto statusLine = bounds.removeFromTop (bounds.getHeight() * 0.46f);
+    const auto statusDot = juce::jmin (6.0f, statusLine.getHeight() * 0.32f);
     g.setColour (isReady ? brassColour : mutedText.withAlpha (0.42f));
-    g.fillEllipse (bounds.getX(), bounds.getCentreY() - statusDot * 0.5f,
+    g.fillEllipse (statusLine.getX(), statusLine.getCentreY() - statusDot * 0.5f,
                    statusDot, statusDot);
+    statusLine.removeFromLeft (statusDot + 7.0f);
     bounds.removeFromLeft (statusDot + 7.0f);
     g.setColour (isReady ? textColour : mutedText);
 
@@ -896,8 +1021,15 @@ void TaikorStatusDisplay::paint (juce::Graphics& g)
         : juce::String ("- kHz");
     const auto status = juce::String (juce::jmax (0, voices)) + " voices  "
                       + juce::String::fromUTF8 ("\xc2\xb7") + "  " + rateText;
-    g.setFont (fitFont (controlFont (20.0f * editorScale (*this)), status, bounds.getWidth()));
-    g.drawText (status, bounds, juce::Justification::centredLeft, false);
+    g.setFont (fitFont (controlFont (14.0f * editorScale (*this)), status, statusLine.getWidth()));
+    g.drawText (status, statusLine, juce::Justification::centredLeft, false);
+    const auto load = isReady
+        ? "CPU " + juce::String (cpu.average, 1) + "%  peak " + juce::String (cpu.peak, 0) + "%"
+        : juce::String ("CPU --");
+    g.setColour (! isReady ? mutedText : cpu.peak >= 100.0f ? accentColour
+                                  : cpu.average >= 75.0f ? brassColour : textColour);
+    g.setFont (fitFont (controlFont (15.0f * editorScale (*this), true), load, bounds.getWidth()));
+    g.drawText (load, bounds, juce::Justification::centredLeft, false);
 }
 
 std::unique_ptr<juce::AccessibilityHandler>
@@ -917,7 +1049,11 @@ TaikorStatusDisplay::createAccessibilityHandler()
             return juce::String (juce::jmax (0, owner.voices)) + " voices sounding at "
                  + (owner.rate > 0.0 ? juce::String (owner.rate / 1000.0, 1)
                                      : juce::String ("unknown"))
-                 + " kilohertz.";
+                 + " kilohertz. Audio callback CPU " + juce::String (owner.cpu.average, 1)
+                 + " percent, recent peak " + juce::String (owner.cpu.peak, 1)
+                 + " percent. " + juce::String (owner.cpu.overruns)
+                 + " blocks exceeded the audio deadline since preparation."
+                   " This is audio-thread load, not total computer CPU usage.";
         }
 
     private:
@@ -937,6 +1073,8 @@ TaikorMeter::TaikorMeter()
 
 void TaikorMeter::setLevels (float leftLinear, float rightLinear)
 {
+    leftLinear = juce::jmax (0.0f, finiteOr (leftLinear, 0.0f));
+    rightLinear = juce::jmax (0.0f, finiteOr (rightLinear, 0.0f));
     constexpr float updateRate = 30.0f;
     const auto attack = taikor::ui::onePoleCoefficient (0.012f, updateRate);
     const auto release = taikor::ui::onePoleCoefficient (0.240f, updateRate);
@@ -1073,6 +1211,8 @@ TaikorAudioProcessorEditor::TaikorAudioProcessorEditor (TaikorAudioProcessor& pr
     buildLabel.setText ("v" TAIKOR_BUILD_VERSION " / build " TAIKOR_BUILD_NUMBER,
                         juce::dontSendNotification);
     buildLabel.setName ("Version and build number");
+    buildLabel.setTitle ("Version and build number");
+    buildLabel.setDescription ("Release version and UTC build identifier.");
     buildLabel.setTooltip ("Build time (UTC): " TAIKOR_BUILD_NUMBER);
     buildLabel.setColour (juce::Label::textColourId, mutedText);
     buildLabel.setJustificationType (juce::Justification::centredLeft);
@@ -1087,7 +1227,12 @@ TaikorAudioProcessorEditor::TaikorAudioProcessorEditor (TaikorAudioProcessor& pr
     panicButton.setColour (juce::TextButton::buttonColourId, accentDim);
     panicButton.setColour (juce::TextButton::textColourOffId, washiColour);
     panicButton.setTooltip ("Silence every sounding stroke immediately");
-    panicButton.onClick = [this] { audioProcessor.requestPanic(); };
+    const juce::Component::SafePointer<TaikorAudioProcessorEditor> safeThis (this);
+    panicButton.onClick = [safeThis]
+    {
+        if (safeThis != nullptr)
+            safeThis->audioProcessor.requestPanic();
+    };
     addAndMakeVisible (panicButton);
 
     sealLabel.setText (juce::String::fromUTF8 ("\xe9\xbc\x93"),
@@ -1136,10 +1281,13 @@ TaikorAudioProcessorEditor::TaikorAudioProcessorEditor (TaikorAudioProcessor& pr
         {
             const auto articulation = static_cast<taikor::Articulation> (artIdx);
             auto pad = std::make_unique<TaikorPad> (articulation, octave);
-            pad->onClick = [this, articulation, octave]
+            pad->onClick = [safeThis, articulation, octave]
             {
-                selectOctave (octave);
-                audioProcessor.triggerFromUi (articulation, octave);
+                if (safeThis != nullptr)
+                {
+                    safeThis->selectOctave (octave);
+                    safeThis->audioProcessor.triggerFromUi (articulation, octave);
+                }
             };
             addAndMakeVisible (*pad);
             pads[padIdx++] = std::move (pad);
@@ -1152,7 +1300,11 @@ TaikorAudioProcessorEditor::TaikorAudioProcessorEditor (TaikorAudioProcessor& pr
         auto button = std::make_unique<TaikorDrumButton> (octave, drumAtlas);
         button->setClickingTogglesState (true);
         button->setRadioGroupId (1, juce::dontSendNotification);
-        button->onClick = [this, octave] { selectOctave (octave); };
+        button->onClick = [safeThis, octave]
+        {
+            if (safeThis != nullptr)
+                safeThis->selectOctave (octave);
+        };
         addAndMakeVisible (*button);
         octaveButtons[static_cast<std::size_t> (index)] = std::move (button);
     }
@@ -1202,14 +1354,14 @@ TaikorAudioProcessorEditor::TaikorAudioProcessorEditor (TaikorAudioProcessor& pr
              "Turns the strike around the head. CC16 overrides this angle for "
              "sample-accurate left and right hand placement.");
     performerSwitch = std::make_unique<TaikorChoiceSwitch> (
-        "PERFORMER", *audioProcessor.parameters.getParameter (ids::performer),
+        "PERFORMER", audioProcessor.parameters.getParameter (ids::performer),
         "Four repeatable players, each with a stable touch and strike character.");
     addAndMakeVisible (*performerSwitch);
     addKnob (velocityDepthKnob, ids::velocityDepth,
              "How far MIDI velocity moves the impact speed. The timbre follows on "
              "its own: contact time goes as impact speed to the minus one fifth.");
     velocityCurveSwitch = std::make_unique<TaikorChoiceSwitch> (
-        "CURVE", *audioProcessor.parameters.getParameter (ids::velocityCurve),
+        "CURVE", audioProcessor.parameters.getParameter (ids::velocityCurve),
         "Shapes MIDI velocity before impact speed: Soft opens up quiet playing, "
         "Linear leaves it unchanged, and Hard asks for a firmer hit.",
         std::vector<TaikorChoiceSwitch::Choice> {
@@ -1228,7 +1380,7 @@ TaikorAudioProcessorEditor::TaikorAudioProcessorEditor (TaikorAudioProcessor& pr
         for (int count = 1; count <= taikor::maximumEnsembleSize; ++count)
             players.push_back ({ juce::String (count), static_cast<float> (count) });
         ensembleSizeSwitch = std::make_unique<TaikorChoiceSwitch> (
-            "PLAYERS", *audioProcessor.parameters.getParameter (ids::ensembleSize),
+            "PLAYERS", audioProcessor.parameters.getParameter (ids::ensembleSize),
             "Number of players on separate copies of each drum, from 1 to 8. "
             "One keeps the solo sound. Two sit left/right; three add centre; "
             "four sit at 100% left, 50% left, 50% right and 100% right. "
@@ -1244,7 +1396,7 @@ TaikorAudioProcessorEditor::TaikorAudioProcessorEditor (TaikorAudioProcessor& pr
              "looser, more varied ensemble. Inactive with one player.");
     ensembleVariationKnob.slider.setTitle ("Ensemble Variation");
     drumLayoutSwitch = std::make_unique<TaikorChoiceSwitch> (
-        "DRUM LAYOUT", *audioProcessor.parameters.getParameter (ids::octaveBody),
+        "DRUM LAYOUT", audioProcessor.parameters.getParameter (ids::octaveBody),
         "1 Drum retunes one design across four rows. 4 Drums uses four taiko families. "
         "Each row rings independently.");
     addAndMakeVisible (*drumLayoutSwitch);
@@ -1259,7 +1411,7 @@ TaikorAudioProcessorEditor::TaikorAudioProcessorEditor (TaikorAudioProcessor& pr
              "circumferential order.");
     addKnob (widthKnob, ids::stereoWidth, "Width trim on the finished pair.");
     reverbRoomSwitch = std::make_unique<TaikorChoiceSwitch> (
-        "ROOM", *audioProcessor.parameters.getParameter (ids::reverbRoom),
+        "ROOM", audioProcessor.parameters.getParameter (ids::reverbRoom),
         "Choose the room around the drum ensemble: Hall, Theater or Opera. "
         "Off keeps the output dry.");
     addAndMakeVisible (*reverbRoomSwitch);
@@ -1302,6 +1454,14 @@ void TaikorAudioProcessorEditor::addKnob (TaikorKnob& knob,
                                                    : parameterId.toUpperCase(),
                        description);
     knob.slider.setName (knob.getName());
+    const auto* existingParameter = audioProcessor.parameters.getParameter (parameterId);
+    if (existingParameter == nullptr)
+    {
+        knob.setEnabled (false);
+        knob.setTooltip (description + " Unavailable in this plug-in build.");
+        return;
+    }
+
     attachments.push_back (std::make_unique<SliderAttachment> (
         audioProcessor.parameters, parameterId, knob.slider));
 
@@ -1310,10 +1470,10 @@ void TaikorAudioProcessorEditor::addKnob (TaikorKnob& knob,
     // whichever value JUCE's slider would otherwise fall back to. Reading it
     // from the parameter keeps every knob in lockstep with its default should
     // that ever change, instead of a second table of defaults kept here.
-    if (const auto* parameter = audioProcessor.parameters.getParameter (parameterId))
+    if (const auto* defaultParameter = audioProcessor.parameters.getParameter (parameterId))
     {
         knob.slider.setDoubleClickReturnValue (
-            true, parameter->convertFrom0to1 (parameter->getDefaultValue()));
+            true, defaultParameter->convertFrom0to1 (defaultParameter->getDefaultValue()));
         knob.slider.setTooltip (knob.slider.getTooltip() + " (double-click to reset)");
     }
 }
@@ -1340,7 +1500,7 @@ void TaikorAudioProcessorEditor::selectOctave (int octaveOffset)
 TaikorAudioProcessorEditor::LayoutAreas
 TaikorAudioProcessorEditor::calculateLayout() const
 {
-    const auto scale = static_cast<float> (getWidth()) / designWidth;
+    const auto scale = editorScale (*this);
     const auto rect = [scale] (int x, int y, int w, int h)
     {
         return juce::Rectangle<float> (static_cast<float> (x), static_cast<float> (y),
@@ -1362,7 +1522,7 @@ TaikorAudioProcessorEditor::calculateLayout() const
 void TaikorAudioProcessorEditor::paint (juce::Graphics& g)
 {
     const auto areas = calculateLayout();
-    const auto scale = static_cast<float> (getWidth()) / designWidth;
+    const auto scale = editorScale (*this);
     g.setGradientFill (juce::ColourGradient (backgroundTop, 0.0f, 0.0f,
                                             backgroundBottom, 0.0f,
                                             static_cast<float> (getHeight()), false));
@@ -1409,7 +1569,7 @@ void TaikorAudioProcessorEditor::resized()
     logoLabel.setFont (displayFont (80.0f * scale, juce::Font::bold));
     editionLabel.setBounds (rect (440, 25, 160, 46));
     editionLabel.setFont (controlFont (18.0f * scale));
-    statusDisplay.setBounds (rect (608, 30, 234, 36));
+    statusDisplay.setBounds (rect (608, 8, 234, 58));
     buildLabel.setBounds (rect (608, 68, 234, 20));
     buildLabel.setFont (controlFont (12.0f * scale));
     limiterLabel.setBounds (rect (850, 18, 252, 24));
@@ -1433,16 +1593,18 @@ void TaikorAudioProcessorEditor::resized()
                           headings.getY(), columns.cellSize, headings.getHeight());
     }
     const int rowHeight = (grid.getHeight() - gap * 3) / 4;
-    for (int row = 0; row < 4; ++row)
+    for (int row = 0; row < octaveCount; ++row)
     {
         auto line = juce::Rectangle<int> (grid.getX(), grid.getY() + row * (rowHeight + gap),
                                          grid.getWidth(), rowHeight);
         octaveButtons[static_cast<std::size_t> (row)]->setBounds (line.removeFromLeft (rowHeaderWidth));
         line.removeFromLeft (gap);
-        const auto cells = taikor::ui::rowLayout (line.getWidth(), 4, gap, 4);
-        for (int col = 0; col < 4; ++col)
-            pads[static_cast<std::size_t> (row * 4 + col)]->setBounds (
-                line.getX() + taikor::ui::cellOffset (cells, gap, col), line.getY(),
+        const auto cells = taikor::ui::rowLayout (
+            line.getWidth(), static_cast<int> (taikor::articulationCount), gap,
+            static_cast<int> (taikor::articulationCount));
+        for (std::size_t col = 0; col < taikor::articulationCount; ++col)
+            pads[static_cast<std::size_t> (row) * taikor::articulationCount + col]->setBounds (
+                line.getX() + taikor::ui::cellOffset (cells, gap, static_cast<int> (col)), line.getY(),
                 cells.cellSize, line.getHeight());
     }
 
@@ -1504,9 +1666,11 @@ void TaikorAudioProcessorEditor::resized()
 
 void TaikorAudioProcessorEditor::timerCallback()
 {
-    statusDisplay.setStatus (audioProcessor.getActiveVoiceCount(),
-                             audioProcessor.isEngineReady(),
-                             audioProcessor.getCurrentSampleRateForDisplay());
+    const auto sampleRate = audioProcessor.getCurrentSampleRateForDisplay();
+    const bool ready = audioProcessor.isEngineReady()
+                    && std::isfinite (sampleRate) && sampleRate > 0.0;
+    statusDisplay.setStatus (audioProcessor.getActiveVoiceCount(), ready, sampleRate,
+                             audioProcessor.getCpuUsage());
     meter.setLevels (audioProcessor.getOutputLevel (0),
                      audioProcessor.getOutputLevel (1));
 
@@ -1539,11 +1703,14 @@ void TaikorAudioProcessorEditor::timerCallback()
     const auto engineParameters = audioProcessor.snapshotEngineParameters();
     headDisplay.setMicrophones (engineParameters.micSpread, engineParameters.micDistance);
 
-    const auto measurements = audioProcessor.measureDrum (selectedOctave);
-    headDisplay.setMeasurements (measurements.soundingHz,
-                                 measurements.breathingModeHz,
-                                 measurements.radiusMetres * 200.0f,
-                                 measurements.tailSeconds);
+    if (ready)
+    {
+        const auto measurements = audioProcessor.measureDrum (selectedOctave);
+        headDisplay.setMeasurements (measurements.soundingHz,
+                                     measurements.breathingModeHz,
+                                     measurements.radiusMetres * 200.0f,
+                                     measurements.tailSeconds);
+    }
 
     for (std::size_t padIdx = 0; padIdx < totalPadCount; ++padIdx)
     {
@@ -1552,6 +1719,8 @@ void TaikorAudioProcessorEditor::timerCallback()
 
         const auto articulation = pads[padIdx]->getArticulation();
         const auto artIdx = static_cast<std::size_t> (articulation);
+        if (artIdx >= currentTriggerCounters.size())
+            continue;
         const auto counter = currentTriggerCounters[artIdx];
 
         if (counter != observedTriggerCounters[artIdx])

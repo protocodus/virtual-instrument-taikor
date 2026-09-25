@@ -1,11 +1,14 @@
 #pragma once
 
+#include <cstddef>
+
 #include "OutputLimiter.h"
 #include "OutputHighPass.h"
 #include "StereoPan.h"
 #include "BachiModel.h"
 #include "CoupledCavity.h"
 #include "PhysicalDrumProfile.h"
+#include "PackedModalBank.h"
 
 #include <array>
 #include <atomic>
@@ -81,6 +84,7 @@ struct ArticulationMetadata
 // Pitch class selects the stroke; the octave selects the drum.
 [[nodiscard]] std::optional<Articulation> articulationForMidiNote (int midiNote) noexcept;
 [[nodiscard]] std::optional<int> octaveOffsetForMidiNote (int midiNote) noexcept;
+// Clamps the octave; returns -1 for an unsupported articulation.
 [[nodiscard]] int midiNoteFor (Articulation articulation, int octaveOffset) noexcept;
 
 // One of the four drums the keyboard lays out, described as the instrument it
@@ -302,8 +306,18 @@ public:
     [[nodiscard]] static std::uint32_t realismFeatures() noexcept;
     [[nodiscard]] static bool hasRealismFeature (RealismFeature feature) noexcept;
 
+    // Rates clamp to 8..384 kHz; NaN uses defaultSampleRate. The block size
+    // is a hint, not a buffer allocation or a limit on subsequent render calls.
     void prepare (double sampleRate, int maxBlockSize) noexcept;
     void reset() noexcept;
+    // Allocation-free canonicalization for coordinators as well as direct
+    // callers. NaN floats use their lower bound; infinities clamp to endpoints.
+    // Internal resolved family coordinates are reset to their neutral values.
+    [[nodiscard]] static EngineParameters sanitiseParameters (
+        const EngineParameters& parameters) noexcept
+    {
+        return sanitise (parameters);
+    }
     void setParameters (const EngineParameters& parameters) noexcept;
     // Stable independent contact texture. Set before prepare; reset retains it.
     void setEnsembleMember (int member) noexcept;
@@ -312,7 +326,8 @@ public:
     // octave and is clamped to the playable range.
     void trigger (Articulation articulation, int octaveOffset, float velocity,
                   float radialOffset = 0.0f, float tangentialOffset = 0.0f) noexcept;
-    // Returns false for notes outside the playable range, which stay silent.
+    // Returns whether the note maps to a stroke. A mapped note with zero,
+    // negative or nonfinite velocity remains silent, just like trigger().
     [[nodiscard]] bool triggerMidi (int midiNote, float velocity) noexcept;
     // A hand laid on the head, from MIDI CC1. It damps everything still
     // ringing, and it keeps damping while it is held - so a stroke struck with
@@ -335,9 +350,14 @@ public:
     void setPitchBend (float normalisedBipolar) noexcept;
     void allSoundsOff() noexcept;
 
+    // Both outputs must contain numSamples writable floats. A null output or
+    // nonpositive count is a no-op, including on the engine's time/state.
     void process (float* left, float* right, int numSamples) noexcept;
     // Secondary members supply unprocessed microphone audio to the lead's
     // shared output path, so Drive, Low Cut and the limiter run only once.
+    // Optional input arrays also contain numSamples elements. Both extra
+    // channels are needed to mix them. Malformed mixed samples are silenced
+    // before they can poison the persistent output filters.
     void processRaw (float* left, float* right, int numSamples) noexcept;
     void processWithEnsemble (float* left, float* right, int numSamples,
                               const float* extraLeft, const float* extraRight,
@@ -421,6 +441,11 @@ public:
     // in the struct describes the drum rather than the render and is the same
     // at every rate. An instance uses its own prepared rate; a caller without
     // one gets 48 kHz.
+    // Rate handling matches prepare(). Bend clamps to the renderer's +/-2
+    // semitones; NaN means neutral. Measurement may allocate thread-local
+    // scratch engines on first use and must stay off the realtime thread.
+    // If scratch allocation fails, physical fields retain their finite default
+    // values and frequency/tail readouts are zero. A later call retries setup.
     [[nodiscard]] static DrumMeasurements measure (
         const EngineParameters& parameters, int octaveOffset,
         float pitchBendSemitones = 0.0f,
@@ -524,31 +549,85 @@ private:
     // mistuned the drum by thirty cents there and by seven at 192 kHz, which is
     // audible against anything else in the session. In double the same margin
     // costs a handful of the fifty-three bits available and the drum stays in
-    // tune at every supported rate. The recursion is serial, so no vectorising
-    // is being given up for it.
-    struct Resonator
-    {
-        double a1 { 0.0 };
-        double a2 { 0.0 };
-        double b0 { 0.0 };
-        double y1 { 0.0 };
-        double y2 { 0.0 };
-
-        void clear() noexcept { y1 = y2 = 0.0; }
-        [[nodiscard]] float tick (float input) noexcept
-        {
-            const double output = b0 * static_cast<double> (input) - a1 * y1 - a2 * y2;
-            y2 = y1;
-            y1 = output;
-            return static_cast<float> (output);
-        }
-    };
+    // tune at every supported rate. Time evolution is serial within each
+    // mode; independent modes can still share a double-precision SIMD step.
+#if TAIKOR_USE_PACKED_MODAL_BANK
+    using Resonator = detail::PackedModalResonator;
+#else
+    using Resonator = detail::ScalarModalResonator;
+#endif
 
     // Everything about one sounding mode that the render loop needs, laid out
     // together so a mode is one contiguous read.
-    struct Mode
+#if TAIKOR_USE_PACKED_MODAL_BANK
+    struct alignas (64) Mode
+#else
+    struct alignas (128) Mode
+#endif
     {
+        // Hot observation, strain and boundary metadata precedes construction
+        // data. On Apple silicon the resonator views address the bank's packed
+        // arrays, so every existing physical-state reader sees SIMD updates.
         Resonator resonator {};
+        // The physical radian frequency and pole radius currently encoded in
+        // the resonator. Unlike omega, these follow Tension Mod, automation and
+        // the wheel. A collision needs both, and caching values already known
+        // when the coefficients move avoids decomposing every live pole with
+        // transcendental functions at every hit.
+        double liveOmega { 0.0 };
+        // B = q[n] cos(theta) / sin(theta)
+        //     - r q[n-1] / sin(theta), cached whenever the pole changes so the
+        // audio loop pays only two multiplies and an add for propagation phase.
+        double quadratureFromCurrent { 0.0 };
+        double quadratureFromPrevious { 0.0 };
+        double shellBoundaryImpulseScale { 0.0 };
+        double shellBoundaryVelocityToPrevious { 0.0 };
+        float micLeft { 0.0f };
+        float micRight { 0.0f };
+        // The imaginary parts of the complex pressure residues. A real modal
+        // displacement alone cannot carry propagation phase; these multiply
+        // the exact damped-oscillator quadrature recovered from y[n] and
+        // y[n-1]. Axisymmetric and shell modes remain real until their rear
+        // radiation paths are represented explicitly.
+        float micLeftQuadrature { 0.0f };
+        float micRightQuadrature { 0.0f };
+        // Fraction of this mode's restoring energy stored in batter tension.
+        // Strain changes that term; bending rigidity, rear tension and the
+        // enclosed air spring keep their own stiffness.
+        float batterTensionFraction { 0.0f };
+        float rearTensionFraction { 0.0f };
+        // Structural amplitude-decay rate. The resonator radius also includes
+        // appliedPalmDecay while a hand is down; keeping the two separate lets
+        // retuning recompute material/radiation loss without dropping the palm.
+        float decayRate { 0.0f };
+        float appliedPalmDecay { 0.0f };
+        float stretchNorm { 0.0f };
+        float shellBoundaryProjection { 0.0f };
+        // Stable construction identity inside one physical drum: two slots per
+        // membrane table row, followed by the six shell modes. Per-contact
+        // projections use this key to sum their forces before the one canonical
+        // resonator bank is advanced; lifetime sorting may move the Mode object
+        // but can never change which physical degree of freedom it names.
+        std::uint16_t physicalIndex { 0 };
+        // Which row of the mode table this came from, so a later stroke can
+        // find the mode's shape at its own contact point without the whole
+        // Bessel solve being redone per mode. Membrane modes only.
+        std::uint8_t modeEntry { 0 };
+        std::uint8_t circumferentialOrder { 0 };
+        // True for the membrane, false for the shell. The attack glide and the
+        // wheel stretch the head; neither of them touches the wooden body, and
+        // the bank is sorted by lifetime so the two kinds interleave.
+        bool membrane { true };
+        // Unit-mass shared cavity coordinate. The complete physical basis is
+        // retained for contact, observation and structural state remapping.
+        bool sharedCavityMode { false };
+        bool rearHeadMode { false };
+        // Signed near-rim displacement in one shell-ring coordinate. The head
+        // uses its actual rotated spatial basis; the corresponding shell port
+        // is -1. A collocated dashpot transfers energy in both directions.
+        std::int8_t shellBoundaryGroup { -1 };
+
+        // Construction, contact and control-rate data.
         // Drive gain: mode shape at the strike point over modal mass, already
         // divided by the sample rate so the resonator integrates a force.
         float drive { 0.0f };
@@ -571,60 +650,18 @@ private:
         // controls move; retaining both shares lets a rebuild preserve the
         // physical head coordinates rather than the old eigenmode labels.
         float resonantParticipation { 0.0f };
-        // Unit-mass shared cavity coordinate. The complete physical basis is
-        // retained for contact, observation and structural state remapping.
-        bool sharedCavityMode { false };
-        bool rearHeadMode { false };
         std::array<float, cavity::maximumCoordinates> cavityBasis {};
         std::array<float, cavity::radialModeCount> cavityStretchNorm {};
         std::array<float, cavity::radialModeCount> cavityTensionWeights {};
         std::array<float, cavity::radialModeCount> cavityRearTensionWeights {};
         float headEnergyFraction { 1.0f };
-        float stretchNorm { 0.0f };
-        // Fraction of this mode's restoring energy stored in batter tension.
-        // Strain changes that term; bending rigidity, rear tension and the
-        // enclosed air spring keep their own stiffness.
-        float batterTensionFraction { 0.0f };
-        float rearTensionFraction { 0.0f };
-        float micLeft { 0.0f };
-        float micRight { 0.0f };
-        // The imaginary parts of the complex pressure residues. A real modal
-        // displacement alone cannot carry propagation phase; these multiply
-        // the exact damped-oscillator quadrature recovered from y[n] and
-        // y[n-1]. Axisymmetric and shell modes remain real until their rear
-        // radiation paths are represented explicitly.
-        float micLeftQuadrature { 0.0f };
-        float micRightQuadrature { 0.0f };
-        // B = q[n] cos(theta) / sin(theta)
-        //     - r q[n-1] / sin(theta), cached whenever the pole changes so the
-        // audio loop pays only two multiplies and an add for propagation phase.
-        double quadratureFromCurrent { 0.0 };
-        double quadratureFromPrevious { 0.0 };
-        // Signed near-rim displacement in one shell-ring coordinate. The head
-        // uses its actual rotated spatial basis; the corresponding shell port
-        // is -1. A collocated dashpot transfers energy in both directions.
-        std::int8_t shellBoundaryGroup { -1 };
-        float shellBoundaryProjection { 0.0f };
-        double shellBoundaryImpulseScale { 0.0 };
-        double shellBoundaryVelocityToPrevious { 0.0 };
         float shellRimCoupling { 0.0f };
         float rimDrive { 0.0f };
         std::int8_t shellRingIndex { -1 };
         // Resting angular frequency in radians per second, kept so the tension
         // glide can retune the resonator without redoing the physical solve.
         float omega { 0.0f };
-        // The physical radian frequency and pole radius currently encoded in
-        // the resonator. Unlike omega, these follow Tension Mod, automation and
-        // the wheel. A collision needs both, and caching values already known
-        // when the coefficients move avoids decomposing every live pole with
-        // transcendental functions at every hit.
-        double liveOmega { 0.0 };
         double poleRadius { 0.0 };
-        // Structural amplitude-decay rate. The resonator radius also includes
-        // appliedPalmDecay while a hand is down; keeping the two separate lets
-        // retuning recompute material/radiation loss without dropping the palm.
-        float decayRate { 0.0f };
-        float appliedPalmDecay { 0.0f };
         // The decay split into what moves with the head and what does not, so a
         // mode retuned while it is still sounding can be re-damped rather than
         // keeping the rate it was built with. The hide's loss goes as omega and
@@ -651,30 +688,20 @@ private:
         // has no position channel, so the controller uses one fixed central
         // palm patch and scales this physical rate by the squared pressure.
         float handDampingRate { 0.0f };
-        std::uint8_t circumferentialOrder { 0 };
-        // Which row of the mode table this came from, so a later stroke can
-        // find the mode's shape at its own contact point without the whole
-        // Bessel solve being redone per mode. Membrane modes only.
-        std::uint8_t modeEntry { 0 };
-        // Stable construction identity inside one physical drum: two slots per
-        // membrane table row, followed by the six shell modes. Per-contact
-        // projections use this key to sum their forces before the one canonical
-        // resonator bank is advanced; lifetime sorting may move the Mode object
-        // but can never change which physical degree of freedom it names.
-        std::uint16_t physicalIndex { 0 };
         // log(level / retirement floor), so the lifetime below can be redone
         // from a new decay rate without the whole bank's levels to hand. Zero
         // for a mode that was never audible.
         float retirementLog { 0.0f };
-        // True for the membrane, false for the shell. The attack glide and the
-        // wheel stretch the head; neither of them touches the wooden body, and
-        // the bank is sorted by lifetime so the two kinds interleave.
-        bool membrane { true };
         // Sample count after which this mode has fallen below the retirement
         // floor. Modes are stored in descending order of this value, so the
         // render loop only has to track a shrinking count.
         std::uint64_t audibleSamples { 0 };
     };
+
+#if ! TAIKOR_USE_PACKED_MODAL_BANK
+    static_assert (offsetof (Mode, drive) == 128,
+                   "Keep the scalar modal audio-rate fields in their hot cache lines");
+#endif
 
     // One scheduled stick contact. An ordinary stroke has a single contact; a
     // flam has two and a press roll has a train of them.
@@ -731,7 +758,11 @@ private:
         std::uint64_t maximumSamples { 0 };
         std::uint32_t noiseState { 1u };
 
+#if TAIKOR_USE_PACKED_MODAL_BANK
+        detail::PackedModalBank<Mode, resonatorCount> modes {};
+#else
         std::array<Mode, resonatorCount> modes {};
+#endif
         int modeCount { 0 };
         int activeModeCount { 0 };
         // Sparse traversals in ascending bank order, rebuilt after construction,
@@ -739,8 +770,10 @@ private:
         // scans would skip, never modes selected by amplitude or audibility.
         std::array<std::uint16_t, resonatorCount> strainModeIndices {};
         std::array<std::uint16_t, resonatorCount> boundaryModeIndices {};
+        std::array<std::uint16_t, resonatorCount> parametricModeIndices {};
         int strainModeCount { 0 };
         int boundaryModeCount { 0 };
+        int parametricModeCount { 0 };
         // Force already projected into stable physical-mode order. Every due
         // contact on this drum adds here, then the bank consumes and clears it
         // in one tick. This is the structural guarantee that two simultaneous
@@ -1178,6 +1211,7 @@ private:
     [[nodiscard]] static float sharedPalmDamping (
         const DrumState&, const Mode&, float strikeRadius, bool rear = false) noexcept;
 
+    [[nodiscard]] static double sanitiseSampleRate (double sampleRate) noexcept;
     [[nodiscard]] static EngineParameters sanitise (
         const EngineParameters& parameters) noexcept;
     [[nodiscard]] static const std::array<MembraneModeEntry, modeEntryCount>&
@@ -1527,7 +1561,7 @@ private:
     // which no prescribed pulse duration can predict truthfully.
     [[nodiscard]] static SoundingMode dynamicSoundingMode (
         const EngineParameters& rawParameters, int octaveOffset,
-        float pitchBendSemitones, double sampleRateHz) noexcept;
+        float pitchBendSemitones, double sampleRateHz);
 
     // The highest frequency the render will instantiate a resonator at. This
     // is configureResonator's own test, written once so the readout and the
@@ -1719,6 +1753,10 @@ private:
                           const float* gain, bool extraActive, bool raw,
                           const StereoPan* leadPan) noexcept;
     void updateActiveVoiceCount() noexcept;
+    static void advanceModalBank (Voice& voice,
+        const std::array<float, modeEntryCount>& entryRipple,
+        const std::array<float, modeEntryCount>& rearEntryRipple,
+        double parametricScale, bool parametricActive, bool rimPathActive) noexcept;
     void refreshActiveLists() noexcept;
     void refreshDrumIfNeeded() noexcept;
     // Changes continuous pole loss while preserving instantaneous displacement

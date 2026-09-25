@@ -2,8 +2,12 @@
 #include "PluginEditor.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <locale>
 #include <memory>
+#include <sstream>
+#include <string_view>
 #include <vector>
 
 namespace
@@ -108,48 +112,110 @@ std::unique_ptr<juce::RangedAudioParameter> makeCentimetreParameter (
             }));
 }
 
-// APVTS keeps a parameter at its current value when the replacement tree has
-// no child for it. A session saved before a control existed would therefore
-// adopt whatever the previously loaded preset left behind rather than that
-// control's default, so fill in every default the stored tree omits.
-bool containsParameterState (const juce::ValueTree& state,
-                             const juce::String& parameterId)
+// Thirty scalar parameters need only a few KiB. Bound bytes, recursion and
+// node count before JUCE's recursive XML parser sees untrusted host state.
+constexpr int maximumStateBytes = 1024 * 1024;
+
+bool hasSafeXmlStructure (std::string_view text) noexcept
 {
-    static const juce::Identifier parameterType { "PARAM" };
-    static const juce::Identifier idProperty { "id" };
-
-    for (const auto& child : state)
-        if (child.hasType (parameterType)
-            && child.getProperty (idProperty).toString() == parameterId)
-            return true;
-
-    return false;
+    int depth = 0, nodes = 0;
+    for (std::size_t index = 0; index < text.size(); ++index)
+    {
+        if (text[index] == '\0')
+            return false;
+        if (text[index] != '<')
+            continue;
+        if (index + 1 == text.size() || text[index + 1] == '!')
+            return false; // No DTDs, entities, CDATA or declarations in our format.
+        const bool instruction = text[index + 1] == '?';
+        const bool closing = text[index + 1] == '/';
+        char quote = 0;
+        auto end = index + 1;
+        for (; end < text.size(); ++end)
+        {
+            const char c = text[end];
+            if (c == '\0')
+                return false;
+            if (quote != 0)
+            {
+                if (c == quote)
+                    quote = 0;
+            }
+            else if (c == '\'' || c == '"')
+                quote = c;
+            else if (c == '>')
+                break;
+            else if (c == '<')
+                return false;
+        }
+        if (end == text.size())
+            return false;
+        if (instruction)
+        {
+            if (text[end - 1] != '?')
+                return false;
+        }
+        else if (closing)
+        {
+            if (--depth < 0)
+                return false;
+        }
+        else
+        {
+            if (++nodes > 512)
+                return false;
+            if (text[end - 1] != '/' && ++depth > 8)
+                return false;
+        }
+        index = end;
+    }
+    return depth == 0 && nodes != 0;
 }
 
-void addMissingParameterDefaults (
-    juce::ValueTree& state, juce::AudioProcessorValueTreeState& parameters,
-    const juce::Array<juce::AudioProcessorParameter*>& hostParameters)
+bool readFiniteDecimal (const juce::String& input, double& value)
 {
-    static const juce::Identifier parameterType { "PARAM" };
-    static const juce::Identifier idProperty { "id" };
-    static const juce::Identifier valueProperty { "value" };
-
-    for (const auto* hostParameter : hostParameters)
+    const auto text = input.trim();
+    if (text.isEmpty() || text.length() > 128)
+        return false;
+    auto cursor = text.getCharPointer();
+    if (*cursor == '+' || *cursor == '-')
+        ++cursor;
+    const auto digits = [&cursor]
     {
-        const auto* ranged =
-            dynamic_cast<const juce::RangedAudioParameter*> (hostParameter);
-        if (ranged == nullptr
-            || parameters.getParameter (ranged->paramID) == nullptr
-            || containsParameterState (state, ranged->paramID))
-            continue;
-
-        juce::ValueTree parameterState { parameterType };
-        parameterState.setProperty (idProperty, ranged->paramID, nullptr);
-        parameterState.setProperty (
-            valueProperty,
-            ranged->convertFrom0to1 (ranged->getDefaultValue()), nullptr);
-        state.appendChild (parameterState, nullptr);
+        int count = 0;
+        while (*cursor >= '0' && *cursor <= '9')
+        {
+            ++cursor;
+            ++count;
+        }
+        return count;
+    };
+    int count = digits();
+    if (*cursor == '.')
+    {
+        ++cursor;
+        count += digits();
     }
+    if (count == 0)
+        return false;
+    if (*cursor == 'e' || *cursor == 'E')
+    {
+        ++cursor;
+        if (*cursor == '+' || *cursor == '-')
+            ++cursor;
+        if (digits() == 0)
+            return false;
+    }
+    if (*cursor != 0)
+        return false;
+    // JUCE's text conversion accumulates the exponent in a signed int. State
+    // can contain arbitrarily large exponent digits within our byte limit.
+    // Classic-locale extraction handles overflow without integer wraparound
+    // and correctly rounds representable values at the double boundary.
+    std::istringstream stream (text.toStdString());
+    stream.imbue (std::locale::classic());
+    stream >> value;
+    return ! stream.fail() && std::isfinite (value);
 }
 
 constexpr bool isValidArticulation (taikor::Articulation articulation) noexcept
@@ -169,6 +235,12 @@ TaikorAudioProcessor::TaikorAudioProcessor()
         parameterPointers[static_cast<std::size_t> (slot)] =
             parameters.getRawParameterValue (parameterIds[static_cast<std::size_t> (slot)]);
         jassert (parameterPointers[static_cast<std::size_t> (slot)] != nullptr);
+        const auto* parameter = parameters.getParameter (parameterIds[static_cast<std::size_t> (slot)]);
+        const auto& range = parameter->getNormalisableRange();
+        parameterBounds[static_cast<std::size_t> (slot)] = {
+            range.start, range.end,
+            parameter->convertFrom0to1 (parameter->getDefaultValue())
+        };
     }
 }
 
@@ -383,12 +455,22 @@ TaikorAudioProcessor::createParameterLayout()
     return { result.begin(), result.end() };
 }
 
+float TaikorAudioProcessor::readParameter (int slot) const noexcept
+{
+    const auto index = static_cast<std::size_t> (slot);
+    const auto& bounds = parameterBounds[index];
+    const auto* pointer = parameterPointers[index];
+    const float value = pointer != nullptr
+        ? pointer->load (std::memory_order_relaxed) : bounds.defaultValue;
+    return std::isfinite (value)
+        ? std::clamp (value, bounds.minimum, bounds.maximum) : bounds.defaultValue;
+}
+
 taikor::EngineParameters TaikorAudioProcessor::snapshotEngineParameters() const noexcept
 {
     const auto read = [this] (int slot) noexcept
     {
-        const auto* pointer = parameterPointers[static_cast<std::size_t> (slot)];
-        return pointer != nullptr ? pointer->load (std::memory_order_relaxed) : 0.0f;
+        return readParameter (slot);
     };
 
     taikor::EngineParameters next;
@@ -442,9 +524,21 @@ taikor::TaikoEngine::DrumMeasurements TaikorAudioProcessor::measureDrum (
         current.strikePosition = bipolarControllerValue (position);
 
     const auto rate = displaySampleRate.load (std::memory_order_relaxed);
-    return rate > 0.0
-             ? taikor::TaikoEngine::measure (current, octaveOffset, 0.0f, rate)
-             : taikor::TaikoEngine::measure (current, octaveOffset);
+    const int octave = std::clamp (octaveOffset, taikor::lowestOctaveOffset,
+                                    taikor::highestOctaveOffset);
+    auto& cached = drumReadouts[static_cast<std::size_t> (octave - taikor::lowestOctaveOffset)];
+    const auto features = taikor::TaikoEngine::realismFeatures();
+    if (cached.valid && cached.parameters == current && cached.sampleRate == rate
+        && cached.features == features)
+        return cached.measurements;
+    cached.measurements = rate > 0.0
+             ? taikor::TaikoEngine::measure (current, octave, 0.0f, rate)
+             : taikor::TaikoEngine::measure (current, octave);
+    cached.parameters = current;
+    cached.sampleRate = rate;
+    cached.features = features;
+    cached.valid = true;
+    return cached.measurements;
 }
 
 void TaikorAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
@@ -452,23 +546,26 @@ void TaikorAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
     engineReady.store (false, std::memory_order_release);
     uiQueueGeneration.fetch_add (1, std::memory_order_acq_rel);
     discardUiTriggers();
+    const auto rate = std::isfinite (sampleRate) && sampleRate > 0.0
+        ? std::clamp (sampleRate, 8000.0, 384000.0) : 48000.0;
+    const int blockHint = std::clamp (samplesPerBlock, 1, 65536);
     // Publish the parameters before prepare() resets the smoothers, so the
     // first stroke starts at the restored gain rather than gliding to it.
     updateEngineParameters();
-    engine.prepare (sampleRate, samplesPerBlock);
-    lastReverbRoom = static_cast<int> (parameterPointers[slotReverbRoom]->load (std::memory_order_relaxed));
-    lastReverbMix = parameterPointers[slotReverbMix]->load (std::memory_order_relaxed);
-    reverb.prepare (sampleRate, samplesPerBlock, lastReverbRoom, lastReverbMix);
+    engine.prepare (rate, blockHint);
+    engine.prepareOfflineRendering (isNonRealtime() ? 3 : 0);
+    lastReverbRoom = juce::roundToInt (readParameter (slotReverbRoom));
+    lastReverbMix = readParameter (slotReverbMix);
+    reverb.prepare (rate, blockHint, lastReverbRoom, lastReverbMix);
     setLatencySamples (reverb.getLatency());
-    const auto rate = std::isfinite (sampleRate)
-        ? std::clamp (sampleRate, 8000.0, 384000.0) : 48000.0;
     meterRelease = static_cast<float> (std::exp (-1.0 / (0.22 * rate)));
+    cpuMeter.reset (rate);
     meterLevels.fill (0.0f);
     for (auto& level : outputLevels)
         level.store (0.0f, std::memory_order_relaxed);
     strikeAzimuthController.store (-1, std::memory_order_relaxed);
     strikePositionController.store (-1, std::memory_order_relaxed);
-    displaySampleRate.store (sampleRate, std::memory_order_relaxed);
+    displaySampleRate.store (rate, std::memory_order_relaxed);
     activeVoiceCount.store (0, std::memory_order_relaxed);
     engineReady.store (true, std::memory_order_release);
 }
@@ -476,8 +573,10 @@ void TaikorAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
 void TaikorAudioProcessor::releaseResources()
 {
     engineReady.store (false, std::memory_order_release);
+    cpuMeter.reset();
     uiQueueGeneration.fetch_add (1, std::memory_order_acq_rel);
     discardUiTriggers();
+    engine.releaseOfflineRendering();
     engine.allSoundsOff();
     engine.reset();
     reverb.reset();
@@ -502,16 +601,46 @@ bool TaikorAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) c
 void TaikorAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                                          juce::MidiBuffer& midiMessages)
 {
+    const auto cpuStart = std::chrono::steady_clock::now();
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
 
     if (! engineReady.load (std::memory_order_acquire))
+    {
+        midiMessages.clear();
         return;
+    }
+
+    // This only selects an already-prepared pool; realtime always stays serial.
+    engine.setOfflineRendering (isNonRealtime());
+    if (panicRequested.exchange (false, std::memory_order_acq_rel))
+    {
+        engine.allSoundsOff();
+        reverb.reset();
+        engine.setHandDamping (0.0f);
+        engine.setPitchBend (0.0f);
+        engine.clearStrikeOverrides();
+        engine.setRearHeadStrike (false);
+        strikeAzimuthController.store (-1, std::memory_order_relaxed);
+        strikePositionController.store (-1, std::memory_order_relaxed);
+        meterLevels.fill (0.0f);
+        activeVoiceCount.store (0, std::memory_order_relaxed);
+    }
+
+    const auto numSamples = buffer.getNumSamples();
+    if (numSamples == 0 || buffer.getNumChannels() < 2)
+    {
+        // buffer.clear() above already made every available output finite.
+        // No valid stereo time span exists. Keep UI auditions for a real block.
+        midiMessages.clear();
+        for (auto& level : outputLevels)
+            level.store (0.0f, std::memory_order_relaxed);
+        return;
+    }
 
     updateEngineParameters();
-
-    const int room = static_cast<int> (parameterPointers[slotReverbRoom]->load (std::memory_order_relaxed));
-    const float mix = parameterPointers[slotReverbMix]->load (std::memory_order_relaxed);
+    const int room = juce::roundToInt (readParameter (slotReverbRoom));
+    const float mix = readParameter (slotReverbMix);
     if (room != lastReverbRoom || mix != lastReverbMix)
     {
         reverb.setParameters (room, mix);
@@ -519,25 +648,29 @@ void TaikorAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         lastReverbMix = mix;
     }
 
-    if (panicRequested.exchange (false, std::memory_order_acq_rel))
-    {
-        discardUiTriggers();
-        engine.allSoundsOff();
-        reverb.reset();
-        engine.clearStrikeOverrides();
-        engine.setRearHeadStrike (false);
-    }
-
     // Editor pad strokes are deliberately quantised to the next block boundary.
-    // The bounded SPSC queue keeps both message and audio threads lock-free.
+    // UI strokes precede host MIDI at sample zero. Host events at the same
+    // sample retain MidiBuffer insertion order, including notes and resets.
     dispatchUiTriggers();
 
-    const auto numSamples = buffer.getNumSamples();
     int renderedTo = 0;
+    unsigned events = 0;
 
     for (const auto metadata : midiMessages)
     {
-        const auto eventSample = juce::jlimit (0, numSamples, metadata.samplePosition);
+        if (events++ == maximumMidiEventsPerBlock)
+        {
+            // Fail silent when the work budget is exhausted; a stop message
+            // later in the discarded suffix must never leave a ringing voice.
+            engine.allSoundsOff();
+            reverb.reset();
+            break;
+        }
+        const auto eventSample = metadata.samplePosition;
+        // The host owns scheduling. Never pull a future note into this block
+        // or turn an invalid negative offset into an early hit.
+        if (eventSample < 0 || eventSample >= numSamples)
+            continue;
 
         if (eventSample > renderedTo)
         {
@@ -547,6 +680,7 @@ void TaikorAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
         dispatchMidiData (metadata.data, metadata.numBytes);
     }
+    midiMessages.clear(); // This instrument does not produce MIDI.
 
     if (renderedTo < numSamples)
         renderAudio (buffer, renderedTo, numSamples - renderedTo);
@@ -554,6 +688,8 @@ void TaikorAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     activeVoiceCount.store (engine.getActiveVoiceCount(), std::memory_order_relaxed);
     for (std::size_t channel = 0; channel < meterLevels.size(); ++channel)
         outputLevels[channel].store (meterLevels[channel], std::memory_order_relaxed);
+    cpuMeter.record (std::chrono::duration<double> (
+        std::chrono::steady_clock::now() - cpuStart).count(), numSamples);
 }
 
 void TaikorAudioProcessor::renderAudio (juce::AudioBuffer<float>& buffer,
@@ -566,6 +702,16 @@ void TaikorAudioProcessor::renderAudio (juce::AudioBuffer<float>& buffer,
     const bool silent = reverb.isBypassed() && engine.isOutputFrozen();
     engine.process (left, right, samples);
     reverb.process (left, right, samples);
+    // The room's exact dry bypass deliberately leaves its input untouched.
+    // Keep the host boundary finite before the silent fast path or metering.
+    // Finite samples are unchanged; this adds no second limiter or gain stage.
+    for (int sample = 0; sample < samples; ++sample)
+    {
+        if (! std::isfinite (left[sample]))
+            left[sample] = 0.0f;
+        if (! std::isfinite (right[sample]))
+            right[sample] = 0.0f;
+    }
     if (silent)
     {
         if (meterLevels[0] != 0.0f || meterLevels[1] != 0.0f)
@@ -588,29 +734,32 @@ void TaikorAudioProcessor::renderAudio (juce::AudioBuffer<float>& buffer,
 void TaikorAudioProcessor::dispatchMidiData (const juce::uint8* data,
                                              int numBytes) noexcept
 {
-    if (data == nullptr || numBytes < 1)
+    // Only complete supported channel messages are meaningful to this omni
+    // one-shot instrument. Channels share the same live gestures; note-offs
+    // and zero-velocity note-ons do not truncate a struck drum's natural tail.
+    if (data == nullptr || numBytes != 3 || data[1] >= 0x80u || data[2] >= 0x80u)
         return;
 
     const auto status = static_cast<unsigned> (data[0]);
     const auto kind = status & 0xf0u;
 
-    if (kind == 0x90u && numBytes >= 3 && data[2] != 0)
+    if (kind == 0x90u && data[2] != 0)
     {
-        const auto midiNote = static_cast<int> (data[1] & 0x7fu);
-        const auto velocity = static_cast<float> (data[2] & 0x7fu) / 127.0f;
+        const auto midiNote = static_cast<int> (data[1]);
+        const auto velocity = static_cast<float> (data[2]) / 127.0f;
 
         if (engine.triggerMidi (midiNote, velocity))
             if (const auto articulation = taikor::articulationForMidiNote (midiNote))
                 registerTrigger (*articulation);
     }
-    else if (kind == 0xe0u && numBytes >= 3)
+    else if (kind == 0xe0u)
     {
         // Pressing the head raises its tension, so the wheel bends the drum up.
         const auto raw = static_cast<int> (data[1] & 0x7fu)
                        | (static_cast<int> (data[2] & 0x7fu) << 7);
         engine.setPitchBend (static_cast<float> (raw - 8192) / 8192.0f);
     }
-    else if (kind == 0xb0u && numBytes >= 3)
+    else if (kind == 0xb0u)
     {
         const auto controller = data[1] & 0x7fu;
         const auto rawValue = static_cast<int> (data[2] & 0x7fu);
@@ -663,9 +812,12 @@ void TaikorAudioProcessor::dispatchMidiData (const juce::uint8* data,
 void TaikorAudioProcessor::triggerFromUi (taikor::Articulation articulation,
                                           int octaveOffset, float velocity) noexcept
 {
+    // Capture the generation before checking readiness so prepare/release or
+    // panic cannot relabel an in-flight old audition as a new one.
+    const auto generation = uiQueueGeneration.load (std::memory_order_acquire);
     if (! engineReady.load (std::memory_order_acquire))
         return;
-    enqueueUiTrigger (articulation, octaveOffset, velocity);
+    enqueueUiTrigger (articulation, octaveOffset, velocity, generation);
 }
 
 void TaikorAudioProcessor::requestPanic() noexcept
@@ -679,18 +831,22 @@ void TaikorAudioProcessor::requestPanic() noexcept
 }
 
 void TaikorAudioProcessor::enqueueUiTrigger (taikor::Articulation articulation,
-                                             int octaveOffset, float velocity) noexcept
+                                             int octaveOffset, float velocity,
+                                             std::uint32_t generation) noexcept
 {
     if (! isValidArticulation (articulation) || ! std::isfinite (velocity)
         || velocity <= 0.0f)
         return;
 
+    if (uiProducerBusy.test_and_set (std::memory_order_acquire))
+        return;
     const auto write = uiWriteIndex.load (std::memory_order_relaxed);
     const auto next = (write + 1u) % uiQueueCapacity;
 
     if (next == uiReadIndex.load (std::memory_order_acquire))
     {
         // A one-shot audition can be dropped; the message thread must not wait.
+        uiProducerBusy.clear (std::memory_order_release);
         return;
     }
 
@@ -699,9 +855,10 @@ void TaikorAudioProcessor::enqueueUiTrigger (taikor::Articulation articulation,
         juce::jlimit (taikor::lowestOctaveOffset, taikor::highestOctaveOffset,
                       octaveOffset),
         juce::jlimit (0.0f, 1.0f, velocity),
-        uiQueueGeneration.load (std::memory_order_acquire)
+        generation
     };
     uiWriteIndex.store (next, std::memory_order_release);
+    uiProducerBusy.clear (std::memory_order_release);
 }
 
 void TaikorAudioProcessor::dispatchUiTriggers() noexcept
@@ -758,11 +915,42 @@ void TaikorAudioProcessor::getStateInformation (juce::MemoryBlock& destinationDa
 
 void TaikorAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
+    if (data == nullptr || sizeInBytes <= 8 || sizeInBytes > maximumStateBytes)
+        return;
+    const auto* bytes = static_cast<const char*> (data);
+    const auto length = juce::ByteOrder::littleEndianInt (bytes + 4);
+    if (length == 0 || length > static_cast<juce::uint32> (sizeInBytes - 8)
+        || ! juce::CharPointer_UTF8::isValidString (bytes + 8, static_cast<int> (length))
+        || ! hasSafeXmlStructure ({ bytes + 8, static_cast<std::size_t> (length) }))
+        return;
     const auto xml = getXmlFromBinary (data, sizeInBytes);
-    if (xml != nullptr && xml->hasTagName (parameters.state.getType()))
+    if (xml != nullptr && xml->hasTagName ("TAIKOR_STATE"))
     {
-        auto restoredState = juce::ValueTree::fromXml (*xml);
-        addMissingParameterDefaults (restoredState, parameters, getParameters());
+        juce::ValueTree restoredState { "TAIKOR_STATE" };
+        for (const auto* id : parameterIds)
+        {
+            const auto* parameter = parameters.getParameter (id);
+            const auto& range = parameter->getNormalisableRange();
+            float value = parameter->convertFrom0to1 (parameter->getDefaultValue());
+            // First matching entry wins, including when its value is invalid.
+            // Unknown nodes do not enter the canonical parameter state.
+            for (const auto* child : xml->getChildIterator())
+            {
+                if (! child->hasTagName ("PARAM") || child->getStringAttribute ("id") != id)
+                    continue;
+                double stored = 0.0;
+                if (child->getNumChildElements() == 0
+                    && readFiniteDecimal (child->getStringAttribute ("value"), stored))
+                    value = range.snapToLegalValue (static_cast<float> (
+                        std::clamp (stored, static_cast<double> (range.start),
+                                    static_cast<double> (range.end))));
+                break;
+            }
+            juce::ValueTree child { "PARAM" };
+            child.setProperty ("id", id, nullptr);
+            child.setProperty ("value", value, nullptr);
+            restoredState.appendChild (child, nullptr);
+        }
         parameters.replaceState (restoredState);
         requestPanic();
     }
