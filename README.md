@@ -7,7 +7,7 @@ is synthesized from the drum model; no samples or recordings are loaded.
 **VST3 · CLAP · Standalone** on macOS, Windows and Linux · **Audio Unit** on macOS.
 
 <!-- distribution-link-begin -->
-**[Download latest distribution](https://github.com/protocodus/virtual-instrument-taikor/actions/runs/36694272389/artifacts/11088206190)** — build 36, built from [`630cba22789e`](https://github.com/protocodus/virtual-instrument-taikor/commit/630cba22789ebb2f199330c34de73d6f297f65bd).
+**[Download latest distribution](https://github.com/protocodus/virtual-instrument-taikor/actions/runs/36843830722/artifacts/11153231126)** — build 37, built from [`1f078ea5ff75`](https://github.com/protocodus/virtual-instrument-taikor/commit/1f078ea5ff7510a8dafc230d79b6275311f20483).
 <!-- distribution-link-end -->
 
 ![Taikor instrument editor](Docs/screenshots/taikor-standalone.png)
