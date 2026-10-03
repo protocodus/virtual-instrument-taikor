@@ -7,6 +7,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <cstdint>
 
 namespace
 {
@@ -196,6 +197,44 @@ void checkEnginePath()
                 "final limiter must protect filtered overload with and without Drive");
     }
 }
+
+void checkRobustness()
+{
+    taikor::OutputHighPass filter;
+    std::uint32_t seed = 0x9e3779b9u;
+    const auto next = [&seed]
+    {
+        seed = seed * 1664525u + 1013904223u;
+        return seed;
+    };
+    for (const double rate : { 0.0, 1.0e-300, 1.0e9,
+                               std::numeric_limits<double>::infinity(),
+                               std::numeric_limits<double>::quiet_NaN() })
+    {
+        filter.prepare (rate);
+        for (const float cutoff : { -std::numeric_limits<float>::infinity(),
+                                    std::numeric_limits<float>::quiet_NaN(),
+                                    0.0f, 500.0f,
+                                    std::numeric_limits<float>::infinity() })
+        {
+            filter.setCutoff (cutoff);
+            for (int sample = 0; sample < 1024; ++sample)
+            {
+                float left = std::ldexp (0.5f + static_cast<float> (next() & 0xffffu) / 131072.0f,
+                                         static_cast<int> (next() % 100u) - 20);
+                float right = std::ldexp (0.5f + static_cast<float> (next() & 0xffffu) / 131072.0f,
+                                          static_cast<int> (next() % 100u) - 20);
+                if (next() & 1u) left = -left;
+                if (next() & 1u) right = -right;
+                if (sample % 211 == 0)
+                    right = std::numeric_limits<float>::infinity();
+                filter.process (left, right);
+                expect (std::isfinite (left) && std::isfinite (right),
+                        "seeded high-pass inputs must remain finite");
+            }
+        }
+    }
+}
 }
 
 int main()
@@ -209,6 +248,7 @@ int main()
         checkTransitions (rate);
     }
     checkEnginePath();
+    checkRobustness();
     if (failures == 0)
         std::cout << "Output high-pass checks passed\n";
     return failures == 0 ? 0 : 1;

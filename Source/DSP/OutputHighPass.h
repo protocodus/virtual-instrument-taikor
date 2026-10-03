@@ -42,6 +42,13 @@ public:
 
     void process (float& left, float& right) noexcept
     {
+        if (! std::isfinite (left) || ! std::isfinite (right))
+        {
+            left = right = 0.0f;
+            reset();
+            return;
+        }
+
         if (wet == 0.0 && targetWet == 0.0)
             return; // Exact bypass, including the existing output samples.
 
@@ -49,13 +56,6 @@ public:
         wet += smoothing * (targetWet - wet);
         if (targetWet == 0.0 && wet < 1.0e-7)
         {
-            reset();
-            return;
-        }
-
-        if (! std::isfinite (left) || ! std::isfinite (right))
-        {
-            left = right = 0.0f;
             reset();
             return;
         }
@@ -69,6 +69,15 @@ public:
         };
         filter (left, state[0]);
         filter (right, state[1]);
+
+        // The state and coefficient ranges above should make this
+        // unreachable for valid inputs, but do not allow a corrupted state
+        // or an arithmetic overflow to escape into the audio graph.
+        if (! std::isfinite (left) || ! std::isfinite (right))
+        {
+            left = right = 0.0f;
+            reset();
+        }
     }
 
 private:

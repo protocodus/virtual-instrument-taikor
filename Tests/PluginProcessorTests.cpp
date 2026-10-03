@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <set>
 #include <string>
@@ -1275,6 +1276,292 @@ void testUiQueueAndLifecycle()
             "releaseResources must free every voice");
 }
 
+void testProcessorRobustness()
+{
+    TaikorAudioProcessor processor;
+    const auto stroke = taikor::Articulation::Don;
+    const int note = taikor::midiNoteFor (stroke, 0);
+    juce::AudioBuffer<float> buffer { 2, 64 };
+    juce::MidiBuffer midi;
+    const auto addNote = [&] (int position)
+    { midi.addEvent (juce::MidiMessage::noteOn (1, note, 1.0f), position); };
+
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+            buffer.setSample (channel, sample, std::numeric_limits<float>::infinity());
+    addNote (0);
+    processor.processBlock (buffer, midi);
+    expect (midi.isEmpty() && bufferIsFinite (buffer) && peakOf (buffer) == 0.0f,
+            "an unprepared callback must clear audio and consume MIDI");
+    processor.prepareToPlay (std::numeric_limits<double>::quiet_NaN(), -1);
+    expect (processor.getCurrentSampleRateForDisplay() == sampleRate,
+            "an invalid host clock must use the same finite fallback everywhere");
+
+    processor.triggerFromUi (stroke, 0, 1.0f);
+    for (const auto size : std::array { juce::Point<int> { 2, 0 },
+                                      juce::Point<int> { 0, 64 },
+                                      juce::Point<int> { 1, 64 } })
+    {
+        juce::AudioBuffer<float> unusual { size.x, size.y };
+        for (int channel = 0; channel < unusual.getNumChannels(); ++channel)
+            for (int sample = 0; sample < unusual.getNumSamples(); ++sample)
+                unusual.setSample (channel, sample,
+                    sample % 2 == 0 ? std::numeric_limits<float>::quiet_NaN()
+                                    : std::numeric_limits<float>::infinity());
+        addNote (0);
+        processor.processBlock (unusual, midi);
+        expect (midi.isEmpty() && bufferIsFinite (unusual) && peakOf (unusual) == 0.0f
+                    && processor.getTriggerCounter (stroke) == 0,
+                "an empty or short-channel callback dispatched a note");
+    }
+    processor.processBlock (buffer, midi);
+    expect (processor.getTriggerCounter (stroke) == 1,
+            "an empty callback lost the next UI audition");
+    processor.requestPanic();
+    processor.processBlock (buffer, midi);
+
+    auto before = processor.getTriggerCounter (stroke);
+    for (const int position : { std::numeric_limits<int>::min(), -1, 64,
+                               std::numeric_limits<int>::max() })
+        addNote (position);
+    processor.processBlock (buffer, midi);
+    expect (processor.getTriggerCounter (stroke) == before && peakOf (buffer) == 0.0f
+                && midi.isEmpty(),
+            "an invalid MIDI offset was clamped into a playable event");
+
+    // Complete packets with high-bit data and real short allocations must be
+    // rejected, not masked into notes, controllers, or pitch-wheel gestures.
+    for (const auto packet : std::array {
+             std::array<juce::uint8, 3> { 0x90, static_cast<juce::uint8> (note | 0x80), 127 },
+             std::array<juce::uint8, 3> { 0x90, static_cast<juce::uint8> (note), 255 },
+             std::array<juce::uint8, 3> { 0xb0, 144, 127 },
+             std::array<juce::uint8, 3> { 0xb0, 16, 255 },
+             std::array<juce::uint8, 3> { 0xe0, 255, 127 } })
+        midi.addEvent (packet.data(), static_cast<int> (packet.size()), 0);
+    const juce::uint8 shortNote[] { 0x90, static_cast<juce::uint8> (note) };
+    const juce::uint8 statusOnly[] { 0x90 };
+    midi.addEvent (shortNote, static_cast<int> (sizeof shortNote), 0);
+    midi.addEvent (statusOnly, static_cast<int> (sizeof statusOnly), 0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, note, 0.0f), 0);
+    processor.processBlock (buffer, midi);
+    expect (processor.getTriggerCounter (stroke) == before && peakOf (buffer) == 0.0f,
+            "malformed or zero-velocity MIDI triggered a drum");
+
+    addNote (63);
+    processor.processBlock (buffer, midi);
+    expect (processor.getTriggerCounter (stroke) == before + 1,
+            "a note on the last valid sample was lost");
+    bool prefixSilent = true;
+    for (int channel = 0; channel < 2; ++channel)
+        for (int sample = 0; sample < 63; ++sample)
+            prefixSilent = prefixSilent && buffer.getSample (channel, sample) == 0.0f;
+    expect (prefixSilent, "a late note rendered before its sample offset");
+
+    // Same-sample host order is meaningful: a stop after a note cancels it;
+    // a new note after that stop must still sound.
+    for (const bool retrigger : { false, true })
+    {
+        processor.requestPanic();
+        addNote (0);
+        midi.addEvent (juce::MidiMessage::controllerEvent (1, 120, 0), 0);
+        if (retrigger)
+            addNote (0);
+        processor.processBlock (buffer, midi);
+        expect (retrigger ? peakOf (buffer) > 0.0f : peakOf (buffer) == 0.0f,
+                "same-sample note/stop ordering did not preserve host insertion order");
+    }
+    processor.requestPanic();
+    before = processor.getTriggerCounter (stroke);
+    for (int channel = 1; channel <= 16; ++channel)
+        midi.addEvent (juce::MidiMessage::noteOn (channel, note, 0.7f), channel - 1);
+    processor.processBlock (buffer, midi);
+    expect (processor.getTriggerCounter (stroke) == before + 16,
+            "omni MIDI acceptance changed across channels");
+
+    // UI generation changes discard older entries without dropping an
+    // audition deliberately submitted after panic.
+    const auto beforeKa = processor.getTriggerCounter (taikor::Articulation::Ka);
+    before = processor.getTriggerCounter (stroke);
+    processor.triggerFromUi (taikor::Articulation::Ka, 0);
+    processor.requestPanic();
+    processor.triggerFromUi (stroke, 0);
+    processor.processBlock (buffer, midi);
+    expect (processor.getTriggerCounter (taikor::Articulation::Ka) == beforeKa
+                && processor.getTriggerCounter (stroke) == before + 1,
+            "panic dropped a newer UI trigger or replayed a stale one");
+
+    before = processor.getTriggerCounter (stroke);
+    for (int index = 0; index < 256; ++index)
+        processor.triggerFromUi (stroke, 0);
+    processor.processBlock (buffer, midi);
+    expect (processor.getTriggerCounter (stroke) == before + 127,
+            "UI queue overflow must retain the first 127 events and drop the rest");
+    processor.triggerFromUi (stroke, 0, std::numeric_limits<float>::quiet_NaN());
+    processor.triggerFromUi (static_cast<taikor::Articulation> (255), 0);
+    processor.triggerFromUi (stroke, 0, -1.0f);
+    before = processor.getTriggerCounter (stroke);
+    processor.processBlock (buffer, midi);
+    expect (processor.getTriggerCounter (stroke) == before,
+            "invalid UI input passed the queue boundary");
+
+    addNote (0);
+    for (int index = 0; index < 4096; ++index)
+        midi.addEvent (juce::MidiMessage::controllerEvent (1, 7, 0), 0);
+    processor.processBlock (buffer, midi);
+    expect (midi.isEmpty() && peakOf (buffer) == 0.0f
+                && processor.getActiveVoiceCount() == 0,
+            "MIDI work-budget overflow must fail silent and consume the suffix");
+
+    // Host block hints are not a promise about actual callback length. Extra
+    // output channels must be cleared and caller-owned canaries must survive.
+    std::array<std::array<float, 259>, 4> storage;
+    std::array<float*, 4> pointers;
+    for (std::size_t channel = 0; channel < storage.size(); ++channel)
+    {
+        storage[channel].fill (123.0f);
+        pointers[channel] = storage[channel].data() + 1;
+    }
+    juce::AudioBuffer<float> oversized { pointers.data(), 4, 257 };
+    addNote (0);
+    processor.processBlock (oversized, midi);
+    expect (bufferIsFinite (oversized), "a larger callback produced nonfinite audio");
+    for (std::size_t channel = 0; channel < storage.size(); ++channel)
+    {
+        expect (storage[channel].front() == 123.0f && storage[channel].back() == 123.0f,
+                "rendering overwrote an external buffer canary");
+        if (channel >= 2)
+            expect (std::all_of (storage[channel].begin() + 1, storage[channel].end() - 1,
+                                [] (float value) { return value == 0.0f; }),
+                    "an extra output channel was not cleared");
+    }
+
+    processor.triggerFromUi (stroke, 0);
+    processor.releaseResources();
+    processor.prepareToPlay (sampleRate, 32);
+    before = processor.getTriggerCounter (stroke);
+    processor.processBlock (buffer, midi);
+    expect (processor.getTriggerCounter (stroke) == before && peakOf (buffer) == 0.0f,
+            "release/reprepare replayed an old UI audition or tail");
+    processor.releaseResources();
+}
+
+void testParameterAndStateRobustness()
+{
+    TaikorAudioProcessor processor;
+    const auto restoreXml = [&] (const juce::XmlElement& xml)
+    {
+        juce::MemoryBlock binary;
+        processor.copyXmlToBinary (xml, binary);
+        processor.setStateInformation (binary.getData(), static_cast<int> (binary.getSize()));
+    };
+    const auto defaults = processor.snapshotEngineParameters();
+    for (auto* host : processor.getParameters())
+    {
+        auto* parameter = dynamic_cast<juce::RangedAudioParameter*> (host);
+        if (parameter == nullptr)
+            continue;
+        auto* raw = processor.parameters.getRawParameterValue (parameter->paramID);
+        const float original = raw->load();
+        raw->store (std::numeric_limits<float>::quiet_NaN());
+        expect (processor.snapshotEngineParameters() == defaults,
+                "a nonfinite raw parameter escaped the engine snapshot fallback");
+        raw->store (original);
+    }
+
+    for (const auto* bad : { "nan", "inf", "-inf", "1e9999",
+                            "1e99999999999999999999999999999999999999999999999999",
+                            "-1e99999999999999999999999999999999999999999999999999",
+                            "", "garbage", "0.5suffix" })
+    {
+        juce::XmlElement xml { "TAIKOR_STATE" };
+        for (auto* host : processor.getParameters())
+        {
+            auto* parameter = dynamic_cast<juce::RangedAudioParameter*> (host);
+            if (parameter == nullptr)
+                continue;
+            auto* child = xml.createNewChildElement ("PARAM");
+            child->setAttribute ("id", parameter->paramID);
+            child->setAttribute ("value", bad);
+        }
+        restoreXml (xml);
+        for (auto* host : processor.getParameters())
+            if (auto* parameter = dynamic_cast<juce::RangedAudioParameter*> (host))
+                expect (std::abs (parameterValue (processor, parameter->paramID)
+                                    - parameter->convertFrom0to1 (parameter->getDefaultValue()))
+                            < 1.0e-5f,
+                        "invalid state value did not restore its parameter default");
+    }
+
+    for (const auto* value : { "-1e100", "1e100", "-1.7976931348623157e308",
+                              "1.7976931348623157e308" })
+    {
+        juce::XmlElement xml { "TAIKOR_STATE" };
+        for (auto* host : processor.getParameters())
+            if (auto* parameter = dynamic_cast<juce::RangedAudioParameter*> (host))
+            {
+                auto* child = xml.createNewChildElement ("PARAM");
+                child->setAttribute ("id", parameter->paramID);
+                child->setAttribute ("value", value);
+            }
+        restoreXml (xml);
+        for (auto* host : processor.getParameters())
+            if (auto* parameter = dynamic_cast<juce::RangedAudioParameter*> (host))
+            {
+                const auto& range = parameter->getNormalisableRange();
+                const float actual = parameterValue (processor, parameter->paramID);
+                const float endpoint = value[0] == '-' ? range.start : range.end;
+                // JUCE's 0.01-step bipolar ranges can snap +1 one float ULP
+                // below the endpoint when the compiler fuses multiply/add.
+                // Preserve the established host mapping and check tight error
+                // bounds, while still requiring the result inside the range.
+                const float tolerance = 4.0f * std::numeric_limits<float>::epsilon()
+                                      * std::max (1.0f, std::abs (endpoint));
+                expect (std::isfinite (actual) && actual >= range.start && actual <= range.end
+                            && std::abs (actual - endpoint) <= tolerance,
+                        "an extreme finite state value did not clamp to its endpoint: "
+                            + parameter->paramID.toStdString() + " input=" + value
+                            + " actual=" + juce::String (actual, 9).toStdString()
+                            + " expected=" + juce::String (endpoint, 9).toStdString());
+            }
+    }
+
+    juce::XmlElement duplicate { "TAIKOR_STATE" };
+    for (const double value : { 0.25, 0.75 })
+    {
+        auto* child = duplicate.createNewChildElement ("PARAM");
+        child->setAttribute ("id", taikor::parameters::tension);
+        child->setAttribute ("value", value);
+    }
+    duplicate.createNewChildElement ("FUTURE")->setAttribute ("payload", "unknown");
+    restoreXml (duplicate);
+    expect (std::abs (parameterValue (processor, taikor::parameters::tension) - 0.25f) < 1.0e-5f,
+            "duplicate parameter handling must deterministically retain the first value");
+    juce::MemoryBlock canonical;
+    processor.getStateInformation (canonical);
+    const auto canonicalXml = processor.getXmlFromBinary (canonical.getData(),
+                                                          static_cast<int> (canonical.getSize()));
+    expect (canonicalXml != nullptr
+                && canonicalXml->getNumChildElements() == taikor::parameters::parameterCount,
+            "state restore did not produce one canonical entry per known parameter");
+    const auto prior = processor.snapshotEngineParameters();
+    processor.setStateInformation (nullptr, 32);
+    processor.setStateInformation (canonical.getData(), -1);
+    processor.setStateInformation (canonical.getData(), 8);
+    processor.setStateInformation (canonical.getData(), static_cast<int> (canonical.getSize()) - 2);
+    std::vector<char> oversize (1024 * 1024 + 1, 'x');
+    processor.setStateInformation (oversize.data(), static_cast<int> (oversize.size()));
+    juce::XmlElement nested { "TAIKOR_STATE" };
+    auto* parent = &nested;
+    for (int depth = 0; depth < 32; ++depth)
+        parent = parent->createNewChildElement ("NESTED");
+    restoreXml (nested);
+    expect (processor.snapshotEngineParameters() == prior,
+            "invalid, truncated, oversized or deeply nested state changed parameters");
+    processor.setStateInformation (canonical.getData(), static_cast<int> (canonical.getSize()));
+    expect (processor.snapshotEngineParameters() == prior,
+            "canonical save/restore is not stable");
+}
+
 // A pad's spoken description has to follow the octave strip. It used to be
 // composed once, when the accessibility handler was built, so a reader was told
 // whichever note the pad played at the moment it first asked - and after that
@@ -1722,9 +2009,17 @@ void testEditorRendering()
 }
 } // namespace
 
-int main()
+int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI guiInitialiser;
+
+    testProcessorRobustness();
+    testParameterAndStateRobustness();
+    if (argc == 2 && std::string (argv[1]) == "--robustness-only")
+    {
+        std::cout << "Taikor processor robustness failures: " << failureCount << '\n';
+        return failureCount == 0 ? 0 : 1;
+    }
 
     testParameterLayoutAndDefaults();
     testBusLayoutAndTail();

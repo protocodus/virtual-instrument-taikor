@@ -15,7 +15,16 @@ class EnsembleEngine
 {
 public:
     EnsembleEngine();
+    ~EnsembleEngine();
     void prepare (double sampleRate, int maxBlockSize) noexcept;
+    // Lifecycle calls only: no rendering may be in flight while workers are
+    // created or released. Failure to create workers retains the serial path.
+    void prepareOfflineRendering (int workerCount) noexcept;
+    void releaseOfflineRendering() noexcept;
+    // This only selects already-created workers. Never enable for realtime I/O:
+    // offline workers have no host audio workgroup or deadline guarantees.
+    void setOfflineRendering (bool enabled) noexcept { offlineRendering = enabled; }
+    [[nodiscard]] int getOfflineWorkerCount() const noexcept;
     void reset() noexcept;
     void allSoundsOff() noexcept;
     void setParameters (const EngineParameters&) noexcept;
@@ -78,5 +87,9 @@ private:
     std::array<StereoPan, maximumEnsembleSize> pan {}, panTarget {};
     std::array<StereoPan, blockCapacity> leadPan {};
     std::atomic<int> activeVoices { 0 };
+    struct OfflineRenderPool;
+    std::unique_ptr<OfflineRenderPool> offlinePool;
+    bool offlineRendering = false;
+    std::array<std::array<float, blockCapacity>, maximumEnsembleSize> memberLeft {}, memberRight {};
 };
 } // namespace taikor

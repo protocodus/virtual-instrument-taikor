@@ -40,6 +40,7 @@ private:
     std::array<juce::SmoothedValue<float>, roomCount + 1> weights;
     std::array<std::array<float, blockCapacity>, roomCount + 1> gains {};
     std::array<std::array<float, blockCapacity>, roomCount * 2> wet {};
+    std::array<std::array<float, blockCapacity>, 2> sanitizedInput {};
     std::array<bool, roomCount> dirty {};
     std::array<int, roomCount> activeRooms {};
     int activeRoomCount = 0;

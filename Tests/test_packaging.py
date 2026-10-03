@@ -72,6 +72,7 @@ class PackagingTests(unittest.TestCase):
             (build / "CMakeCache.txt").write_text("CMAKE_PROJECT_VERSION:STATIC=0.3.2\n")
             artefacts = build / "Taikor_artefacts/Release"
             names = ("VST3/Taikor.vst3/Contents/x86_64-linux/Taikor.so",
+                     "VST3/Taikor.vst3/Contents/Resources/moduleinfo.json",
                      "CLAP/Taikor.clap", "Standalone/Taikor")
             for name in names:
                 path = artefacts / name
@@ -87,6 +88,17 @@ class PackagingTests(unittest.TestCase):
                 for name in IR_LICENSES:
                     self.assertEqual(contents.extractfile(name).read(),
                                      (ROOT / "ThirdParty" / name).read_bytes())
+
+    def test_linux_package_rejects_ambiguous_project_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            build = Path(directory)
+            (build / "CMakeCache.txt").write_text(
+                "CMAKE_PROJECT_VERSION:STATIC=0.3.2\n"
+                "CMAKE_PROJECT_VERSION:STATIC=0.3.3\n")
+            result = run("bash", str(SCRIPTS / "package-linux.sh"),
+                         env=dict(os.environ, BUILD_DIR=str(build)), check=False)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("exactly one CMake project version", result.stderr)
 
     def test_macos_license_list_includes_unaltered_ir_licenses(self):
         # Exercise the actual declaration without signing or packaging binaries.

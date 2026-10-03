@@ -1,10 +1,111 @@
 #include "EnsembleEngine.h"
 
 #include <algorithm>
+#include <cfenv>
 #include <cmath>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+#include <vector>
 
 namespace taikor
 {
+// Offline only. The calling thread participates in the work and waits for all
+// helpers before ordered mixing or any parameter/MIDI/lifecycle mutation.
+// There are no detached jobs, and no worker ever touches another player's DSP.
+struct EnsembleEngine::OfflineRenderPool
+{
+    using Job = void (*) (void*, int) noexcept;
+
+    explicit OfflineRenderPool (int count)
+    {
+        try
+        {
+            workers.reserve (static_cast<std::size_t> (count));
+            for (int index = 0; index < count; ++index)
+                workers.emplace_back ([this] { work(); });
+        }
+        catch (...)
+        {
+            stop();
+            throw;
+        }
+    }
+
+    ~OfflineRenderPool() { stop(); }
+
+    void stop() noexcept
+    {
+        {
+            const std::lock_guard lock (mutex);
+            stopping = true;
+        }
+        available.notify_all();
+        for (auto& worker : workers)
+            if (worker.joinable())
+                worker.join();
+    }
+
+    void run (void* nextContext, Job nextJob, int count) noexcept
+    {
+        {
+            const std::lock_guard lock (mutex);
+            context = nextContext;
+            job = nextJob;
+            jobCount = count;
+            next.store (0, std::memory_order_relaxed);
+            remaining = static_cast<int> (workers.size());
+            // Inherit the caller's rounding/denormal mode, including a host's
+            // scoped floating-point controls, rather than the prepare thread's.
+            environmentValid = std::fegetenv (&environment) == 0;
+            ++generation;
+        }
+        available.notify_all();
+        execute();
+        std::unique_lock lock (mutex);
+        completed.wait (lock, [this] { return remaining == 0; });
+    }
+
+    void execute() noexcept
+    {
+        for (int index = next.fetch_add (1, std::memory_order_relaxed);
+             index < jobCount; index = next.fetch_add (1, std::memory_order_relaxed))
+            job (context, index);
+    }
+
+    void work() noexcept
+    {
+        std::uint64_t observed = 0;
+        for (;;)
+        {
+            std::unique_lock lock (mutex);
+            available.wait (lock, [this, observed]
+                { return stopping || generation != observed; });
+            if (stopping)
+                return;
+            observed = generation;
+            lock.unlock();
+            if (environmentValid)
+                (void) std::fesetenv (&environment);
+            execute();
+            lock.lock();
+            if (--remaining == 0)
+                completed.notify_one();
+        }
+    }
+
+    std::vector<std::thread> workers;
+    std::mutex mutex;
+    std::condition_variable available, completed;
+    std::atomic<int> next { 0 };
+    int jobCount = 0, remaining = 0;
+    std::uint64_t generation = 0;
+    void* context = nullptr;
+    Job job = nullptr;
+    std::fenv_t environment {};
+    bool environmentValid = false, stopping = false;
+};
+
 EnsembleEngine::EnsembleEngine()
 {
     for (int member = 0; member < maximumEnsembleSize; ++member)
@@ -12,6 +113,38 @@ EnsembleEngine::EnsembleEngine()
         players[member] = std::make_unique<TaikoEngine>();
         players[member]->setEnsembleMember (member);
     }
+}
+
+EnsembleEngine::~EnsembleEngine() = default;
+
+void EnsembleEngine::prepareOfflineRendering (int workerCount) noexcept
+{
+    releaseOfflineRendering();
+    const auto cores = std::thread::hardware_concurrency();
+    const int availableWorkers = cores > 0 ? static_cast<int> (std::min (cores - 1u, 3u)) : 3;
+    workerCount = std::clamp (workerCount, 0, availableWorkers);
+    if (workerCount == 0)
+        return;
+    try
+    {
+        offlinePool = std::make_unique<OfflineRenderPool> (workerCount);
+    }
+    catch (...)
+    {
+        // Resource exhaustion must not prevent the instrument from rendering.
+        offlinePool.reset();
+    }
+}
+
+void EnsembleEngine::releaseOfflineRendering() noexcept
+{
+    offlineRendering = false;
+    offlinePool.reset();
+}
+
+int EnsembleEngine::getOfflineWorkerCount() const noexcept
+{
+    return offlinePool ? static_cast<int> (offlinePool->workers.size()) : 0;
 }
 
 void EnsembleEngine::prepare (double sampleRate, int maxBlockSize) noexcept
@@ -90,10 +223,7 @@ EngineParameters EnsembleEngine::memberParameters (int member) const noexcept
 void EnsembleEngine::setParameters (const EngineParameters& next) noexcept
 {
     const int previousSize = parameters.ensembleSize;
-    parameters = next;
-    parameters.ensembleSize = std::clamp (next.ensembleSize, 1, maximumEnsembleSize);
-    parameters.ensembleVariation = std::isnan (next.ensembleVariation)
-        ? 0.0f : std::clamp (next.ensembleVariation, 0.0f, 1.0f);
+    parameters = TaikoEngine::sanitiseParameters (next);
     for (int member = 0; member < maximumEnsembleSize; ++member)
         players[member]->setParameters (memberParameters (member));
     const bool silent = pendingCount == 0 && getActiveVoiceCount() == 0;
@@ -250,19 +380,46 @@ void EnsembleEngine::process (float* left, float* right, int samples) noexcept
         bool extraActive = false;
         bool extraSilent = true;
         const auto silent = [] (float value) { return value == 0.0f; };
+        std::array<bool, maximumEnsembleSize> wasActive {};
+        bool parallel = false;
+        if (offlineRendering && offlinePool && count >= 64)
+        {
+            int activeCompanions = 0;
+            for (int member = 1; member < maximumEnsembleSize; ++member)
+            {
+                wasActive[member] = players[member]->getActiveVoiceCount() > 0;
+                activeCompanions += wasActive[member] ? 1 : 0;
+            }
+            parallel = activeCompanions >= 2;
+            if (parallel)
+            {
+                struct Batch { EnsembleEngine* engine; int samples; } batch { this, count };
+                offlinePool->run (&batch, [] (void* context, int index) noexcept
+                {
+                    const auto& work = *static_cast<Batch*> (context);
+                    auto& engine = *work.engine;
+                    const auto member = static_cast<std::size_t> (index + 1);
+                    engine.players[member]->processRaw (engine.memberLeft[member].data(),
+                        engine.memberRight[member].data(), work.samples);
+                }, maximumEnsembleSize - 1);
+            }
+        }
         for (int member = 1; member < maximumEnsembleSize; ++member)
         {
             auto& player = *players[member];
-            const bool memberActive = player.getActiveVoiceCount() > 0;
+            const bool memberActive = parallel ? wasActive[member] : player.getActiveVoiceCount() > 0;
             extraActive = extraActive || memberActive;
             // Even silent players advance held-palm/pitch smoothers. Removing
             // a player from the size control lets their existing tail finish.
-            player.processRaw (scratchLeft.data(), scratchRight.data(), count);
+            auto* rawLeft = parallel ? memberLeft[member].data() : scratchLeft.data();
+            auto* rawRight = parallel ? memberRight[member].data() : scratchRight.data();
+            if (! parallel)
+                player.processRaw (rawLeft, rawRight, count);
             // The published count covers ringing drums, so also check the raw
             // samples before skipping a possible remaining contact transient.
             if (! memberActive
-                && std::all_of (scratchLeft.begin(), scratchLeft.begin() + count, silent)
-                && std::all_of (scratchRight.begin(), scratchRight.begin() + count, silent))
+                && std::all_of (rawLeft, rawLeft + count, silent)
+                && std::all_of (rawRight, rawRight + count, silent))
             {
                 // A silent member may still be moving after a size change.
                 // Keep that recurrence exact; a settled matrix needs no work.
@@ -278,9 +435,9 @@ void EnsembleEngine::process (float* left, float* right, int samples) noexcept
             for (int sample = 0; sample < count; ++sample)
             {
                 pan[member].approach (panTarget[member], gainSmoothing);
-                pan[member].apply (scratchLeft[sample], scratchRight[sample]);
-                extraLeft[sample] += scratchLeft[sample];
-                extraRight[sample] += scratchRight[sample];
+                pan[member].apply (rawLeft[sample], rawRight[sample]);
+                extraLeft[sample] += rawLeft[sample];
+                extraRight[sample] += rawRight[sample];
             }
         }
         const float target = 1.0f / std::sqrt (static_cast<float> (parameters.ensembleSize));

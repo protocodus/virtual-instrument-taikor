@@ -16,7 +16,12 @@ IRReverb::IRReverb()
 
 void IRReverb::prepare (double sampleRate, int maximumBlockSize, int room, float mix)
 {
+    // A re-prepare is a hard lifecycle boundary. Discard old convolution
+    // history before replacing the impulse responses, so stale dirty flags or
+    // tails cannot survive a sample-rate/device change.
+    clearHistory();
     prepared = false;
+    bypassed = false;
     const double rate = std::isfinite (sampleRate)
         ? std::clamp (sampleRate, 8000.0, 384000.0) : 48000.0;
     chunkCapacity = std::clamp (maximumBlockSize, 1, blockCapacity);
@@ -39,11 +44,16 @@ void IRReverb::prepare (double sampleRate, int maximumBlockSize, int room, float
         // JUCE guarantees the preceding IR is ready synchronously on prepare.
         convolution.prepare (spec);
         jassert (convolution.getLatency() == 0);
-        tailLengthSamples = std::max (tailLengthSamples, convolution.getCurrentIRSize() + 1);
+        tailLengthSamples = std::max (tailLengthSamples,
+                                      std::max (0, convolution.getCurrentIRSize()) + 1);
     }
     limiter.prepare (rate);
     for (auto& weight : weights)
         weight.reset (rate, 0.020);
+    // Do not rely on SmoothedValue retaining its previous target across a
+    // re-prepare. Reapply even when the public values did not change.
+    selectedRoom = -1;
+    selectedMix = -1.0f;
     setParameters (room, mix);
     prepared = true;
     reset();
@@ -118,10 +128,47 @@ void IRReverb::process (float* left, float* right, int numSamples) noexcept
             return;
         }
 
+        bool hasInvalidInput = false;
+        for (int sample = 0; sample < count; ++sample)
+        {
+            if (! std::isfinite (left[offset + sample])
+                || ! std::isfinite (right[offset + sample]))
+            {
+                hasInvalidInput = true;
+                break;
+            }
+        }
+
+        const float* inputLeft = left + offset;
+        const float* inputRight = right + offset;
+        if (hasInvalidInput)
+        {
+            // Never allow NaN/Inf to enter a convolution's persistent FFT
+            // history. The normal finite-input path continues to read the
+            // caller's buffers directly, avoiding a copy on every block.
+            for (int sample = 0; sample < count; ++sample)
+            {
+                const auto position = static_cast<std::size_t> (sample);
+                const float inLeft = left[offset + sample];
+                const float inRight = right[offset + sample];
+                sanitizedInput[0][position] = std::isfinite (inLeft) ? inLeft : 0.0f;
+                sanitizedInput[1][position] = std::isfinite (inRight) ? inRight : 0.0f;
+                // Normalize the original buffers too, so a block that becomes
+                // silent after sanitization cannot return early with NaN/Inf
+                // still visible to the host.
+                if (! std::isfinite (inLeft))
+                    left[offset + sample] = 0.0f;
+                if (! std::isfinite (inRight))
+                    right[offset + sample] = 0.0f;
+            }
+            inputLeft = sanitizedInput[0].data();
+            inputRight = sanitizedInput[1].data();
+        }
+
         // Ordinary audio ends in a nonzero sample: locating the last input
         // backwards avoids walking a whole sounding block for its tail clock.
         int lastInput = count - 1;
-        while (lastInput >= 0 && left[offset + lastInput] == 0.0f && right[offset + lastInput] == 0.0f)
+        while (lastInput >= 0 && inputLeft[lastInput] == 0.0f && inputRight[lastInput] == 0.0f)
             --lastInput;
         if (lastInput < 0 && tailRemaining == 0)
         {
@@ -142,7 +189,7 @@ void IRReverb::process (float* left, float* right, int numSamples) noexcept
                 for (int sample = 0; sample < count; ++sample)
                     gains[index][static_cast<std::size_t> (sample)] = weights[index].getNextValue();
 
-        const float* inputs[] { left + offset, right + offset };
+        const float* inputs[] { inputLeft, inputRight };
         const juce::dsp::AudioBlock<const float> input { inputs, 2, static_cast<std::size_t> (count) };
         for (int roomIndex = 0; roomIndex < activeRoomCount; ++roomIndex)
         {
@@ -163,8 +210,8 @@ void IRReverb::process (float* left, float* right, int numSamples) noexcept
             const float dry = ramping ? gains[0][position] : dryGain;
             if (dry == 1.0f)
                 continue;
-            float l = left[offset + sample] * dry;
-            float r = right[offset + sample] * dry;
+            float l = inputLeft[position] * dry;
+            float r = inputRight[position] * dry;
             for (int roomIndex = 0; roomIndex < activeRoomCount; ++roomIndex)
             {
                 const int index = activeRooms[static_cast<std::size_t> (roomIndex)];
