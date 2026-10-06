@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 import wave
 from zipfile import ZipFile
+from ReleaseMetadataTests import write_fixture
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,20 +33,20 @@ def run(*args, cwd=None, env=None, check=True):
 class PackagingTests(unittest.TestCase):
     def test_build_labels_and_invalid_input(self):
         with patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(build_number(), "local")
-            self.assertEqual(package_prefix("0.3.2"), "Taikor-0.3.2-build-local")
+            self.assertEqual(build_number(), "1")
+            self.assertEqual(package_prefix("0.3.2"), "Taikor-0.3.2-build.1")
         for value in ("1", "42", "100001"):
-            with patch.dict(os.environ, {"GITHUB_RUN_NUMBER": value}):
-                self.assertEqual(package_prefix("0.3.2"), f"Taikor-0.3.2-build-{value}")
+            with patch.dict(os.environ, {"BUILD_NUMBER": value}):
+                self.assertEqual(package_prefix("0.3.2"), f"Taikor-0.3.2-build.{value}")
         for value in ("", "0", "../123", "42/filename", " 42", "42\n"):
-            with patch.dict(os.environ, {"GITHUB_RUN_NUMBER": value}):
+            with patch.dict(os.environ, {"BUILD_NUMBER": value}):
                 with self.assertRaises(ValueError):
                     package_prefix("0.3.2")
 
-    def test_windows_archive_names_contents_and_stale_cleanup(self):
+    def test_windows_archive_names_contents_and_preserved_history(self):
         with tempfile.TemporaryDirectory() as directory:
             build = Path(directory)
-            (build / "CMakeCache.txt").write_text("CMAKE_PROJECT_VERSION:STATIC=0.3.2\n")
+            write_fixture(build, "Windows")
             artefacts = build / "Taikor_artefacts/Release"
             names = ("VST3/Taikor.vst3/Contents/x86_64-win/Taikor.vst3",
                      "VST3/Taikor.vst3/Contents/Resources/moduleinfo.json",
@@ -53,39 +54,41 @@ class PackagingTests(unittest.TestCase):
             for name in names:
                 path = artefacts / name
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(b"fixture binary")
+
+                if not path.exists(): path.write_bytes(b"fixture resource")
             (build / "dist").mkdir()
-            (build / "dist/Taikor-0.3.2-build-41-Windows-x64.zip").write_bytes(b"stale")
-            with patch.dict(os.environ, {"GITHUB_RUN_NUMBER": "42"}):
+            (build / "dist/Taikor-0.3.2-build.41-Windows-x64.zip").write_bytes(b"stale")
+            with patch.dict(os.environ, {"BUILD_NUMBER": "42", "DIST_ROOT": str(build / "dist")}):
                 archive = windows.package(build, "Release")
-            self.assertEqual(archive.name, "Taikor-0.3.2-build-42-Windows-x64.zip")
-            self.assertEqual(list((build / "dist").iterdir()), [archive])
+            self.assertEqual(archive.name, "Taikor-0.3.2-build.42-Windows-x64.zip")
+            self.assertEqual((build / "dist/Taikor-0.3.2-build.41-Windows-x64.zip").read_bytes(), b"stale")
             with ZipFile(archive) as contents:
                 for name in (*names, "LICENSE", "THIRD_PARTY_NOTICES.md"):
                     self.assertGreater(contents.getinfo(name).file_size, 0)
                 for name in IR_LICENSES:
-                    self.assertEqual(contents.read(name), (ROOT / "ThirdParty" / name).read_bytes())
+                    self.assertEqual(contents.read("ThirdParty/" + name), (ROOT / "ThirdParty" / name).read_bytes())
 
     def test_linux_archive_uses_same_naming_and_contains_binaries(self):
         with tempfile.TemporaryDirectory() as directory:
             build = Path(directory)
-            (build / "CMakeCache.txt").write_text("CMAKE_PROJECT_VERSION:STATIC=0.3.2\n")
+            write_fixture(build, "Linux")
             artefacts = build / "Taikor_artefacts/Release"
             names = ("VST3/Taikor.vst3/Contents/x86_64-linux/Taikor.so",
                      "CLAP/Taikor.clap", "Standalone/Taikor")
             for name in names:
                 path = artefacts / name
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(b"fixture binary")
+
+                if not path.exists(): path.write_bytes(b"fixture resource")
                 path.chmod(0o755)
-            environment = dict(os.environ, GITHUB_RUN_NUMBER="42", BUILD_DIR=str(build))
+            environment = dict(os.environ, BUILD_NUMBER="42", BUILD_DIR=str(build), DIST_ROOT=str(build / "dist"))
             run("bash", str(SCRIPTS / "package-linux.sh"), env=environment)
-            archive = build / "dist/Taikor-0.3.2-build-42-Linux-x64.tar.gz"
+            archive = build / "dist/0.3.2/build.42/Linux-x64/Taikor-0.3.2-build.42-Linux-x64.tar.gz"
             with tarfile.open(archive) as contents:
                 for name in (*names, "LICENSE", "THIRD_PARTY_NOTICES.md"):
                     self.assertGreater(contents.getmember(name).size, 0)
                 for name in IR_LICENSES:
-                    self.assertEqual(contents.extractfile(name).read(),
+                    self.assertEqual(contents.extractfile("ThirdParty/" + name).read(),
                                      (ROOT / "ThirdParty" / name).read_bytes())
 
     def test_macos_license_list_includes_unaltered_ir_licenses(self):
@@ -111,11 +114,11 @@ class PackagingTests(unittest.TestCase):
             dist.mkdir()
             for suffix in ("macOS-universal.zip", "macOS-universal.pkg",
                            "Linux-x64.tar.gz", "Windows-x64.zip"):
-                (dist / f"Taikor-0.3.2-build-42-{suffix}").write_bytes(b"package")
-            environment = dict(os.environ, GITHUB_RUN_NUMBER="42")
+                (dist / f"Taikor-0.3.2-build.42-{suffix}").write_bytes(b"package")
+            environment = dict(os.environ, BUILD_NUMBER="42")
             run("bash", "-c", script, cwd=directory, env=environment)
-            correct = dist / "Taikor-0.3.2-build-42-Windows-x64.zip"
-            correct.rename(dist / "Taikor-0.3.2-build-41-Windows-x64.zip")
+            correct = dist / "Taikor-0.3.2-build.42-Windows-x64.zip"
+            correct.rename(dist / "Taikor-0.3.2-build.41-Windows-x64.zip")
             self.assertNotEqual(run("bash", "-c", script, cwd=directory,
                                    env=environment, check=False).returncode, 0)
 
@@ -148,11 +151,11 @@ class PackagingTests(unittest.TestCase):
                     audio.setparams((2, 2, 48000, 0, "NONE", "not compressed"))
                     audio.writeframes(b"\0\0\0\0")
             url = "https://github.com/example/taikor/actions/runs/123456/artifacts/789012"
-            environment = dict(os.environ, GITHUB_RUN_NUMBER="42", GITHUB_REPOSITORY="example/taikor")
+            environment = dict(os.environ, BUILD_NUMBER="42", GITHUB_REPOSITORY="example/taikor")
             # A failed metadata validation must not publish the generated assets.
             rejected = run("bash", str(SCRIPTS / "commit-generated-assets.sh"), source,
                            str(media), "origin", url, cwd=repo,
-                           env=dict(environment, GITHUB_RUN_NUMBER="../42"), check=False)
+                           env=dict(environment, BUILD_NUMBER="../42"), check=False)
             self.assertNotEqual(rejected.returncode, 0)
             self.assertEqual(run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip(), source)
             run("bash", str(SCRIPTS / "commit-generated-assets.sh"), source,

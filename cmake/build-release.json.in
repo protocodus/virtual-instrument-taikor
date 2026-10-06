@@ -1,0 +1,8 @@
+{
+  "product": "@PROJECT_NAME@",
+  "version": "@PROJECT_VERSION@",
+  "build_number": "@PROTOCODUS_BUILD_NUMBER@",
+  "source_revision": "@PROTOCODUS_SOURCE_REVISION@",
+  "source_dirty": @PROTOCODUS_SOURCE_DIRTY@,
+  "binary_identity": "@PROTOCODUS_BINARY_IDENTITY@"
+}

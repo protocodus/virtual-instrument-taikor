@@ -14,6 +14,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  BUILD_NUMBER: ${{ github.run_id }}.${{ github.run_attempt }}
+  DIST_ROOT: ${{ github.workspace }}/dist
+
 jobs:
   dsp-tests:
     name: DSP tests (JUCE-free, Linux)
@@ -83,13 +87,21 @@ jobs:
             --target Taikor_VST3 Taikor_CLAP Taikor_Standalone
 
       - name: Package Linux VST3, CLAP and standalone
-        run: BUILD_DIR=build-dsp bash scripts/package-linux.sh
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_DIR=build-dsp bash scripts/package-linux.sh
+          arch="x64"
+          echo "version=$(python scripts/release_metadata.py --build-dir build-dsp --field version)" >> "$GITHUB_OUTPUT"
+          echo "arch=$arch" >> "$GITHUB_OUTPUT"
+          echo "dist=$(python scripts/release_metadata.py --build-dir build-dsp --platform Linux --arch "$arch" --dist)" >> "$GITHUB_OUTPUT"
 
       - name: Upload Linux package
         uses: actions/upload-artifact@v4
         with:
-          name: ci-linux-build-${{ github.run_number }}
-          path: build-dsp/dist/Taikor-*-build-${{ github.run_number }}-Linux-x64.tar.gz
+          name: Taikor-${{ steps.release.outputs.version }}-build.${{ env.BUILD_NUMBER }}-Linux-${{ steps.release.outputs.arch }}
+          path: ${{ steps.release.outputs.dist }}/*
           if-no-files-found: error
           retention-days: 7
 
@@ -161,12 +173,20 @@ jobs:
           cmake --build build-win --config Release --parallel --target Taikor_VST3 Taikor_CLAP Taikor_Standalone
 
       - name: Package Windows VST3, CLAP and standalone
-        run: python scripts/package-windows.py --build-dir build-win
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/package-windows.py --build-dir build-win
+          arch="x64"
+          echo "version=$(python scripts/release_metadata.py --build-dir build-win --field version)" >> "$GITHUB_OUTPUT"
+          echo "arch=$arch" >> "$GITHUB_OUTPUT"
+          echo "dist=$(python scripts/release_metadata.py --build-dir build-win --platform Windows --arch "$arch" --dist)" >> "$GITHUB_OUTPUT"
 
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
         with:
-          name: ci-windows-build-${{ github.run_number }}
-          path: build-win/dist/Taikor-*-build-${{ github.run_number }}-Windows-x64.zip
+          name: Taikor-${{ steps.release.outputs.version }}-build.${{ env.BUILD_NUMBER }}-Windows-${{ steps.release.outputs.arch }}
+          path: ${{ steps.release.outputs.dist }}/*
           if-no-files-found: error
           retention-days: 7

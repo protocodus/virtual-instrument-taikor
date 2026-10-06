@@ -10,7 +10,8 @@ APP_SIGN_IDENTITY="${APP_SIGN_IDENTITY:--}"
 INSTALLER_SIGN_IDENTITY="${INSTALLER_SIGN_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 ARTIFACT_DIR="${BUILD_DIR}/Taikor_artefacts/${CONFIG}"
-DIST_DIR="${BUILD_DIR}/dist"
+RELEASE_METADATA="${SCRIPT_DIR}/release_metadata.py"
+BUILD_NUMBER="$(python3 "${RELEASE_METADATA}" --build-dir "${BUILD_DIR}" --field build_number)"
 PACKAGE_ROOT="${BUILD_DIR}/package-root"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -69,7 +70,7 @@ if [[ -n "${VERSION_OVERRIDE}" && "${VERSION_OVERRIDE}" != "${VERSION}" ]]; then
     echo "error: VERSION=${VERSION_OVERRIDE} does not match bundle version ${VERSION}" >&2
     exit 1
 fi
-PACKAGE_PREFIX="$(python3 "${SCRIPT_DIR}/release_metadata.py" --version "${VERSION}")"
+PACKAGE_PREFIX="Taikor-${VERSION}-build.${BUILD_NUMBER}"
 
 VST3_ARCHS="$(lipo -archs "${VST3}/Contents/MacOS/Taikor")"
 AU_ARCHS="$(lipo -archs "${AU}/Contents/MacOS/Taikor")"
@@ -89,7 +90,12 @@ if [[ "${APP_ARCHS}" == *arm64* && "${APP_ARCHS}" == *x86_64* ]]; then
     ARTIFACT_ARCH="universal"
 else
     ARTIFACT_ARCH="${APP_ARCHS// /-}"
+    [[ "${ARTIFACT_ARCH}" != "x86_64" ]] || ARTIFACT_ARCH="x64"
 fi
+
+python3 "${RELEASE_METADATA}" --build-dir "${BUILD_DIR}" --config "${CONFIG}" \
+    --platform macOS --arch "${ARTIFACT_ARCH}" --verify --require-empty >/dev/null
+DIST_DIR="$(python3 "${RELEASE_METADATA}" --build-dir "${BUILD_DIR}" --platform macOS --arch "${ARTIFACT_ARCH}" --dist)"
 
 case "${PACKAGE_ROOT}" in
     "${BUILD_DIR}"/*) ;;
@@ -165,11 +171,6 @@ ZIP_PATH="${DIST_DIR}/${PACKAGE_PREFIX}-macOS-${ARTIFACT_ARCH}.zip"
 PKG_UNSIGNED="${DIST_DIR}/${PACKAGE_PREFIX}-unsigned.pkg"
 PKG_FINAL="${DIST_DIR}/${PACKAGE_PREFIX}-macOS-${ARTIFACT_ARCH}.pkg"
 
-# Leave exactly one Taikor release set in dist, avoiding stale version or
-# architecture names in wildcard-driven CI publication.
-rm -f "${DIST_DIR}/Taikor-"*-macOS-*.zip
-rm -f "${DIST_DIR}/Taikor-"*-macOS-*.pkg
-rm -f "${DIST_DIR}/Taikor-"*-unsigned.pkg
 
 COPYFILE_DISABLE=1 pkgbuild \
     --root "${PACKAGE_ROOT}" \
@@ -210,3 +211,6 @@ echo
 echo "Packaging complete:"
 echo "  ${ZIP_PATH}"
 echo "  ${PKG_FINAL}"
+
+python3 "${RELEASE_METADATA}" --build-dir "${BUILD_DIR}" --config "${CONFIG}" \
+    --platform macOS --arch "${ARTIFACT_ARCH}" --finalize "${PKG_FINAL}" "${ZIP_PATH}"

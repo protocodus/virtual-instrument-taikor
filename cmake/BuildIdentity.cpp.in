@@ -1,0 +1,10 @@
+// Compiled into each wrapper so packaging can reject stale binaries.
+#if defined(_WIN32)
+ #define PROTOCODUS_ID_EXPORT __declspec(dllexport)
+#else
+ #define PROTOCODUS_ID_EXPORT __attribute__((visibility("default"), used))
+#endif
+extern "C" PROTOCODUS_ID_EXPORT const char* protocodusBuildIdentity()
+{
+    return "@PROTOCODUS_BINARY_IDENTITY@";
+}

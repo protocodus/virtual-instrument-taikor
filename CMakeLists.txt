@@ -32,6 +32,8 @@ endif()
 # Standalone) compile C/Objective-C sources with non-Xcode generators too.
 project(Taikor VERSION 1.0.0 LANGUAGES C CXX)
 
+include(cmake/BuildIdentity.cmake)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -132,6 +134,7 @@ if(TAIKOR_BUILD_PLUGIN)
 
     juce_add_plugin(Taikor
         VERSION ${PROJECT_VERSION}
+        BUILD_VERSION ${PROTOCODUS_BUILD_NUMBER}
         COMPANY_NAME "Taikor Audio"
         BUNDLE_ID "audio.taikor.synth"
         PLUGIN_MANUFACTURER_CODE Tkor
@@ -156,20 +159,11 @@ if(TAIKOR_BUILD_PLUGIN)
         CLAP_FEATURES instrument synthesizer drum stereo)
 
     juce_generate_juce_header(Taikor)
+    target_sources(Taikor PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/BuildIdentity.cpp")
 
-    # Generate at build time, not configure time: an incremental rebuild must
-    # carry a new visible identity too. All wrappers share the editor compiled
-    # into Taikor, so the VST3 and standalone from one build display the same ID.
     set(TAIKOR_BUILD_INFO_DIR "${CMAKE_CURRENT_BINARY_DIR}/TaikorBuildInfo")
-    add_custom_target(TaikorBuildIdentity
-        COMMAND "${CMAKE_COMMAND}"
-            "-DTAIKOR_BUILD_INFO_DIR=${TAIKOR_BUILD_INFO_DIR}"
-            "-DTAIKOR_BUILD_VERSION=${PROJECT_VERSION}"
-            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateTaikorBuildInfo.cmake"
-        BYPRODUCTS "${TAIKOR_BUILD_INFO_DIR}/TaikorBuildInfo.h"
-        COMMENT "Generating Taikor build identity"
-        VERBATIM)
-    add_dependencies(Taikor TaikorBuildIdentity)
+    file(MAKE_DIRECTORY "${TAIKOR_BUILD_INFO_DIR}")
+    configure_file(cmake/TaikorBuildInfo.h.in "${TAIKOR_BUILD_INFO_DIR}/TaikorBuildInfo.h" @ONLY)
     target_include_directories(Taikor PRIVATE "${TAIKOR_BUILD_INFO_DIR}")
 
     juce_add_binary_data(TaikorAssets
@@ -400,5 +394,13 @@ if(BUILD_TESTING)
 
         add_test(NAME Taikor.PluginProcessor COMMAND TaikorPluginProcessorTests)
         set_tests_properties(Taikor.PluginProcessor PROPERTIES TIMEOUT 60)
+    endif()
+endif()
+
+if(BUILD_TESTING)
+    find_package(Python3 QUIET COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME Taikor.ReleaseMetadata
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/Tests/ReleaseMetadataTests.py")
     endif()
 endif()

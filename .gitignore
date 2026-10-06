@@ -34,3 +34,6 @@ DerivedData/
 # Python tooling caches
 __pycache__/
 *.pyc
+
+# Versioned distributable packages
+/dist/

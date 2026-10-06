@@ -1073,7 +1073,7 @@ TaikorAudioProcessorEditor::TaikorAudioProcessorEditor (TaikorAudioProcessor& pr
     buildLabel.setText ("v" TAIKOR_BUILD_VERSION " / build " TAIKOR_BUILD_NUMBER,
                         juce::dontSendNotification);
     buildLabel.setName ("Version and build number");
-    buildLabel.setTooltip ("Build time (UTC): " TAIKOR_BUILD_NUMBER);
+    buildLabel.setTooltip ("Package build: " TAIKOR_BUILD_NUMBER);
     buildLabel.setColour (juce::Label::textColourId, mutedText);
     buildLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (buildLabel);
