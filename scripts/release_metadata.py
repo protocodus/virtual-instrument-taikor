@@ -145,6 +145,7 @@ def finalize(build_dir, config, platform, arch, files):
     dest = distribution(identity, platform, arch)
     stem = package_prefix(identity['version'], identity['build_number']) + f'-{platform}-{arch}'
     packages = []
+    packaged_binaries = []
     for item in files:
         path = Path(item).resolve()
         if path.parent != dest.resolve() or not path.name.startswith(stem + '.') or not path.is_file() or path.stat().st_size == 0:
@@ -155,9 +156,25 @@ def finalize(build_dir, config, platform, arch, files):
         elif path.name.endswith('.tar.gz'):
             with tarfile.open(path, 'r:gz') as archive:
                 if not archive.getmembers(): raise ValueError(f'Empty tarball: {path}')
+        if path.suffix == '.zip' or path.name.endswith('.tar.gz'):
+            archive = zipfile.ZipFile(path) if path.suffix == '.zip' else tarfile.open(path, 'r:gz')
+            with archive:
+                for record in binaries:
+                    source = Path(record['binary'])
+                    if platform == 'macOS':
+                        prefix = {'VST3': 'Library/Audio/Plug-Ins/VST3', 'AU': 'Library/Audio/Plug-Ins/Components', 'CLAP': 'Library/Audio/Plug-Ins/CLAP', 'Standalone': 'Applications'}[record['format']]
+                        member = prefix + '/' + str(source.relative_to(Path(record['bundle']).parent)).replace('\\', '/')
+                    else:
+                        member = str(source.relative_to(Path(build_dir) / f'{PRODUCT}_artefacts' / config)).replace('\\', '/')
+                    data = archive.read(member) if path.suffix == '.zip' else archive.extractfile(member).read()
+                    if any(identity['binary_identity'].encode('ascii') not in part for part in binary_slices(data)):
+                        raise ValueError(f'Packaged binary identity mismatch: {member}')
+                    if binary_architectures(data) != record['architectures']:
+                        raise ValueError(f'Packaged binary architecture mismatch: {member}')
+                    packaged_binaries.append({'package': path.name, 'path': member, 'sha256': hashlib.sha256(data).hexdigest(), 'architectures': record['architectures']})
         packages.append({'path': path.name, 'sha256': digest(path), 'bytes': path.stat().st_size})
     manifest = dest / (stem + '.manifest.json')
-    manifest.write_text(json.dumps({**identity, 'platform': platform, 'architecture': arch, 'configuration': config, 'binaries': binaries, 'packages': packages}, indent=2) + '\n')
+    manifest.write_text(json.dumps({**identity, 'platform': platform, 'architecture': arch, 'configuration': config, 'compiler_binaries': binaries, 'packaged_binaries': packaged_binaries, 'packages': packages}, indent=2) + '\n')
     sums = [f"{p['sha256']}  {p['path']}" for p in packages]
     sums.append(f'{digest(manifest)}  {manifest.name}')
     (dest / (stem + '.sha256')).write_text('\n'.join(sums) + '\n')

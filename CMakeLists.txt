@@ -157,6 +157,10 @@ if(TAIKOR_BUILD_PLUGIN)
     clap_juce_extensions_plugin(TARGET Taikor
         CLAP_ID "audio.taikor.synth"
         CLAP_FEATURES instrument synthesizer drum stereo)
+    if(APPLE)
+        set_target_properties(Taikor_CLAP PROPERTIES
+            MACOSX_BUNDLE_BUNDLE_VERSION "${PROTOCODUS_BUILD_NUMBER}")
+    endif()
 
     juce_generate_juce_header(Taikor)
     target_sources(Taikor PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/BuildIdentity.cpp")
