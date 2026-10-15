@@ -39,6 +39,12 @@ public:
 
         const auto peak = static_cast<double> (
             std::max (std::abs (left), std::abs (right)));
+
+        // Avoid touching ordinary samples at unity gain. Besides being a
+        // cheap bypass, this preserves their exact bit pattern.
+        if (gain == 1.0 && peak <= ceiling)
+            return;
+
         const double requiredGain = peak > ceiling ? ceiling / peak : 1.0;
         if (requiredGain <= gain && requiredGain < 1.0)
         {

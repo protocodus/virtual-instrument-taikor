@@ -5,6 +5,15 @@
 #include <atomic>
 #include <cmath>
 #include <cstring>
+#include <new>
+
+#if defined(TAIKOR_ENABLE_PAIRED_MODAL_ADVANCE) && defined(__APPLE__) \
+    && defined(__aarch64__) && defined(__clang__) && ! TAIKOR_USE_PACKED_MODAL_BANK
+ #include <arm_neon.h>
+ #define TAIKOR_USE_PAIRED_MODAL_ADVANCE 1
+#else
+ #define TAIKOR_USE_PAIRED_MODAL_ADVANCE 0
+#endif
 
 namespace taikor
 {
@@ -439,6 +448,8 @@ std::optional<int> octaveOffsetForMidiNote (int midiNote) noexcept
 
 int midiNoteFor (Articulation articulation, int octaveOffset) noexcept
 {
+    if (static_cast<std::size_t> (articulation) >= articulationCount)
+        return -1;
     const auto pitchClass = static_cast<int> (articulation);
     const auto octave = std::clamp (octaveOffset, lowestOctaveOffset, highestOctaveOffset);
     return referenceNote + octave * 12 + pitchClass;
@@ -1703,6 +1714,16 @@ TaikoEngine::TaikoEngine()
     prepare (48000.0, 512);
 }
 
+double TaikoEngine::sanitiseSampleRate (double sampleRate) noexcept
+{
+    // std::clamp leaves NaN untouched, which would make the subsequent
+    // floating-to-integer tail/contact conversions undefined. Preserve the
+    // established endpoint behavior for infinities and finite outliers.
+    return std::isnan (sampleRate) ? defaultSampleRate
+        : std::clamp (sampleRate, minimumSupportedSampleRate,
+                       maximumSupportedSampleRate);
+}
+
 EngineParameters TaikoEngine::sanitise (const EngineParameters& parameters) noexcept
 {
     EngineParameters result;
@@ -1748,8 +1769,7 @@ void TaikoEngine::setEnsembleMember (int member) noexcept
 
 void TaikoEngine::prepare (double sampleRate, int maxBlockSize) noexcept
 {
-    sampleRate_ = std::clamp (sampleRate, minimumSupportedSampleRate,
-                              maximumSupportedSampleRate);
+    sampleRate_ = sanitiseSampleRate (sampleRate);
     inverseSampleRate_ = static_cast<float> (1.0 / sampleRate_);
     maximumTailSamples_ =
         static_cast<std::uint64_t> (maximumTailSeconds * sampleRate_);
@@ -1967,7 +1987,7 @@ void TaikoEngine::silenceVoice (Voice& voice) noexcept
     voice.modeCount = 0;
     voice.activeModeCount = 0;
     voice.contactCount = 0;
-    voice.strainModeCount = voice.boundaryModeCount = 0;
+    voice.strainModeCount = voice.boundaryModeCount = voice.parametricModeCount = 0;
     voice.nextContact = 0;
     voice.contactRemaining = 0u;
     voice.ageSamples = 0;
@@ -2925,8 +2945,7 @@ TaikoEngine::SoundingMode TaikoEngine::soundingMode (const DrumState& drum,
 // Nyquist limit is already a resonator with no cycles left in it.
 float TaikoEngine::renderedModeCeilingHz (double sampleRateHz) noexcept
 {
-    const auto clamped = std::clamp (sampleRateHz, minimumSupportedSampleRate,
-                                     maximumSupportedSampleRate);
+    const auto clamped = sanitiseSampleRate (sampleRateHz);
     const auto rate = static_cast<float> (clamped);
     return 0.5f * rate * 0.98f;
 }
@@ -3459,7 +3478,7 @@ void TaikoEngine::configureShellBoundary (Voice& voice) const noexcept
 
 void TaikoEngine::rebuildModeTraversals (Voice& voice) noexcept
 {
-    voice.strainModeCount = voice.boundaryModeCount = 0;
+    voice.strainModeCount = voice.boundaryModeCount = voice.parametricModeCount = 0;
     for (int index = 0; index < voice.modeCount; ++index)
     {
         const auto& mode = voice.modes[static_cast<std::size_t> (index)];
@@ -3468,6 +3487,10 @@ void TaikoEngine::rebuildModeTraversals (Voice& voice) noexcept
                 static_cast<std::uint16_t> (index);
         if (mode.shellBoundaryImpulseScale != 0.0)
             voice.boundaryModeIndices[static_cast<std::size_t> (voice.boundaryModeCount++)] =
+                static_cast<std::uint16_t> (index);
+        if (mode.sharedCavityMode
+            || (mode.membrane && mode.modeEntry < legacyModeEntryCount))
+            voice.parametricModeIndices[static_cast<std::size_t> (voice.parametricModeCount++)] =
                 static_cast<std::uint16_t> (index);
     }
 }
@@ -6908,6 +6931,139 @@ void TaikoEngine::resetContinuumBandFilterState (Voice::ContinuumBand& band) noe
     band.highStateRight7 = 0.0f;
 }
 
+void TaikoEngine::advanceModalBank (Voice& voice,
+    const std::array<float, modeEntryCount>& entryRipple,
+    const std::array<float, modeEntryCount>& rearEntryRipple,
+    double parametricScale, bool parametricActive, bool rimPathActive) noexcept
+{
+    const int renderModeCount = voice.physicalBank ? voice.activeModeCount : 0;
+    std::array<float, shellResonatorCount> rimForce {};
+    if (rimPathActive)
+    {
+        rimForce = voice.shellRimForce;
+        voice.shellRimForce.fill (0.0f);
+    }
+
+#if TAIKOR_USE_PACKED_MODAL_BANK || TAIKOR_USE_PAIRED_MODAL_ADVANCE
+    // Rim feedback observes the preceding states, before any mode advances.
+    // Keep its reduction in the original order, outside the packed recurrence.
+    if (rimPathActive)
+#endif
+    for (int index = 0; index < renderModeCount; ++index)
+    {
+        auto& mode = voice.modes[static_cast<std::size_t> (index)];
+        // The wooden bank is driven linearly, like the head. A shaper used to
+        // sit here, labelled as soft odd-harmonic saturation in the zelkova: a
+        // clamp after a pre-gain, then a cubic term, then a trim. None of it
+        // did what it said. The drive the shell bank is handed never came near
+        // the clamp and the cubic term sat far under the linear one, so what
+        // was left was a fixed gain gated on Shell Resonance passing 1 %, which
+        // put a step in the middle of a continuous control. A drum shell struck
+        // by a stick is nowhere near its elastic limit, so there is nothing
+        // here for a saturator to do. testShellResonanceHasNoStepInIt keeps it
+        // that way.
+        if (rimPathActive && mode.shellRingIndex >= 0)
+        {
+            const auto ring = static_cast<std::size_t> (mode.shellRingIndex);
+            if (mode.membrane)
+                voice.shellRimForce[ring] += mode.shellRimCoupling
+                    * static_cast<float> (mode.resonator.y1);
+            else
+                voice.modalInput[mode.physicalIndex] += mode.rimDrive * rimForce[ring];
+        }
+#if ! TAIKOR_USE_PACKED_MODAL_BANK && ! TAIKOR_USE_PAIRED_MODAL_ADVANCE
+        (void) mode.resonator.tick (voice.modalInput[mode.physicalIndex]);
+#endif
+    }
+#if TAIKOR_USE_PACKED_MODAL_BANK
+    voice.modes.tick (voice.modalInput, renderModeCount);
+#elif TAIKOR_USE_PAIRED_MODAL_ADVANCE
+    // Keep scalar-owned states and the original double-precision/FMA order.
+    // Adjacent loads plus transposes avoid gathering five separate fields.
+    using ScalarResonator = detail::ScalarModalResonator;
+    const auto loadPair = [] (const ScalarResonator& resonator, std::size_t offset) noexcept
+    {
+        float64x2_t pair;
+        std::memcpy (&pair, reinterpret_cast<const unsigned char*> (&resonator) + offset,
+                     sizeof (pair));
+        return pair;
+    };
+    int modeIndex = 0;
+    for (; modeIndex + 1 < renderModeCount; modeIndex += 2)
+    {
+        auto& firstMode = voice.modes[static_cast<std::size_t> (modeIndex)];
+        auto& secondMode = voice.modes[static_cast<std::size_t> (modeIndex + 1)];
+        auto& first = firstMode.resonator;
+        auto& second = secondMode.resonator;
+        const auto firstCoefficients = loadPair (first, offsetof (ScalarResonator, a1));
+        const auto secondCoefficients = loadPair (second, offsetof (ScalarResonator, a1));
+        const auto firstGainState = loadPair (first, offsetof (ScalarResonator, b0));
+        const auto secondGainState = loadPair (second, offsetof (ScalarResonator, b0));
+        const auto a1 = vzip1q_f64 (firstCoefficients, secondCoefficients);
+        const auto a2 = vzip2q_f64 (firstCoefficients, secondCoefficients);
+        const auto gain = vzip1q_f64 (firstGainState, secondGainState);
+        const auto current = vzip2q_f64 (firstGainState, secondGainState);
+        const float64x2_t previous { first.y2, second.y2 };
+        const float64x2_t input {
+            static_cast<double> (voice.modalInput[firstMode.physicalIndex]),
+            static_cast<double> (voice.modalInput[secondMode.physicalIndex])
+        };
+        auto output = vfmaq_f64 (vnegq_f64 (vmulq_f64 (a1, current)), gain, input);
+        output = vfmsq_f64 (output, a2, previous);
+        const auto firstState = vzip1q_f64 (output, current);
+        const auto secondState = vzip2q_f64 (output, current);
+        std::memcpy (reinterpret_cast<unsigned char*> (&first) + offsetof (ScalarResonator, y1),
+                     &firstState, sizeof (firstState));
+        std::memcpy (reinterpret_cast<unsigned char*> (&second) + offsetof (ScalarResonator, y1),
+                     &secondState, sizeof (secondState));
+    }
+    if (modeIndex < renderModeCount)
+    {
+        auto& mode = voice.modes[static_cast<std::size_t> (modeIndex)];
+        (void) mode.resonator.tick (voice.modalInput[mode.physicalIndex]);
+    }
+#endif
+
+    // Only the calibrated strain modes (plus shared cavity coordinates) have
+    // a nonzero ripple. The other modes keep their exact free recurrence.
+    // Correcting the stored free displacement is the same division as before;
+    // y2 already contains the preceding displacement and must not move twice.
+    if (! parametricActive)
+        return;
+    for (int slot = 0; slot < voice.parametricModeCount; ++slot)
+    {
+        const auto index = voice.parametricModeIndices[static_cast<std::size_t> (slot)];
+        if (index >= renderModeCount)
+            break;
+        auto& mode = voice.modes[index];
+        float ripple = parametricActive && mode.membrane
+            ? entryRipple[mode.modeEntry] * mode.batterTensionFraction
+                + rearEntryRipple[mode.modeEntry] * mode.rearTensionFraction : 0.0f;
+        if (parametricActive && mode.sharedCavityMode)
+        {
+            ripple = 0.0f;
+            for (std::size_t radial = 0; radial < cavity::radialModeCount; ++radial)
+                ripple += mode.cavityTensionWeights[radial] * entryRipple[radial]
+                        + mode.cavityRearTensionWeights[radial] * rearEntryRipple[radial];
+        }
+        if (ripple != 0.0f)
+        {
+            // Exactly tick(), with the current sample's own displacement
+            // pushed back by the ripple in the batter tension: the same
+            // h^2 (1 + a2 - a1) / 4M compliance advancePhysicalContacts
+            // matches a held force with, applied to -eps f omega^2 q.
+            auto& resonator = mode.resonator;
+            const double stiffnessIncrement =
+                parametricScale * static_cast<double> (ripple)
+                * mode.liveOmega * mode.liveOmega
+                * (1.0 + resonator.a2 - resonator.a1);
+            const double output = resonator.y1 / std::max (1.0 + stiffnessIncrement, 0.05);
+            resonator.y1 = output;
+        }
+    }
+
+}
+
 float TaikoEngine::renderVoice (Voice& voice, Voice* physical,
                                 float& rightOut) noexcept
 {
@@ -7152,70 +7308,8 @@ float TaikoEngine::renderVoice (Voice& voice, Voice* physical,
     // without also running the production reciprocal boundary. It remains an
     // explicitly non-passive comparison, disabled in the plug-in.
     const bool rimPathActive = voice.physicalBank && hasRealismFeature (headToShellPath);
-    std::array<float, shellResonatorCount> rimForce {};
-    if (rimPathActive)
-    {
-        rimForce = voice.shellRimForce;
-        voice.shellRimForce.fill (0.0f);
-    }
-
-    for (int index = 0; index < renderModeCount; ++index)
-    {
-        auto& mode = voice.modes[static_cast<std::size_t> (index)];
-        // The wooden bank is driven linearly, like the head. A shaper used to
-        // sit here, labelled as soft odd-harmonic saturation in the zelkova: a
-        // clamp after a pre-gain, then a cubic term, then a trim. None of it
-        // did what it said. The drive the shell bank is handed never came near
-        // the clamp and the cubic term sat far under the linear one, so what
-        // was left was a fixed gain gated on Shell Resonance passing 1 %, which
-        // put a step in the middle of a continuous control. A drum shell struck
-        // by a stick is nowhere near its elastic limit, so there is nothing
-        // here for a saturator to do. testShellResonanceHasNoStepInIt keeps it
-        // that way.
-        if (rimPathActive && mode.shellRingIndex >= 0)
-        {
-            const auto ring = static_cast<std::size_t> (mode.shellRingIndex);
-            if (mode.membrane)
-                voice.shellRimForce[ring] += mode.shellRimCoupling
-                    * static_cast<float> (mode.resonator.y1);
-            else
-                voice.modalInput[mode.physicalIndex] += mode.rimDrive * rimForce[ring];
-        }
-        float ripple = parametricActive && mode.membrane
-            ? entryRipple[mode.modeEntry] * mode.batterTensionFraction
-                + rearEntryRipple[mode.modeEntry] * mode.rearTensionFraction : 0.0f;
-        if (parametricActive && mode.sharedCavityMode)
-        {
-            ripple = 0.0f;
-            for (std::size_t radial = 0; radial < cavity::radialModeCount; ++radial)
-                ripple += mode.cavityTensionWeights[radial] * entryRipple[radial]
-                        + mode.cavityRearTensionWeights[radial] * rearEntryRipple[radial];
-        }
-        if (ripple != 0.0f)
-        {
-            // Exactly tick(), with the current sample's own displacement
-            // pushed back by the ripple in the batter tension: the same
-            // h^2 (1 + a2 - a1) / 4M compliance advancePhysicalContacts
-            // matches a held force with, applied to -eps f omega^2 q.
-            auto& resonator = mode.resonator;
-            const double stiffnessIncrement =
-                parametricScale * static_cast<double> (ripple)
-                * mode.liveOmega * mode.liveOmega
-                * (1.0 + resonator.a2 - resonator.a1);
-            const double free =
-                resonator.b0 * static_cast<double> (
-                    voice.modalInput[static_cast<std::size_t> (mode.physicalIndex)])
-                - resonator.a1 * resonator.y1 - resonator.a2 * resonator.y2;
-            const double output = free / std::max (1.0 + stiffnessIncrement, 0.05);
-            resonator.y2 = resonator.y1;
-            resonator.y1 = output;
-        }
-        else
-        {
-            (void) mode.resonator.tick (
-                voice.modalInput[static_cast<std::size_t> (mode.physicalIndex)]);
-        }
-    }
+    advanceModalBank (voice, entryRipple, rearEntryRipple, parametricScale,
+                      parametricActive, rimPathActive);
 
     // Advance the free modal bank first, then exchange a single passive
     // bearing-edge impulse before observing either surface. Every connected
@@ -7585,6 +7679,21 @@ void TaikoEngine::processInternal (float* left, float* right, int numSamples,
             mixRight *= gain[sample];
         }
 
+        if (extraLeft != nullptr || extraRight != nullptr
+            || gain != nullptr || leadPan != nullptr)
+        {
+            // These public arrays are outside the engine's parameter boundary.
+            // A final limiter cannot repair a NaN already stored by the DC or
+            // ADAA filters. Reserve arithmetic headroom for width, DC feedback
+            // and drive as well, so extreme finite input cannot overflow them.
+            // Normal microphone audio passes through without any arithmetic.
+            constexpr float safeMixMagnitude = std::numeric_limits<float>::max() / 1024.0f;
+            if (! std::isfinite (mixLeft) || ! std::isfinite (mixRight)
+                || std::abs (mixLeft) > safeMixMagnitude
+                || std::abs (mixRight) > safeMixMagnitude)
+                mixLeft = mixRight = 0.0f;
+        }
+
         // Width trim on the finished pair. At 0 the two close microphones are
         // summed to mono, at 0.5 they are left exactly as the head presented
         // them - already a real stereo image rather than a widened one - and
@@ -7741,7 +7850,7 @@ TaikoEngine::DrumMeasurements TaikoEngine::measureDrum (int octaveOffset) const 
 
 TaikoEngine::SoundingMode TaikoEngine::dynamicSoundingMode (
     const EngineParameters& rawParameters, int octaveOffset,
-    float pitchBendSemitones, double sampleRateHz) noexcept
+    float pitchBendSemitones, double sampleRateHz)
 {
     auto parameters = sanitise (rawParameters);
     // The panel names the settled drum under a neutral open stroke. Noise has
@@ -7788,9 +7897,9 @@ TaikoEngine::SoundingMode TaikoEngine::dynamicSoundingMode (
         return result;
     };
 
-    // Reusing one scratch engine per caller avoids both an 800 kB stack object
-    // and allocation in this noexcept readout. trigger() deliberately uses the
-    // cheap analytic visual estimate above, so this cannot recurse.
+    // Reuse scratch storage after the first call. Construction can throw;
+    // measure() catches allocation failure at the public noexcept boundary.
+    // trigger() uses the cheap analytic estimate, so this cannot recurse.
     static thread_local TaikoEngine audit;
     audit.setParameters (parameters);
     audit.setPitchBend (0.5f * pitchBendSemitones);
@@ -7898,7 +8007,13 @@ TaikoEngine::DrumMeasurements TaikoEngine::measure (const EngineParameters& para
                                                      int octaveOffset,
                                                      float pitchBendSemitones,
                                                      double sampleRateHz) noexcept
+try
 {
+    sampleRateHz = sanitiseSampleRate (sampleRateHz);
+    // The contact audit applies this through setPitchBend(), whose physical
+    // range is +/-2 semitones. Resolve the analytic drum at that same bend.
+    pitchBendSemitones = std::isnan (pitchBendSemitones) ? 0.0f
+        : clampFloat (pitchBendSemitones, -2.0f, 2.0f);
     const auto applied = sanitise (parameters);
     const auto drum = resolveDrumFor (applied, pitchBendSemitones, octaveOffset);
     const auto& entry = membraneModes()[0]; // the (0,1) mode
@@ -8141,6 +8256,20 @@ TaikoEngine::DrumMeasurements TaikoEngine::measure (const EngineParameters& para
     }
 
     return result;
+}
+
+catch (const std::bad_alloc&)
+{
+    // Neither scratch engine is part of live audio state. Failed thread-local
+    // initialization is retried by C++ on the next call; do not cache a failed
+    // pitch estimate or publish a fabricated sounding frequency in the meantime.
+    DrumMeasurements unavailable;
+    unavailable.idealFundamentalHz = 0.0f;
+    unavailable.loadedFundamentalHz = 0.0f;
+    unavailable.breathingModeHz = 0.0f;
+    unavailable.soundingHz = 0.0f;
+    unavailable.tailSeconds = 0.0f;
+    return unavailable;
 }
 
 } // namespace taikor

@@ -23,6 +23,7 @@ def package(build_dir: Path, config: str) -> Path:
 
     required = (
         "VST3/Taikor.vst3/Contents/x86_64-win/Taikor.vst3",
+        "VST3/Taikor.vst3/Contents/Resources/moduleinfo.json",
         "CLAP/Taikor.clap",
         "Standalone/Taikor.exe",
     )

@@ -91,6 +91,7 @@ void usage()
 {
     std::cout << "Usage: TaikorBenchmarkCPU [options]\n"
         "  --case idle|solo|dense|ensemble4|ensemble8|controls|all (default all)\n"
+        "         drum0|drum1|drum2|drum3|drum0-8|drum1-8|drum2-8|drum3-8\n"
         "  --rate 48000|96000       Sample rate (default 48000)\n"
         "  --block 64|256          Host block size (default 256)\n"
         "  --seconds N             Total duration including tail (default 3)\n"
@@ -190,8 +191,17 @@ std::vector<Event> score (const Options& options, const std::string& name)
         random = random * 1664525u + 1013904223u;
         return 0.55f + 0.4f * static_cast<float> (random >> 8) / 16777215.0f;
     };
-    events.push_back ({ frame (onset), EventKind::hit, 48, velocity() });
-    if (name != "solo")
+    const bool singleDrum = name.rfind ("drum", 0) == 0;
+    const int drumNote = singleDrum ? 48 + 12 * (name[4] - '0') : 48;
+    events.push_back ({ frame (onset), EventKind::hit, drumNote, velocity() });
+    if (singleDrum)
+    {
+        int stroke = 0;
+        for (double time = onset + 0.125; time < playing; time += 0.125, ++stroke)
+            events.push_back ({ frame (time), EventKind::hit,
+                               drumNote + stroke % 4, velocity() });
+    }
+    else if (name != "solo")
     {
         for (int drum = 1; drum < 4; ++drum)
             events.push_back ({ frame (onset), EventKind::hit, 48 + 12 * drum, velocity() });
@@ -349,7 +359,8 @@ void benchmark (const Options& options, const std::string& name)
 {
     taikor::EngineParameters parameters;
     parameters.performer = static_cast<int> (options.seed % 4);
-    parameters.ensembleSize = name == "ensemble8" ? 8 : name == "ensemble4" ? 4 : 1;
+    parameters.ensembleSize = name == "ensemble8" || name.find ("-8") != std::string::npos
+        ? 8 : name == "ensemble4" ? 4 : 1;
     const auto makeEngine = [&]
     {
         auto engine = std::make_unique<taikor::EnsembleEngine>();
@@ -414,7 +425,8 @@ int main (int argc, char** argv)
     {
         const auto options = parse (argc, argv);
         const ScopedNoDenormals noDenormals;
-        const std::vector<std::string> cases { "idle", "solo", "dense", "ensemble4", "ensemble8", "controls" };
+        const std::vector<std::string> cases { "idle", "solo", "dense", "ensemble4", "ensemble8", "controls",
+            "drum0", "drum1", "drum2", "drum3", "drum0-8", "drum1-8", "drum2-8", "drum3-8" };
         if (options.selectedCase != "all"
             && std::find (cases.begin(), cases.end(), options.selectedCase) == cases.end())
             throw std::runtime_error ("Unknown case: " + options.selectedCase);

@@ -37,7 +37,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+find_package(Threads REQUIRED)
+
 option(TAIKOR_BUILD_PLUGIN "Build the JUCE plug-in and standalone app" ON)
+option(TAIKOR_ENABLE_PACKED_MODAL_BANK
+    "Use the double-precision packed modal renderer on Apple silicon" OFF)
+option(TAIKOR_ENABLE_PAIRED_MODAL_ADVANCE
+    "Use experimental paired double-precision modal updates on Apple silicon" OFF)
+option(TAIKOR_ENABLE_ASAN_UBSAN
+    "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+option(TAIKOR_ENABLE_TSAN
+    "Enable ThreadSanitizer (mutually exclusive with ASan/UBSan)" OFF)
 set(TAIKOR_JUCE_PATH "" CACHE PATH
     "Optional path to a local JUCE 8.0.14 checkout (avoids downloading JUCE)")
 set(TAIKOR_CLAP_JUCE_EXTENSIONS_PATH "" CACHE PATH
@@ -53,6 +63,7 @@ set(TAIKOR_DSP_SOURCES
     Source/DSP/TaikoEngine.cpp
     Source/DSP/UiMath.cpp)
 set(TAIKOR_DSP_HEADERS
+    Source/DSP/PackedModalBank.h
     Source/DSP/ShellBoundary.h
     Source/DSP/BachiModel.h
     Source/DSP/CoupledCavity.h
@@ -72,6 +83,37 @@ target_include_directories(TaikorDSP
     PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Source")
 target_compile_features(TaikorDSP PUBLIC cxx_std_20)
 set_target_properties(TaikorDSP PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(TaikorDSP PUBLIC Threads::Threads)
+
+if(TAIKOR_ENABLE_ASAN_UBSAN AND TAIKOR_ENABLE_TSAN)
+    message(FATAL_ERROR
+        "TAIKOR_ENABLE_ASAN_UBSAN and TAIKOR_ENABLE_TSAN are mutually exclusive")
+endif()
+
+if(TAIKOR_ENABLE_ASAN_UBSAN OR TAIKOR_ENABLE_TSAN)
+    if(MSVC OR NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        message(FATAL_ERROR
+            "Taikor sanitizers require a Clang or GNU compiler; MSVC is not supported")
+    endif()
+
+    if(TAIKOR_ENABLE_ASAN_UBSAN)
+        set(TAIKOR_SANITIZER_FLAGS -fsanitize=address,undefined
+            -fno-omit-frame-pointer)
+    else()
+        set(TAIKOR_SANITIZER_FLAGS -fsanitize=thread -fno-omit-frame-pointer)
+    endif()
+    # PUBLIC compile usage requirements reach plug-in and test sources through
+    # TaikorDSP; INTERFACE link options reach their final executables.
+    target_compile_options(TaikorDSP PUBLIC ${TAIKOR_SANITIZER_FLAGS})
+    target_link_options(TaikorDSP INTERFACE ${TAIKOR_SANITIZER_FLAGS})
+endif()
+
+if(NOT TAIKOR_ENABLE_PACKED_MODAL_BANK)
+    target_compile_definitions(TaikorDSP PUBLIC TAIKOR_DISABLE_PACKED_MODAL_BANK=1)
+endif()
+if(TAIKOR_ENABLE_PAIRED_MODAL_ADVANCE)
+    target_compile_definitions(TaikorDSP PRIVATE TAIKOR_ENABLE_PAIRED_MODAL_ADVANCE=1)
+endif()
 
 if(MSVC)
     target_compile_options(TaikorDSP PRIVATE /W4 /permissive-)
@@ -223,6 +265,11 @@ if(TAIKOR_BUILD_TOOLS)
     target_link_libraries(TaikorBenchmarkCPU PRIVATE TaikorDSP)
     target_compile_features(TaikorBenchmarkCPU PRIVATE cxx_std_20)
 
+    add_executable(TaikorBenchmarkEnsembleParallel
+        Tools/BenchmarkEnsembleParallel.cpp)
+    target_link_libraries(TaikorBenchmarkEnsembleParallel PRIVATE TaikorDSP)
+    target_compile_features(TaikorBenchmarkEnsembleParallel PRIVATE cxx_std_20)
+
     if(TAIKOR_BUILD_PLUGIN)
         add_executable(TaikorBenchmarkAudioPath Tools/BenchmarkAudioPath.cpp)
         target_link_libraries(TaikorBenchmarkAudioPath PRIVATE Taikor)
@@ -251,6 +298,8 @@ if(TAIKOR_BUILD_TOOLS)
             /W4 /permissive-)
     else()
         target_compile_options(TaikorBenchmarkCPU PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(TaikorBenchmarkEnsembleParallel PRIVATE
+            -Wall -Wextra -Wpedantic)
         target_compile_options(TaikorRenderDemos PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(TaikorValidateCalibrationCapture PRIVATE
             -Wall -Wextra -Wpedantic)
@@ -259,6 +308,15 @@ endif()
 
 if(BUILD_TESTING)
     add_executable(TaikorParametricStrainTests Tests/ParametricStrainTests.cpp)
+    add_executable(TaikorAudioCpuMeterTests Tests/AudioCpuMeterTests.cpp)
+    target_link_libraries(TaikorAudioCpuMeterTests PRIVATE TaikorDSP)
+    add_test(NAME Taikor.AudioCpuMeter COMMAND TaikorAudioCpuMeterTests)
+    add_executable(TaikorModalAdvanceTests Tests/ModalAdvanceTests.cpp)
+    add_executable(TaikorPackedModalBankTests Tests/PackedModalBankTests.cpp)
+    target_link_libraries(TaikorPackedModalBankTests PRIVATE TaikorDSP)
+    add_test(NAME Taikor.PackedModalBank COMMAND TaikorPackedModalBankTests)
+    target_link_libraries(TaikorModalAdvanceTests PRIVATE TaikorDSP)
+    add_test(NAME Taikor.ModalAdvance COMMAND TaikorModalAdvanceTests)
     target_link_libraries(TaikorParametricStrainTests PRIVATE TaikorDSP)
     add_test(NAME Taikor.ParametricStrain COMMAND TaikorParametricStrainTests)
 
@@ -310,6 +368,32 @@ if(BUILD_TESTING)
     target_link_libraries(TaikorEnsembleEngineTests PRIVATE TaikorDSP)
     add_test(NAME Taikor.EnsembleEngine COMMAND TaikorEnsembleEngineTests)
 
+    add_executable(TaikorEngineFuzzTests Tests/EngineFuzzTests.cpp)
+    target_link_libraries(TaikorEngineFuzzTests PRIVATE TaikorDSP)
+    add_test(NAME Taikor.EngineFuzz.Seeded
+             COMMAND TaikorEngineFuzzTests --seed 0x12345678 --iterations 200)
+    add_test(NAME Taikor.EngineFuzz.Default COMMAND TaikorEngineFuzzTests)
+    add_test(NAME Taikor.EngineFuzz.Alternate
+             COMMAND TaikorEngineFuzzTests --seed 0x87654321 --iterations 100)
+    set_tests_properties(Taikor.EngineFuzz.Seeded Taikor.EngineFuzz.Default
+        Taikor.EngineFuzz.Alternate PROPERTIES TIMEOUT 120)
+
+    add_executable(TaikorEnsembleRobustnessTests
+        Tests/EnsembleRobustnessTests.cpp)
+    target_link_libraries(TaikorEnsembleRobustnessTests PRIVATE TaikorDSP)
+    add_test(NAME Taikor.EnsembleRobustness
+             COMMAND TaikorEnsembleRobustnessTests)
+    set_tests_properties(Taikor.EnsembleRobustness PROPERTIES TIMEOUT 120)
+
+    add_executable(TaikorOfflineRenderStressTests
+        Tests/OfflineRenderStressTests.cpp)
+    target_link_libraries(TaikorOfflineRenderStressTests PRIVATE
+        TaikorDSP Threads::Threads)
+    target_compile_features(TaikorOfflineRenderStressTests PRIVATE cxx_std_20)
+    add_test(NAME Taikor.OfflineRenderStress
+             COMMAND TaikorOfflineRenderStressTests)
+    set_tests_properties(Taikor.OfflineRenderStress PROPERTIES TIMEOUT 120)
+
     add_executable(TaikorOutputHighPassTests Tests/OutputHighPassTests.cpp)
     target_link_libraries(TaikorOutputHighPassTests PRIVATE TaikorDSP)
     add_test(NAME Taikor.OutputHighPass COMMAND TaikorOutputHighPassTests)
@@ -342,6 +426,11 @@ if(BUILD_TESTING)
                  COMMAND TaikorBenchmarkCPU --seconds 0.08 --tail 0.02
                          --warmup 0 --repeats 2)
         set_tests_properties(Taikor.BenchmarkCPU PROPERTIES TIMEOUT 60)
+
+        add_test(NAME Taikor.BenchmarkEnsembleParallel
+                 COMMAND TaikorBenchmarkEnsembleParallel)
+        set_tests_properties(Taikor.BenchmarkEnsembleParallel PROPERTIES
+            TIMEOUT 180)
 
         if(TAIKOR_BUILD_PLUGIN)
             add_test(NAME Taikor.BenchmarkAudioPath
@@ -400,5 +489,42 @@ if(BUILD_TESTING)
 
         add_test(NAME Taikor.PluginProcessor COMMAND TaikorPluginProcessorTests)
         set_tests_properties(Taikor.PluginProcessor PROPERTIES TIMEOUT 60)
+
+        add_executable(TaikorStateFuzzTests Tests/StateFuzzTests.cpp)
+        target_link_libraries(TaikorStateFuzzTests PRIVATE Taikor)
+        target_include_directories(TaikorStateFuzzTests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/Source"
+            "$<TARGET_PROPERTY:Taikor,JUCE_GENERATED_SOURCES_DIRECTORY>"
+            "$<TARGET_PROPERTY:Taikor,INCLUDE_DIRECTORIES>")
+        target_compile_features(TaikorStateFuzzTests PRIVATE cxx_std_20)
+
+        if(MSVC)
+            target_compile_options(TaikorStateFuzzTests PRIVATE /W4 /permissive-)
+        else()
+            target_compile_options(TaikorStateFuzzTests PRIVATE
+                -Wall -Wextra -Wpedantic)
+        endif()
+
+        add_test(NAME Taikor.StateFuzz COMMAND TaikorStateFuzzTests
+                 --case all --iterations 16 --seed 1413564747)
+        set_tests_properties(Taikor.StateFuzz PROPERTIES TIMEOUT 120)
+
+        add_executable(TaikorMidiOrderingTests Tests/MidiOrderingTests.cpp)
+        target_link_libraries(TaikorMidiOrderingTests PRIVATE Taikor)
+        target_include_directories(TaikorMidiOrderingTests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/Source"
+            "$<TARGET_PROPERTY:Taikor,JUCE_GENERATED_SOURCES_DIRECTORY>"
+            "$<TARGET_PROPERTY:Taikor,INCLUDE_DIRECTORIES>")
+        target_compile_features(TaikorMidiOrderingTests PRIVATE cxx_std_20)
+
+        if(MSVC)
+            target_compile_options(TaikorMidiOrderingTests PRIVATE /W4 /permissive-)
+        else()
+            target_compile_options(TaikorMidiOrderingTests PRIVATE
+                -Wall -Wextra -Wpedantic)
+        endif()
+
+        add_test(NAME Taikor.MidiOrdering COMMAND TaikorMidiOrderingTests)
+        set_tests_properties(Taikor.MidiOrdering PROPERTIES TIMEOUT 120)
     endif()
 endif()

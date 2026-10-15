@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace taikor
 {
@@ -14,6 +15,9 @@ struct StereoPan
 
     static StereoPan atPosition (float position) noexcept
     {
+        if (! std::isfinite (position))
+            return {};
+
         const float distance = std::clamp (std::abs (position), 0.0f, 1.0f);
         if (distance == 0.0f)
             return {};
@@ -26,15 +30,37 @@ struct StereoPan
 
     void apply (float& left, float& right) const noexcept
     {
+        if (isCentered())
+            return;
+
+        if (! std::isfinite (left) || ! std::isfinite (right)
+            || ! std::isfinite (ll) || ! std::isfinite (lr)
+            || ! std::isfinite (rl) || ! std::isfinite (rr))
+        {
+            left = right = 0.0f;
+            return;
+        }
+
         const double originalLeft = left;
-        left = static_cast<float> (ll * originalLeft + lr * right);
-        right = static_cast<float> (rl * originalLeft + rr * right);
+        const double originalRight = right;
+        const double nextLeft = ll * originalLeft + lr * originalRight;
+        const double nextRight = rl * originalLeft + rr * originalRight;
+        constexpr double maximum = std::numeric_limits<float>::max();
+        left = static_cast<float> (std::clamp (nextLeft, -maximum, maximum));
+        right = static_cast<float> (std::clamp (nextRight, -maximum, maximum));
     }
 
     void approach (const StereoPan& target, double smoothing) noexcept
     {
+        if (! std::isfinite (smoothing))
+            return;
+        smoothing = std::clamp (smoothing, 0.0, 1.0);
         const auto step = [smoothing] (double& current, double next)
         {
+            if (! std::isfinite (next))
+                return;
+            if (! std::isfinite (current))
+                current = next;
             current += smoothing * (next - current);
             if (std::abs (current - next) < 1.0e-10)
                 current = next;

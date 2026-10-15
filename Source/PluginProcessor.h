@@ -4,6 +4,7 @@
 
 #include "DSP/EnsembleEngine.h"
 #include "DSP/IRReverb.h"
+#include "DSP/AudioCpuMeter.h"
 
 #include <array>
 #include <atomic>
@@ -123,6 +124,8 @@ public:
     {
         return engineReady.load (std::memory_order_acquire);
     }
+    [[nodiscard]] taikor::AudioCpuMeter::Snapshot getCpuUsage() const noexcept
+    { return cpuMeter.snapshot(); }
 
     juce::AudioProcessorValueTreeState parameters;
 
@@ -142,28 +145,51 @@ private:
     };
 
     static constexpr unsigned uiQueueCapacity = 128;
+    // Bound callback work even when the host sends a pathological event burst.
+    static constexpr unsigned maximumMidiEventsPerBlock = 4096;
 
     void enqueueUiTrigger (taikor::Articulation articulation, int octaveOffset,
-                           float velocity) noexcept;
+                           float velocity, std::uint32_t generation) noexcept;
     void dispatchUiTriggers() noexcept;
     void discardUiTriggers() noexcept;
     void dispatchMidiData (const juce::uint8* data, int numBytes) noexcept;
     void updateEngineParameters() noexcept;
     void renderAudio (juce::AudioBuffer<float>&, int start, int samples) noexcept;
     void registerTrigger (taikor::Articulation articulation) noexcept;
+    [[nodiscard]] float readParameter (int slot) const noexcept;
 
     std::array<std::atomic<float>*, taikor::parameters::parameterCount>
         parameterPointers {};
+    struct ParameterBounds
+    {
+        float minimum = 0.0f, maximum = 1.0f, defaultValue = 0.0f;
+    };
+    std::array<ParameterBounds, taikor::parameters::parameterCount> parameterBounds {};
 
     std::array<UiTriggerEvent, uiQueueCapacity> uiTriggerQueue {};
     std::atomic<unsigned> uiWriteIndex { 0 };
     std::atomic<unsigned> uiReadIndex { 0 };
     std::atomic<std::uint32_t> uiQueueGeneration { 1 };
+    // Normal use has one UI producer; concurrent callers drop on contention.
+    // Never spin or hold this flag from the audio consumer.
+    std::atomic_flag uiProducerBusy = ATOMIC_FLAG_INIT;
 
     std::array<std::atomic<std::uint32_t>, taikor::articulationCount> triggerCounters {};
 
     taikor::EnsembleEngine engine;
     taikor::IRReverb reverb;
+    taikor::AudioCpuMeter cpuMeter;
+    // Message-thread-only readouts: do not reconstruct an unchanged physical
+    // bank at every editor refresh. Live controllers are included in the key.
+    struct DrumReadoutCache
+    {
+        taikor::EngineParameters parameters {};
+        taikor::TaikoEngine::DrumMeasurements measurements {};
+        double sampleRate = 0.0;
+        std::uint32_t features = 0;
+        bool valid = false;
+    };
+    mutable std::array<DrumReadoutCache, taikor::drumCount> drumReadouts {};
     std::array<float, 2> meterLevels {};
     std::array<std::atomic<float>, 2> outputLevels {};
     float meterRelease = 0.999f;

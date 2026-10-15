@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -317,6 +318,56 @@ void checkPartitionAndAutomation()
               << std::scientific << worstDifference << '\n';
 }
 
+void checkInvalidInputsAndBounds()
+{
+    auto reverb = std::make_unique<IRReverb>();
+    reverb->prepare (std::numeric_limits<double>::quiet_NaN(), -4096, 99,
+                     std::numeric_limits<float>::quiet_NaN());
+
+    Audio untouched (32);
+    untouched.left[3] = 0.25f;
+    untouched.right[7] = -0.5f;
+    const auto beforeNoOp = untouched;
+    reverb->process (nullptr, untouched.right.data(), 32);
+    reverb->process (untouched.left.data(), nullptr, 32);
+    reverb->process (untouched.left.data(), untouched.right.data(), 0);
+    reverb->process (untouched.left.data(), untouched.right.data(), -1);
+    expect (untouched.sameBits (beforeNoOp),
+            "null and non-positive buffers must be harmless no-ops");
+
+    const std::array<float, 7> mixes {
+        -std::numeric_limits<float>::infinity(), -1.0f, 0.0f, 0.25f,
+        0.75f, 1.0f, std::numeric_limits<float>::quiet_NaN() };
+    for (int iteration = 0; iteration < 32; ++iteration)
+    {
+        const int requestedRoom = (iteration * 17) % 11 - 4;
+        reverb->setParameters (requestedRoom,
+                               mixes[static_cast<std::size_t> (iteration) % mixes.size()]);
+        auto audio = signal (769, 48000.0);
+        process (*reverb, audio, iteration % 3 == 0 ? 1 : (iteration % 3 == 1 ? 257 : 4097));
+        expect (audio.protectedOutput(),
+                "clamped room and non-finite mix automation must remain finite and limited");
+    }
+
+    reverb->prepare (48000.0, 7, 2, 0.7f);
+    auto invalid = signal (769, 48000.0);
+    invalid.left[11] = std::numeric_limits<float>::quiet_NaN();
+    invalid.right[37] = std::numeric_limits<float>::infinity();
+    invalid.left[701] = -std::numeric_limits<float>::infinity();
+    process (*reverb, invalid, 4097);
+    expect (invalid.protectedOutput(),
+            "non-finite input must not escape the reverb or poison its output");
+
+    Audio tail (4097);
+    process (*reverb, tail, 4097);
+    expect (tail.protectedOutput(),
+            "post-invalid silent processing must remain finite and bounded");
+    reverb->reset();
+    Audio afterReset (1025);
+    process (*reverb, afterReset, 4097);
+    expect (afterReset.silent(), "reset must clear state after invalid input");
+}
+
 void reportCpu()
 {
     // Informational only: wall-clock timings vary with CPU scheduling. Measure
@@ -359,6 +410,7 @@ int main()
     checkRoomsAndEndpoints();
     checkTailRetirement();
     checkPartitionAndAutomation();
+    checkInvalidInputsAndBounds();
     reportCpu();
     if (failures == 0)
         std::cout << "IR reverb checks passed\n";

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iostream>
 #include <limits>
+#include <cstdint>
 
 namespace
 {
@@ -105,6 +106,33 @@ int main()
         left = right = 0.0f;
         limiter.process (left, right);
         expect (left == 0.0f && right == 0.0f, "limiter must never invent a tail");
+    }
+
+    // Seeded robustness sweep: finite extremes and invalid frames must never
+    // escape as nonfinite or above-ceiling output.
+    OutputLimiter fuzzLimiter;
+    fuzzLimiter.prepare (std::numeric_limits<double>::quiet_NaN());
+    std::uint32_t seed = 0x4f1bbcdcu;
+    const auto next = [&seed]
+    {
+        seed = seed * 1664525u + 1013904223u;
+        return seed;
+    };
+    for (int sample = 0; sample < 8192; ++sample)
+    {
+        float left = std::ldexp (0.5f + static_cast<float> (next() & 0xffffu) / 131072.0f,
+                                 static_cast<int> (next() % 100u) - 20);
+        float right = std::ldexp (0.5f + static_cast<float> (next() & 0xffffu) / 131072.0f,
+                                  static_cast<int> (next() % 100u) - 20);
+        if (next() & 1u) left = -left;
+        if (next() & 1u) right = -right;
+        if (sample % 257 == 0)
+            left = std::numeric_limits<float>::quiet_NaN();
+        fuzzLimiter.process (left, right);
+        expect (std::isfinite (left) && std::isfinite (right)
+                    && std::abs (left) <= OutputLimiter::ceiling
+                    && std::abs (right) <= OutputLimiter::ceiling,
+                "seeded limiter inputs must remain finite and bounded");
     }
 
     if (failures == 0)
