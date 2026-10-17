@@ -17,11 +17,11 @@ permissions:
 jobs:
   # Render in an empty staging tree so committed media cannot satisfy the
   # checks. Linux is the canonical renderer; the README copy carries the preset
-  # demo table and the technique level table beside the exact audio that will
+  # demo table beside the exact audio that will
   # be published.
   render-audio-demos:
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-    name: Render the preset demos and the 27 technique takes
+    name: Render the preset and More demos
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -231,7 +231,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # Publish the screenshot, audio and their level table in one commit only
+  # Publish the screenshot, audio and README demo table in one commit only
   # after the same source revision has produced the complete distribution.
   commit-generated-assets:
     if: github.ref == 'refs/heads/main'
@@ -250,7 +250,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Download rendered audio and level table
+      - name: Download rendered audio and README
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: generated-audio-demos
@@ -329,7 +329,7 @@ jobs:
           fi
           printf 'Release asset: %s\n' "${assets[@]}"
 
-      - name: Download matching audio demos and level table
+      - name: Download matching audio demos and README
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: generated-audio-demos
