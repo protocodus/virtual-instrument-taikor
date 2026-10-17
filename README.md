@@ -296,7 +296,7 @@ ka/chudaiko filenames remain stable after the display labels changed.
 ## Downloads
 
 <!-- build-download-begin -->
-**[Download latest distribution](https://github.com/protocodus/virtual-instrument-taikor/actions/runs/39005782751/artifacts/12091341689)** — build 53, built from [`b29d1d05beec`](https://github.com/protocodus/virtual-instrument-taikor/commit/b29d1d05beecaac806ea95c8b0ce1ed07a1b90ac).
+**[Download latest distribution](https://github.com/protocodus/virtual-instrument-taikor/actions/runs/39008823799/artifacts/12092586216)** — build 1, built from [`e010bdbdc908`](https://github.com/protocodus/virtual-instrument-taikor/commit/e010bdbdc908c2f50903f8abf7f40b528753d85a).
 <!-- build-download-end -->
 
 The download contains all platform packages, an editor screenshot, audio demos
