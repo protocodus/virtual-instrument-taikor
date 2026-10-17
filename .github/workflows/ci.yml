@@ -106,7 +106,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ci-screenshot-${{ github.run_number }}
-          path: build-macos/screenshots/taikor-standalone.png
+          path: build-macos/screenshots/taikor.png
           if-no-files-found: error
           retention-days: 7
 

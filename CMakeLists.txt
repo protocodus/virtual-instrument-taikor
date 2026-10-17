@@ -477,8 +477,8 @@ if(BUILD_TESTING)
                      COMMAND "${Python3_EXECUTABLE}"
                              "${CMAKE_CURRENT_SOURCE_DIR}/Tests/check_editor_screenshot.py"
                              "$<TARGET_FILE:TaikorPluginProcessorTests>"
-                             "${CMAKE_CURRENT_BINARY_DIR}/screenshots/taikor-standalone.png"
-                             "${CMAKE_CURRENT_SOURCE_DIR}/Docs/screenshots/taikor-standalone.png")
+                             "${CMAKE_CURRENT_BINARY_DIR}/screenshots/taikor.png"
+                             "${CMAKE_CURRENT_SOURCE_DIR}/Docs/screenshots/taikor.png")
             set_tests_properties(Taikor.EditorScreenshot PROPERTIES
                 LABELS render TIMEOUT 120)
         endif()

@@ -6,7 +6,7 @@ is synthesized from the drum model; no samples or recordings are loaded.
 
 **VST3 · CLAP · Standalone** on macOS, Windows and Linux · **Audio Unit** on macOS.
 
-![Taikor instrument editor](Docs/screenshots/taikor-standalone.png)
+![Taikor instrument editor](Docs/screenshots/taikor.png)
 
 ## Audio demos
 

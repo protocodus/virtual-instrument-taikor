@@ -152,8 +152,8 @@ class PackagingTests(unittest.TestCase):
             (media / "Docs/audio").mkdir(parents=True)
             (media / "Docs/screenshots").mkdir()
             (media / "README.md").write_text(original)
-            (media / "Docs/screenshots/taikor-standalone.png").write_bytes(
-                (ROOT / "Docs/screenshots/taikor-standalone.png").read_bytes())
+            (media / "Docs/screenshots/taikor.png").write_bytes(
+                (ROOT / "Docs/screenshots/taikor.png").read_bytes())
             for number in range(1, 28):
                 with wave.open(str(media / f"Docs/audio/{number:02}-fixture.wav"), "wb") as audio:
                     audio.setparams((2, 2, 48000, 0, "NONE", "not compressed"))

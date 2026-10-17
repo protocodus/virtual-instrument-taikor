@@ -57,7 +57,7 @@ for wav in wavs:
         audio.setpos(audio.getnframes() - 1)
         if len(audio.readframes(1)) != 4:
             sys.exit(f"error: incomplete rendered WAV: {wav}")
-png = root / "Docs/screenshots/taikor-standalone.png"
+png = root / "Docs/screenshots/taikor.png"
 with png.open("rb") as screenshot:
     header = screenshot.read(8)
     screenshot.seek(-12, 2)
@@ -102,14 +102,14 @@ fi
 git rm -q --ignore-unmatch -- ':(top,glob)Docs/audio/[0-9][0-9]-*.wav'
 mkdir -p Docs/audio Docs/screenshots
 cp "${README_COPY}" README.md
-cp "${ASSET_DIR}/Docs/screenshots/taikor-standalone.png" Docs/screenshots/taikor-standalone.png
+cp "${ASSET_DIR}/Docs/screenshots/taikor.png" Docs/screenshots/taikor.png
 generated_paths=()
 for wav in "${ASSET_DIR}"/Docs/audio/[0-9][0-9]-*.wav; do
     destination="Docs/audio/${wav##*/}"
     cp "${wav}" "${destination}"
     generated_paths+=("${destination}")
 done
-git add -- README.md Docs/screenshots/taikor-standalone.png "${generated_paths[@]}"
+git add -- README.md Docs/screenshots/taikor.png "${generated_paths[@]}"
 if git diff --cached --quiet; then
     echo "::notice::Generated assets are unchanged; no commit needed."
     exit 0
