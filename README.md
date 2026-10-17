@@ -514,9 +514,9 @@ radiation and mounting are reduced models; the shell's directional boundary
 mobility, skin constants and observation levels are design priors. None are a
 fit to a controlled recording of an identified taiko.
 
-[Earlier technical notes](Docs/research/technical-notes-2026-09-08.md) preserve the old
-formula derivations and listening decisions. Their numerical results describe
-the preceding implementation.
+[Earlier technical notes](https://github.com/protocodus/virtual-instrument-taikor/blob/7f320abeba1a142b68bd237e06bda8ad316da837/Docs/research/technical-notes-2026-09-08.md),
+kept in Git history, hold the old formula derivations and listening decisions.
+Their numerical results describe the preceding implementation.
 
 ## Known gaps
 
