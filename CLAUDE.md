@@ -73,15 +73,6 @@ Per-fix audio previews are **one-time review evidence**: render them while the
 change is under review, then leave them frozen. Do not re-render them when
 later engine changes make them stale.
 
-## Technique demos
-
-The 27 technique takes under the README's **More demos** come from
-`Tools/RenderDemos.cpp`, which rewrites the rendered-peak table between
-`<!-- peaks-table-begin ... -->` and `<!-- peaks-table-end -->` on every full
-render. Do not hand-edit between those markers, and do not remove them: the
-renderer uses them as its proof that the directory is its own before it
-deletes or overwrites anything.
-
 ## A–Z listening tests
 
 This is a physical model with no owned calibration captures, so there are
@@ -150,7 +141,7 @@ ctest --test-dir build-dsp -L unit --output-on-failure
 ```
 
 Every test is `Taikor.<Suite>` with one tier label: `unit`, `audio` (the
-preset demos and the technique takes, each rendered twice, bit-identical),
+preset and More demos, each rendered twice, bit-identical),
 `render` (editor screenshot, plug-in build only) or `fuzz` (the parameter
 matrix in the plug-in build; libFuzzer with `-DTAIKOR_BUILD_FUZZER=ON` and
 Clang). A test without an explicit tier is labelled `unit` at the end of
@@ -169,7 +160,12 @@ The factory bank is `Source/DSP/FactoryPresets.cpp`. Each preset has a MIDI
 phrase at `Docs/audio/midi/<NN>-<slug of name>.mid`, written by
 `Tools/write_preset_midi.py`; renaming a preset renames its files. The main
 build renders one MP3 per preset with `RenderTaikorPresetDemos` and rewrites
-the README's audio-demos and build-download blocks. Every front end plays the
+the README's audio-demos and build-download blocks. The README's **More
+demos** are playing techniques the presets do not feature: one phrase each in
+`Docs/audio/midi/more/`, also written by `Tools/write_preset_midi.py`, played
+through the preset named in `Tools/RenderPresetDemos.cpp`, and rendered by the
+main build with `--more` to `Docs/audio/more/`. The README list beside them is
+hand-written; keep it in step when a showcase is added or renamed. Every front end plays the
 engine through `taikor::applyMidi` (`Source/DSP/MidiInput.*`).
 
 `Tools/PresetDemoRenderer.h`, `Tools/update_readme_blocks.py`,

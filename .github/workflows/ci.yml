@@ -49,17 +49,9 @@ jobs:
       - name: Unit tests
         run: ctest --test-dir build-dsp -L unit --no-tests=error --output-on-failure
 
-      # Renders the whole README demo set twice and requires identical bytes.
+      # Renders the preset and More demos twice and requires identical bytes.
       - name: Audio tests
         run: ctest --test-dir build-dsp -L audio --no-tests=error --output-on-failure
-
-      - name: Upload rendered demos
-        uses: actions/upload-artifact@v4
-        with:
-          name: ci-audio-demos-${{ github.run_number }}
-          path: build-dsp/audio-demos/first
-          if-no-files-found: error
-          retention-days: 7
 
       - name: Configure Linux plug-in build
         run: |

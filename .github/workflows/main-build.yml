@@ -44,22 +44,16 @@ jobs:
           set -euo pipefail
           cmake -S . -B build-dsp -DCMAKE_BUILD_TYPE=Release \
             -DTAIKOR_BUILD_PLUGIN=OFF -DBUILD_TESTING=OFF
-          cmake --build build-dsp --parallel --target TaikorRenderDemos RenderTaikorPresetDemos
+          cmake --build build-dsp --parallel --target RenderTaikorPresetDemos
           generated="build-dsp/generated-media"
           mkdir -p "$generated/Docs/audio"
           cp README.md "$generated/README.md"
-          ./build-dsp/TaikorRenderDemos "$generated/Docs/audio"
-          rendered=$(find "$generated/Docs/audio" -maxdepth 1 -name '[0-9][0-9]-*.wav' | wc -l)
-          if (( rendered != 27 )); then
-            echo "error: rendered $rendered demo WAVs, expected 27" >&2
-            exit 1
-          fi
-          echo "Rendered all $rendered technique WAVs."
           ./build-dsp/RenderTaikorPresetDemos Docs/audio/midi "$generated/Docs/audio"
+          ./build-dsp/RenderTaikorPresetDemos --more Docs/audio/midi/more "$generated/Docs/audio/more"
           python3 Tools/update_readme_blocks.py demos --readme "$generated/README.md" \
             --manifest "$generated/Docs/audio/demos.json"
 
-      - name: Upload demo audio and generated level table
+      - name: Upload demo audio and README
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: generated-audio-demos

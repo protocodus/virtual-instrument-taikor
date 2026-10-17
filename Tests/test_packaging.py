@@ -9,7 +9,6 @@ import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
-import wave
 from zipfile import ZipFile
 
 
@@ -141,27 +140,22 @@ class PackagingTests(unittest.TestCase):
             run("git", "config", "user.email", "packaging@example.invalid", cwd=repo)
             original = ("# Fixture\n<!-- audio-demos-begin -->\ntable\n<!-- audio-demos-end -->\n"
                         "<!-- build-download-begin -->\nOld link\n"
-                        "<!-- build-download-end -->\n"
-                        "<!-- peaks-table-begin: fixture -->\nunchanged peaks\n"
-                        "<!-- peaks-table-end -->\nFooter\n")
+                        "<!-- build-download-end -->\nFooter\n")
             (repo / "README.md").write_text(original)
             run("git", "add", "README.md", cwd=repo)
             run("git", "commit", "-m", "fixture", cwd=repo)
             source = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
             run("git", "remote", "add", "origin", str(remote), cwd=repo)
             run("git", "push", "origin", "main", cwd=repo)
-            (media / "Docs/audio").mkdir(parents=True)
+            (media / "Docs/audio/more").mkdir(parents=True)
             (media / "Docs/screenshots").mkdir()
             (media / "README.md").write_text(original)
             (media / "Docs/screenshots/taikor.png").write_bytes(
                 (ROOT / "Docs/screenshots/taikor.png").read_bytes())
-            for number in range(1, 28):
-                with wave.open(str(media / f"Docs/audio/{number:02}-fixture.wav"), "wb") as audio:
-                    audio.setparams((2, 2, 48000, 0, "NONE", "not compressed"))
-                    audio.writeframes(b"\0\0\0\0")
-            (media / "Docs/audio/01-fixture.mp3").write_bytes(b"ID3" + bytes(5000))
-            (media / "Docs/audio/demos.json").write_text(
-                '{"demos": [{"number": 1, "file": "01-fixture.mp3"}]}')
+            for directory in ("Docs/audio", "Docs/audio/more"):
+                (media / directory / "01-fixture.mp3").write_bytes(b"ID3" + bytes(5000))
+                (media / directory / "demos.json").write_text(
+                    '{"demos": [{"number": 1, "file": "01-fixture.mp3"}]}')
             url = "https://github.com/example/taikor/actions/runs/123456/artifacts/789012"
             environment = dict(os.environ, GITHUB_RUN_NUMBER="42", GITHUB_REPOSITORY="example/taikor")
             # A failed metadata validation must not publish the generated assets.
@@ -174,8 +168,9 @@ class PackagingTests(unittest.TestCase):
                 str(media), "origin", url, cwd=repo, env=environment)
             published = run("git", "--git-dir", str(remote), "show", "main:README.md").stdout
             self.assertIn(f"**[Download main build 42]({url})**, built from", published)
-            self.assertNotIn("demos.json", run("git", "--git-dir", str(remote), "ls-tree", "-r",
-                                               "--name-only", "main").stdout)
+            tree = run("git", "--git-dir", str(remote), "ls-tree", "-r", "--name-only", "main").stdout
+            self.assertNotIn("demos.json", tree)
+            self.assertIn("Docs/audio/more/01-fixture.mp3", tree)
             self.assertIn(f"/commit/{source}", published)
             self.assertTrue(published.endswith(original.split("<!-- build-download-end -->", 1)[1]))
 

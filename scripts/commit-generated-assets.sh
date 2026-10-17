@@ -31,43 +31,24 @@ README_COPY="$(mktemp "${TMPDIR:-/tmp}/taikor-readme.XXXXXX")"
 trap 'rm -f "${README_COPY}"' EXIT
 python3 - "${ASSET_DIR}" "${README_COPY}" <<'PY'
 import pathlib
-import re
+import json
 import sys
-import wave
 
 root = pathlib.Path(sys.argv[1])
 readme_bytes = (root / "README.md").read_bytes()
 readme = readme_bytes.decode("utf-8")
-begin = "<!-- peaks-table-begin:"
-end = "<!-- peaks-table-end -->"
-if readme.count(begin) != 1 or readme.count(end) != 1 or readme.index(begin) >= readme.index(end):
-    sys.exit("error: generated README has missing or invalid peaks table markers")
-wavs = list((root / "Docs/audio").glob("*.wav"))
-if len(wavs) != 27 or any(not re.fullmatch(r"[0-9][0-9]-.*\.wav", p.name) for p in wavs):
-    sys.exit("error: expected exactly 27 renderer-owned top-level WAV files")
-for wav in wavs:
-    with wav.open("rb") as audio:
-        header = audio.read(12)
-    if header[:4] != b"RIFF" or header[8:12] != b"WAVE" or int.from_bytes(header[4:8], "little") + 8 != wav.stat().st_size:
-        sys.exit(f"error: invalid or empty rendered WAV: {wav}")
-    with wave.open(str(wav), "rb") as audio:
-        if audio.getnchannels() != 2 or audio.getsampwidth() != 2 or audio.getnframes() == 0:
-            sys.exit(f"error: expected nonempty stereo 16-bit rendered WAV: {wav}")
-        audio.setpos(audio.getnframes() - 1)
-        if len(audio.readframes(1)) != 4:
-            sys.exit(f"error: incomplete rendered WAV: {wav}")
-# The preset demos: demos.json is the renderer's own list, so every MP3 it
-# names must be beside it, and nothing else numbered may be.
-import json
-manifest = json.loads((root / "Docs/audio/demos.json").read_text(encoding="utf-8"))
-named = sorted(demo["file"] for demo in manifest["demos"])
-mp3s = sorted(p.name for p in (root / "Docs/audio").glob("[0-9][0-9]-*.mp3"))
-if not named or named != mp3s:
-    sys.exit(f"error: preset MP3s {mp3s} do not match the renderer's manifest {named}")
-for mp3 in mp3s:
-    data = (root / "Docs/audio" / mp3).read_bytes()
-    if len(data) < 4096 or not (data[:3] == b"ID3" or data[0] == 0xFF):
-        sys.exit(f"error: {mp3} is not a complete MP3")
+# The preset and More demos: each demos.json is the renderer's own list, so
+# every MP3 it names must be beside it, and nothing else numbered may be.
+for directory in (root / "Docs/audio", root / "Docs/audio/more"):
+    manifest = json.loads((directory / "demos.json").read_text(encoding="utf-8"))
+    named = sorted(demo["file"] for demo in manifest["demos"])
+    mp3s = sorted(p.name for p in directory.glob("[0-9][0-9]-*.mp3"))
+    if not named or named != mp3s:
+        sys.exit(f"error: MP3s {mp3s} in {directory} do not match the renderer's manifest {named}")
+    for mp3 in mp3s:
+        data = (directory / mp3).read_bytes()
+        if len(data) < 4096 or not (data[:3] == b"ID3" or data[0] == 0xFF):
+            sys.exit(f"error: {directory / mp3} is not a complete MP3")
 for marker in ("<!-- audio-demos-begin", "<!-- audio-demos-end -->"):
     if readme.count(marker) != 1:
         sys.exit("error: generated README has missing or repeated audio demo markers")
@@ -97,19 +78,16 @@ if [[ "$(git rev-parse FETCH_HEAD)" != "${SOURCE_SHA}" ]]; then
 fi
 
 # Only numbered renderer outputs are owned here. Historical preview directories
-# and manually named top-level WAVs must remain untouched.
-git rm -q --ignore-unmatch -- ':(top,glob)Docs/audio/[0-9][0-9]-*.wav' ':(top,glob)Docs/audio/[0-9][0-9]-*.mp3'
-mkdir -p Docs/audio Docs/screenshots
+# and manually named files must remain untouched. The numbered WAVs are the
+# retired technique takes; removing them here keeps them from coming back.
+git rm -q --ignore-unmatch -- ':(top,glob)Docs/audio/[0-9][0-9]-*.wav' \
+    ':(top,glob)Docs/audio/[0-9][0-9]-*.mp3' ':(top,glob)Docs/audio/more/[0-9][0-9]-*.mp3'
+mkdir -p Docs/audio/more Docs/screenshots
 cp "${README_COPY}" README.md
 cp "${ASSET_DIR}/Docs/screenshots/taikor.png" Docs/screenshots/taikor.png
 generated_paths=()
-for wav in "${ASSET_DIR}"/Docs/audio/[0-9][0-9]-*.wav; do
-    destination="Docs/audio/${wav##*/}"
-    cp "${wav}" "${destination}"
-    generated_paths+=("${destination}")
-done
-for mp3 in "${ASSET_DIR}"/Docs/audio/[0-9][0-9]-*.mp3; do
-    destination="Docs/audio/${mp3##*/}"
+for mp3 in "${ASSET_DIR}"/Docs/audio/[0-9][0-9]-*.mp3 "${ASSET_DIR}"/Docs/audio/more/[0-9][0-9]-*.mp3; do
+    destination="${mp3#"${ASSET_DIR}"/}"
     cp "${mp3}" "${destination}"
     generated_paths+=("${destination}")
 done

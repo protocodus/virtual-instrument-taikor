@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Write the committed MIDI phrase for each factory preset.
+"""Write the committed MIDI phrases for the README demos.
 
 usage: write_preset_midi.py [output-dir]   (default: Docs/audio/midi)
+
+Writes one phrase per factory preset into the output directory and one per
+More demos showcase into its more/ subdirectory.
 
 Writes Docs/audio/midi/<NN>-<slug>.mid, one per entry of
 Source/DSP/FactoryPresets.cpp in the same order; the slug is the preset name
@@ -46,7 +49,16 @@ class Phrase:
         return start + len(strokes) * step
 
     def hand(self, beat: float, amount: int) -> None:
-        self.events.append((round(beat * PPQ), 0, bytes([0xB0, 1, amount])))
+        self.cc(beat, 1, amount)
+
+    def cc(self, beat: float, controller: int, value: int) -> None:
+        # Controllers sort before notes on the same tick, so a stroke uses them.
+        self.events.append((round(beat * PPQ), 0, bytes([0xB0, controller, value])))
+
+    def bend(self, beat: float, amount: float) -> None:
+        """amount in -1..1; 0 is the centred wheel."""
+        value = max(0, min(16383, 8192 + round(amount * 8191)))
+        self.events.append((round(beat * PPQ), 0, bytes([0xE0, value & 0x7F, value >> 7])))
 
     def end(self, beat: float) -> None:
         self.events.append((round(beat * PPQ), 2, b""))
@@ -195,6 +207,104 @@ def distant_pair() -> Phrase:
     return p
 
 
+# More demos: playing techniques the presets do not feature. Each renders
+# through the factory preset named beside it in Tools/RenderPresetDemos.cpp.
+
+def rolls_and_flams() -> Phrase:
+    # Flams on the nagado, a press roll swelling into a rimshot, then the
+    # shime's single-stroke roll accelerating under an o-daiko call.
+    p = Phrase(90)
+    for bar in range(2):
+        b = bar * 4
+        for beat in (0, 1, 2, 3):
+            p.hit(b + beat, NAGADO, DON, 70)          # grace note
+            p.hit(b + beat + 0.06, NAGADO, DON, 112)  # main stroke
+    swell = [30 + 4 * index for index in range(24)]
+    p.pattern(8, 1 / 6, NAGADO, "DT" * 12, swell)
+    p.hit(12, NAGADO, RIM, 124)
+    t, step, hand = 13.0, 0.25, 0
+    while step > 0.07:
+        p.hit(t, SHIME, (DON, EDGE)[hand], 60 + int((0.25 - step) * 300))
+        t, step, hand = t + step, step * 0.93, 1 - hand
+    p.hit(t, ODAIKO, DON, 124)
+    p.hit(t, SHIME, RIM, 120)
+    return p
+
+
+def dynamics() -> Phrase:
+    # One open stroke from a ghost note to a full-arm hit and back down, on
+    # the nagado and then the o-daiko.
+    p = Phrase(100)
+    rise = [8, 16, 26, 38, 50, 62, 74, 86, 98, 110, 120, 127]
+    p.pattern(0, 0.75, NAGADO, "D" * 12, rise)
+    p.pattern(9, 0.75, ODAIKO, "D" * 12, list(reversed(rise)))
+    return p
+
+
+def hand_damping() -> Phrase:
+    # The o-daiko left to ring, then a hand laid on it (CC1) a little, more,
+    # and fully, so each stroke is cut shorter; then accents choked on the beat.
+    p = Phrase(80)
+    for index, amount in enumerate((0, 40, 80, 127)):
+        b = index * 3
+        p.hand(b, 0)
+        p.hit(b, ODAIKO, DON, 116)
+        p.hand(b + 1, amount)
+    p.hand(12, 0)
+    for beat in range(4):
+        p.hit(12 + beat, ODAIKO, DON, 120)
+        p.hand(12 + beat + 0.5, 127)
+        p.hand(12 + beat + 0.99, 0)
+    p.hand(16, 0)
+    return p
+
+
+def pitch_wheel() -> Phrase:
+    # The wheel presses the head: a held o-daiko note swept sharp and back,
+    # nagado strokes on a pressed head, then the wheel dipped flat.
+    p = Phrase(90)
+    p.hit(0, ODAIKO, DON, 120)
+    for step in range(25):
+        p.bend(0.5 + step * 0.12, (1 - abs(step - 12) / 12.0))
+    p.bend(3.6, 0)
+    for index, amount in enumerate((0.0, 0.33, 0.66, 1.0, 0.66, 0.33, 0.0)):
+        p.bend(5 + index, amount)
+        p.hit(5 + index, NAGADO, DON, 104)
+    p.hit(13, ODAIKO, DON, 120)
+    for step in range(13):
+        p.bend(13.5 + step * 0.15, -step / 12.0)
+    p.bend(16, 0)
+    return p
+
+
+def strike_placement() -> Phrase:
+    # CC17 walks the stroke from the centre to the rim, CC16 then carries it
+    # once around the head, and CC18 answers on the rear head.
+    p = Phrase(96)
+    for index in range(9):
+        p.cc(index * 0.75, 17, min(127, index * 16))
+        p.hit(index * 0.75, NAGADO, DON, 108)
+    p.cc(7.5, 17, 96)
+    for index in range(9):
+        p.cc(7.5 + index * 0.5, 16, min(127, index * 16))
+        p.hit(7.5 + index * 0.5, NAGADO, DON, 104)
+    p.cc(13, 121, 0)
+    for index in range(8):
+        p.cc(13 + index * 0.75, 18, 127 if index % 2 else 0)
+        p.hit(13 + index * 0.75, ODAIKO, DON, 112)
+    p.cc(19, 18, 0)
+    return p
+
+
+MORE = [
+    ("rolls-and-flams", rolls_and_flams),
+    ("dynamics", dynamics),
+    ("hand-damping", hand_damping),
+    ("pitch-wheel", pitch_wheel),
+    ("strike-placement", strike_placement),
+]
+
+
 # Same order as Source/DSP/FactoryPresets.cpp.
 PHRASES = [
     ("kumi-daiko-stage", kumi_daiko_stage),
@@ -211,10 +321,12 @@ PHRASES = [
 def main() -> int:
     out = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "Docs/audio/midi")
     out.mkdir(parents=True, exist_ok=True)
-    for number, (slug, phrase) in enumerate(PHRASES, start=1):
-        path = out / f"{number:02}-{slug}.mid"
-        path.write_bytes(phrase().smf())
-        print(f"Wrote {path}")
+    for directory, phrases in ((out, PHRASES), (out / "more", MORE)):
+        directory.mkdir(parents=True, exist_ok=True)
+        for number, (slug, phrase) in enumerate(phrases, start=1):
+            path = directory / f"{number:02}-{slug}.mid"
+            path.write_bytes(phrase().smf())
+            print(f"Wrote {path}")
     return 0
 
 

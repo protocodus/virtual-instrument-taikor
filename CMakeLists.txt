@@ -288,11 +288,8 @@ if(TAIKOR_BUILD_TOOLS)
     add_executable(TaikorCavityStudy Tools/StudyCoupledCavity.cpp)
     target_link_libraries(TaikorCavityStudy PRIVATE TaikorDSP)
 
-    add_executable(TaikorRenderDemos Tools/RenderDemos.cpp)
-    target_link_libraries(TaikorRenderDemos PRIVATE TaikorDSP)
-    target_compile_features(TaikorRenderDemos PRIVATE cxx_std_20)
-
-    # The README preset demos (G3), from Docs/audio/midi through the shared
+    # The README preset demos (G3) from Docs/audio/midi and, with --more, the
+    # More demos from Docs/audio/midi/more, through the shared
     # Tools/PresetDemoRenderer.h.
     add_executable(RenderTaikorPresetDemos Tools/RenderPresetDemos.cpp)
     target_link_libraries(RenderTaikorPresetDemos PRIVATE TaikorDSP)
@@ -304,13 +301,11 @@ if(TAIKOR_BUILD_TOOLS)
 
     if(MSVC)
         target_compile_options(TaikorBenchmarkCPU PRIVATE /W4 /permissive-)
-        target_compile_options(TaikorRenderDemos PRIVATE /W4 /permissive-)
         target_compile_options(RenderTaikorPresetDemos PRIVATE /W4 /permissive-)
         target_compile_options(TaikorValidateCalibrationCapture PRIVATE
             /W4 /permissive-)
     else()
         target_compile_options(TaikorBenchmarkCPU PRIVATE -Wall -Wextra -Wpedantic)
-        target_compile_options(TaikorRenderDemos PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(RenderTaikorPresetDemos PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(TaikorValidateCalibrationCapture PRIVATE
             -Wall -Wextra -Wpedantic)
@@ -423,14 +418,6 @@ if(BUILD_TESTING)
         endif()
 
         add_test(NAME Taikor.CavityStudy COMMAND TaikorCavityStudy)
-        # Guards the renderer that produces the committed demonstration WAVs:
-        # it renders a short take to a temporary directory and checks that the
-        # audio is finite, audible and written as a readable WAV.
-        add_test(NAME Taikor.RenderDemos
-                 COMMAND TaikorRenderDemos --smoke
-                         "${CMAKE_CURRENT_BINARY_DIR}/demo-smoke")
-        set_tests_properties(Taikor.RenderDemos PROPERTIES TIMEOUT 60)
-
         add_test(NAME Taikor.ValidateCalibrationCapture
                  COMMAND TaikorValidateCalibrationCapture --self-test)
         set_tests_properties(Taikor.ValidateCalibrationCapture PROPERTIES
@@ -444,17 +431,11 @@ if(BUILD_TESTING)
                          "${CMAKE_CURRENT_SOURCE_DIR}/Docs/audio/midi")
         set_tests_properties(Taikor.AudioDemos PROPERTIES LABELS audio TIMEOUT 1800)
 
-        # Renders the 27 technique takes twice and requires identical bytes.
-        # Adding or removing a take means updating the count here.
-        if(Python3_Interpreter_FOUND)
-            add_test(NAME Taikor.TechniqueDemos
-                     COMMAND "${Python3_EXECUTABLE}"
-                             "${CMAKE_CURRENT_SOURCE_DIR}/Tests/check_audio_demos.py"
-                             "$<TARGET_FILE:TaikorRenderDemos>"
-                             "${CMAKE_CURRENT_BINARY_DIR}/audio-demos" 27)
-            set_tests_properties(Taikor.TechniqueDemos PROPERTIES
-                LABELS audio TIMEOUT 1800)
-        endif()
+        # The same checks for the More demos (G3d).
+        add_test(NAME Taikor.MoreDemos
+                 COMMAND RenderTaikorPresetDemos --more --check
+                         "${CMAKE_CURRENT_SOURCE_DIR}/Docs/audio/midi/more")
+        set_tests_properties(Taikor.MoreDemos PROPERTIES LABELS audio TIMEOUT 1800)
     endif()
 
     if(TAIKOR_BUILD_PLUGIN)
