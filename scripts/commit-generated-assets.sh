@@ -71,8 +71,8 @@ if sys.argv[5] == "4":
     pattern = rf"https://github\.com/{re.escape(repository)}/actions/runs/[0-9]+/artifacts/[0-9]+"
     if not re.fullmatch(pattern, url):
         sys.exit("error: distribution URL must be a GitHub Actions artifact URL for this repository")
-    link_begin = b"<!-- distribution-link-begin -->"
-    link_end = b"<!-- distribution-link-end -->"
+    link_begin = b"<!-- build-download-begin -->"
+    link_end = b"<!-- build-download-end -->"
     if readme_bytes.count(link_begin) != 1 or readme_bytes.count(link_end) != 1:
         sys.exit("error: generated README must have exactly one pair of distribution link markers")
     start = readme_bytes.index(link_begin) + len(link_begin)

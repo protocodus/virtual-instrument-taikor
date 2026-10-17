@@ -7,6 +7,27 @@
   re-render or refresh them when later engine changes make them stale,
   and do not treat their staleness as a defect.
 
+## Architecture
+
+This is Taikor's canonical repository: it owns the DSP engine in
+`Source/DSP/` and the JUCE plug-in around it. No Reason Rack Extension exists
+yet. If one is added, it lives in the private
+`protocodus/reason-rack-extensions` repository as a thin adapter that mounts
+this repository as the pinned submodule `Examples/Taikor/Instrument` and
+compiles `Source/DSP/*.cpp` directly; DSP and playing-model changes land here
+first and the Rack pin then advances.
+
+Repository layout, naming, CI, versions and the `Docs/` taxonomy follow the
+Protocodus portfolio standard kept in the project, not in this repository.
+
+- The DSP version is the product version: `project(Taikor VERSION X.Y.Z)` in
+  `CMakeLists.txt`. Any DSP or behaviour change bumps it; versions only go up.
+- `Source/DSP/` is JUCE-free and C++17 (the Rack toolchain; `TaikorDSPCxx17`
+  proves it). The JUCE room reverb therefore lives in `Source/IRReverb.*`.
+  No allocation, file I/O, locks or exceptions on the audio thread.
+- Vendor identity is `Protocodus` / `cz.protocodus.taikor`. Never change the
+  plug-in codes `Tkor` / `Tko1`: hosts recall sessions by them.
+
 ## Documentation layout
 
 `README.md` is the single product document for Taikor. It opens with the
@@ -108,3 +129,24 @@ written up as though a measurement had settled it.
 defensible on their own physics. It does not license drawing a constant, fitting
 a curve, or keeping a formulation the measurements reject. If every candidate
 needs an invented number, the answer is still that none of them ships.
+
+## Build and verify
+
+```sh
+cmake -S . -B build-dsp -DCMAKE_BUILD_TYPE=Release -DTAIKOR_BUILD_PLUGIN=OFF -DBUILD_TESTING=ON
+cmake --build build-dsp --parallel 2
+ctest --test-dir build-dsp -L unit --output-on-failure
+```
+
+Every test is `Taikor.<Suite>` with one tier label: `unit`, `audio` (the demo
+set rendered twice, byte-identical), `render` (editor screenshot, plug-in
+build only) or `fuzz` (`-DTAIKOR_BUILD_FUZZER=ON` with Clang). A test without
+an explicit tier is labelled `unit` at the end of `CMakeLists.txt`. Select the
+suites that cover a change with `-R`, then run the full applicable tiers
+before a substantive DSP change is called done; `Taikor.TaikoEngine` is the
+long one. The plug-in build uses `build-plugin`, and
+`scripts/validate-plugins.sh` runs pluginval (and auval on macOS).
+
+A test is never skipped, disabled or loosened to get green. Diagnose a failed
+contract against the baseline before changing a fixture, and document why an
+assumption was stale.

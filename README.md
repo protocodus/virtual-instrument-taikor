@@ -63,6 +63,16 @@ ka/chudaiko filenames remain stable after the display labels changed.
 
 ## Version history
 
+### Unreleased
+
+- Hosts now list Taikor under the vendor **Protocodus**; the macOS bundle and
+  CLAP ID are `cz.protocodus.taikor`. The plug-in codes are unchanged, so saved
+  sessions still find it, but macOS treats it as a new bundle: remove an
+  older main-build copy of Taikor before installing this one.
+- The editor and package names show the build as `1.0.0-build.<number>`.
+- Every main build validates the plug-ins with pluginval and auval; `v*` tags
+  draft a GitHub release.
+
 ### 2026-09-11
 
 - Added build numbers to every platform package and the final distribution
@@ -285,14 +295,14 @@ ka/chudaiko filenames remain stable after the display labels changed.
 
 ## Downloads
 
-<!-- distribution-link-begin -->
+<!-- build-download-begin -->
 **[Download latest distribution](https://github.com/protocodus/virtual-instrument-taikor/actions/runs/39005782751/artifacts/12091341689)** — build 53, built from [`b29d1d05beec`](https://github.com/protocodus/virtual-instrument-taikor/commit/b29d1d05beecaac806ea95c8b0ce1ed07a1b90ac).
-<!-- distribution-link-end -->
+<!-- build-download-end -->
 
 The download contains all platform packages, an editor screenshot, audio demos
 and SHA-256 checksums. Each successful `main` build updates the link above.
 GitHub sign-in is required; downloads are retained for 30 days.
-[Browse successful builds](https://github.com/protocodus/virtual-instrument-taikor/actions/workflows/nightly.yml?query=branch%3Amain+is%3Asuccess).
+[Browse successful builds](https://github.com/protocodus/virtual-instrument-taikor/actions/workflows/main-build.yml?query=branch%3Amain+is%3Asuccess).
 
 | Platform | Formats | Package |
 | --- | --- | --- |
@@ -803,9 +813,27 @@ The JUCE-free DSP core, tests and demo renderer:
 cmake -S . -B build-dsp -DCMAKE_BUILD_TYPE=Release \
   -DTAIKOR_BUILD_PLUGIN=OFF -DBUILD_TESTING=ON
 cmake --build build-dsp --parallel
-ctest --test-dir build-dsp --output-on-failure
+ctest --test-dir build-dsp -L unit --output-on-failure
 ./build-dsp/TaikorRenderDemos Docs/audio
 ```
+
+Every CTest test carries one tier label: `unit` (contracts), `audio` (renders
+the README demo set twice and requires identical bytes), `render` (draws the
+editor screenshot and checks its size and content) and `fuzz` (the libFuzzer
+harness in `Tests/DspFuzz.cpp`). Select tiers with `ctest -L`. The fuzz tier
+needs Clang:
+
+```bash
+cmake -S . -B build-sanitize -G Ninja -DCMAKE_CXX_COMPILER=clang++ \
+  -DCMAKE_C_COMPILER=clang -DTAIKOR_BUILD_PLUGIN=OFF -DBUILD_TESTING=ON \
+  -DTAIKOR_ENABLE_SANITIZERS=ON -DTAIKOR_BUILD_FUZZER=ON
+cmake --build build-sanitize --parallel
+ctest --test-dir build-sanitize -L 'unit|fuzz' --output-on-failure
+```
+
+`Source/DSP/` is JUCE-free and C++17-compatible; every non-MSVC build also
+compiles it as `TaikorDSPCxx17` to prove that. The room reverb
+(`Source/IRReverb.*`) uses JUCE's convolution and belongs to the plug-in.
 
 The same build produces `TaikorValidateCalibrationCapture`, the inventory
 preflight for the controlled capture described under
@@ -835,14 +863,19 @@ commits during configuration. Local checkouts can be supplied with
 `-DTAIKOR_CLAP_JUCE_EXTENSIONS_PATH=/path/to/clap-juce-extensions`.
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
+cmake -S . -B build-plugin -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+cmake --build build-plugin --parallel
+ctest --test-dir build-plugin -L 'unit|render' --output-on-failure
+python3 scripts/package-linux.py --build-dir build-plugin
 ```
 
+`-DTAIKOR_BUILD_CLAP=OFF` leaves out the CLAP format.
+`./scripts/validate-plugins.sh <build-dir>` runs pluginval at strictness 10
+on the VST3, and auval on macOS.
+
 On macOS, `./scripts/build-macos.sh` drives the same build through Xcode as a
-universal binary and renders the committed editor screenshot while the suite
-runs. `./scripts/sign-and-package-macos.sh` produces a ZIP and PKG containing
+universal binary (`CTEST_LABELS` selects the tiers it runs).
+`./scripts/sign-and-package-macos.sh` produces a ZIP and PKG containing
 VST3, Audio Unit, CLAP and the standalone app.
 
 On Windows, use a Visual Studio developer shell with C++ tools and Python 3:
@@ -854,17 +887,19 @@ ctest --test-dir build-win -C Release --output-on-failure
 python scripts/package-windows.py --build-dir build-win
 ```
 
-The [Main build workflow](https://github.com/protocodus/virtual-instrument-taikor/actions/workflows/nightly.yml)
+The [Main build workflow](https://github.com/protocodus/virtual-instrument-taikor/actions/workflows/main-build.yml)
 builds every push to `main`, including merges, and also runs daily or manually.
-Download the `taikor-distribution-build-<build number>-<commit SHA>` artifact from a completed run;
+Download the `taikor-main-build-<build number>` artifact from a completed run;
 it contains the macOS universal ZIP/PKG, Windows x64 ZIP, Linux x64 tarball,
-matching screenshot and audio demos under `previews/`, build provenance and
-SHA-256 checksums. Individual platform packages remain available if another
+matching screenshot and audio demos under `previews/`, build provenance
+(`BUILD.txt`) and `SHA256SUMS`. Every main build also validates the plug-ins
+with pluginval and auval and fuzzes the DSP for 30 minutes. Individual platform packages remain available if another
 platform fails. Distribution artifacts are retained for 30 days.
 
 Package filenames include the version and workflow build number, for example
-`Taikor-1.0.0-build-123-Windows-x64.zip`. Local packaging uses `build-local`
-when `GITHUB_RUN_NUMBER` is unset. The download link above is updated to the
+`Taikor-1.0.0-build.123-Windows-x64.zip`, and the editor shows the same
+`1.0.0-build.123`. Local packaging uses `build.local` when
+`GITHUB_RUN_NUMBER` is unset. The download link above is updated to the
 final combined artifact only after all packages and previews are uploaded.
 
 After all builds and renders succeed, the same workflow refreshes the committed
@@ -872,6 +907,15 @@ editor screenshot, all 27 numbered audio demos, and the README's generated
 level table together in one bot commit. If `main` has advanced during the build,
 that run keeps its downloads and leaves the committed-media refresh to the
 newer run. Historical listening previews are preserved.
+
+A `vX.Y.Z` tag matching the CMake project version runs the
+[Release workflow](https://github.com/protocodus/virtual-instrument-taikor/actions/workflows/release.yml):
+every test tier, pluginval and auval, packages for all three platforms,
+`SHA256SUMS`, and a **draft** GitHub release for review. The macOS bundles are
+Developer ID signed and the PKG notarized when the `MACOS_CERTIFICATES_P12`,
+`MACOS_CERTIFICATES_PASSWORD`, `MACOS_APP_SIGN_IDENTITY`,
+`MACOS_INSTALLER_SIGN_IDENTITY` and `MACOS_NOTARY_*` secrets exist; otherwise
+they are signed ad hoc and the draft says so.
 
 ## Licensing
 

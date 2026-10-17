@@ -2,7 +2,7 @@
 
 #include <juce_dsp/juce_dsp.h>
 
-#include "OutputLimiter.h"
+#include "DSP/OutputLimiter.h"
 
 #include <array>
 #include <memory>

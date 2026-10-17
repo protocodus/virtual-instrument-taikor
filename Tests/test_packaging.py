@@ -19,9 +19,17 @@ IR_LICENSES = ("ECHOTHIEF-LICENSE.pdf", "VOXENGO-IMPULSES-LICENSE.txt")
 sys.path.insert(0, str(SCRIPTS))
 from release_metadata import build_number, package_prefix
 
-spec = importlib.util.spec_from_file_location("windows_package", SCRIPTS / "package-windows.py")
-windows = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(windows)
+
+
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+windows = load("windows_package", SCRIPTS / "package-windows.py")
+linux = load("linux_package", SCRIPTS / "package-linux.py")
 
 
 def run(*args, cwd=None, env=None, check=True):
@@ -33,10 +41,10 @@ class PackagingTests(unittest.TestCase):
     def test_build_labels_and_invalid_input(self):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(build_number(), "local")
-            self.assertEqual(package_prefix("0.3.2"), "Taikor-0.3.2-build-local")
+            self.assertEqual(package_prefix("0.3.2"), "Taikor-0.3.2-build.local")
         for value in ("1", "42", "100001"):
             with patch.dict(os.environ, {"GITHUB_RUN_NUMBER": value}):
-                self.assertEqual(package_prefix("0.3.2"), f"Taikor-0.3.2-build-{value}")
+                self.assertEqual(package_prefix("0.3.2"), f"Taikor-0.3.2-build.{value}")
         for value in ("", "0", "../123", "42/filename", " 42", "42\n"):
             with patch.dict(os.environ, {"GITHUB_RUN_NUMBER": value}):
                 with self.assertRaises(ValueError):
@@ -55,10 +63,10 @@ class PackagingTests(unittest.TestCase):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(b"fixture binary")
             (build / "dist").mkdir()
-            (build / "dist/Taikor-0.3.2-build-41-Windows-x64.zip").write_bytes(b"stale")
+            (build / "dist/Taikor-0.3.2-build.41-Windows-x64.zip").write_bytes(b"stale")
             with patch.dict(os.environ, {"GITHUB_RUN_NUMBER": "42"}):
                 archive = windows.package(build, "Release")
-            self.assertEqual(archive.name, "Taikor-0.3.2-build-42-Windows-x64.zip")
+            self.assertEqual(archive.name, "Taikor-0.3.2-build.42-Windows-x64.zip")
             self.assertEqual(list((build / "dist").iterdir()), [archive])
             with ZipFile(archive) as contents:
                 for name in (*names, "LICENSE", "THIRD_PARTY_NOTICES.md"):
@@ -78,9 +86,12 @@ class PackagingTests(unittest.TestCase):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(b"fixture binary")
                 path.chmod(0o755)
-            environment = dict(os.environ, GITHUB_RUN_NUMBER="42", BUILD_DIR=str(build))
-            run("bash", str(SCRIPTS / "package-linux.sh"), env=environment)
-            archive = build / "dist/Taikor-0.3.2-build-42-Linux-x64.tar.gz"
+            (build / "dist").mkdir()
+            (build / "dist/Taikor-0.3.2-build.41-Linux-x64.tar.gz").write_bytes(b"stale")
+            with patch.dict(os.environ, {"GITHUB_RUN_NUMBER": "42"}):
+                archive = linux.package(build, "Release")
+            self.assertEqual(archive.name, "Taikor-0.3.2-build.42-Linux-x64.tar.gz")
+            self.assertEqual(list((build / "dist").iterdir()), [archive])
             with tarfile.open(archive) as contents:
                 for name in (*names, "LICENSE", "THIRD_PARTY_NOTICES.md"):
                     self.assertGreater(contents.getmember(name).size, 0)
@@ -102,7 +113,7 @@ class PackagingTests(unittest.TestCase):
             self.assertGreater(source.stat().st_size, 0)
 
     def test_cross_platform_manifest_rejects_different_build(self):
-        workflow = (ROOT / ".github/workflows/nightly.yml").read_text()
+        workflow = (ROOT / ".github/workflows/main-build.yml").read_text()
         section = workflow.split("      - name: Check the four-file manifest\n", 1)[1]
         body = section.split("        run: |\n", 1)[1].split("\n      - name:", 1)[0]
         script = "\n".join(line[10:] for line in body.splitlines())
@@ -111,11 +122,11 @@ class PackagingTests(unittest.TestCase):
             dist.mkdir()
             for suffix in ("macOS-universal.zip", "macOS-universal.pkg",
                            "Linux-x64.tar.gz", "Windows-x64.zip"):
-                (dist / f"Taikor-0.3.2-build-42-{suffix}").write_bytes(b"package")
+                (dist / f"Taikor-0.3.2-build.42-{suffix}").write_bytes(b"package")
             environment = dict(os.environ, GITHUB_RUN_NUMBER="42")
             run("bash", "-c", script, cwd=directory, env=environment)
-            correct = dist / "Taikor-0.3.2-build-42-Windows-x64.zip"
-            correct.rename(dist / "Taikor-0.3.2-build-41-Windows-x64.zip")
+            correct = dist / "Taikor-0.3.2-build.42-Windows-x64.zip"
+            correct.rename(dist / "Taikor-0.3.2-build.41-Windows-x64.zip")
             self.assertNotEqual(run("bash", "-c", script, cwd=directory,
                                    env=environment, check=False).returncode, 0)
 
@@ -128,8 +139,8 @@ class PackagingTests(unittest.TestCase):
             run("git", "init", "--bare", str(remote))
             run("git", "config", "user.name", "Packaging test", cwd=repo)
             run("git", "config", "user.email", "packaging@example.invalid", cwd=repo)
-            original = ("# Fixture\n<!-- distribution-link-begin -->\nOld link\n"
-                        "<!-- distribution-link-end -->\n"
+            original = ("# Fixture\n<!-- build-download-begin -->\nOld link\n"
+                        "<!-- build-download-end -->\n"
                         "<!-- peaks-table-begin: fixture -->\nunchanged peaks\n"
                         "<!-- peaks-table-end -->\nFooter\n")
             (repo / "README.md").write_text(original)
@@ -161,7 +172,7 @@ class PackagingTests(unittest.TestCase):
             self.assertIn(f"[Download latest distribution]({url})", published)
             self.assertIn("build 42, built from", published)
             self.assertIn(f"/commit/{source}", published)
-            self.assertTrue(published.endswith(original.split("<!-- distribution-link-end -->", 1)[1]))
+            self.assertTrue(published.endswith(original.split("<!-- build-download-end -->", 1)[1]))
 
 
 if __name__ == "__main__":

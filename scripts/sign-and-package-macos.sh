@@ -173,7 +173,7 @@ rm -f "${DIST_DIR}/Taikor-"*-unsigned.pkg
 
 COPYFILE_DISABLE=1 pkgbuild \
     --root "${PACKAGE_ROOT}" \
-    --identifier audio.taikor.synth.pkg \
+    --identifier cz.protocodus.taikor.pkg \
     --version "${VERSION}" \
     --install-location / \
     "${PKG_UNSIGNED}"

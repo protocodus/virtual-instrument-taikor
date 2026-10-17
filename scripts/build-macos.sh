@@ -52,7 +52,12 @@ fi
 
 cmake "${cmake_args[@]}"
 cmake --build "${BUILD_DIR}" --config "${CONFIG}" --parallel
-ctest --test-dir "${BUILD_DIR}" -C "${CONFIG}" --output-on-failure
+# CTEST_LABELS selects test tiers (for example "unit|render"); unset runs all.
+ctest_args=(--test-dir "${BUILD_DIR}" -C "${CONFIG}" --output-on-failure)
+if [[ -n "${CTEST_LABELS:-}" ]]; then
+    ctest_args+=(-L "${CTEST_LABELS}")
+fi
+ctest "${ctest_args[@]}"
 
 echo
 echo "Build complete. Artifacts:"

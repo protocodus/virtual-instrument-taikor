@@ -1,4 +1,4 @@
-#include "DSP/IRReverb.h"
+#include "IRReverb.h"
 #include "DSP/OutputLimiter.h"
 
 #include <algorithm>

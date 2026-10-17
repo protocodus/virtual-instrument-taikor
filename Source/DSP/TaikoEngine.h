@@ -16,6 +16,7 @@
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <tuple>
 
 namespace taikor
 {
@@ -246,8 +247,23 @@ struct EngineParameters
     float physicalFamilyMix { 0.0f };
     float physicalRearTensionScale { 1.0f };
 
-    [[nodiscard]] bool operator== (const EngineParameters&) const noexcept = default;
+    // Spelled out rather than defaulted because the DSP must stay C++17 for the
+    // Rack toolchain. The size check below catches a field missing from tie().
+    [[nodiscard]] auto tie() const noexcept
+    {
+        return std::tie (headDiameter, bodyDepth, tension, headMaterial, shellMaterial,
+                         resonantTension, cavityCoupling, headDamping, shellResonance, pitch,
+                         bachiHardness, strikePosition, strikeAzimuth, velocityDepth,
+                         velocityCurve, tensionModulation, strikeNoise, humanise, octaveBody,
+                         micDistance, micSpread, stereoWidth, drive, outputGain, performer,
+                         outputHighPassHz, ensembleSize, ensembleVariation, physicalFamily,
+                         physicalFamilyMix, physicalRearTensionScale);
+    }
+    [[nodiscard]] bool operator== (const EngineParameters& other) const noexcept { return tie() == other.tie(); }
+    [[nodiscard]] bool operator!= (const EngineParameters& other) const noexcept { return ! (*this == other); }
 };
+static_assert (sizeof (EngineParameters) == std::tuple_size_v<decltype (EngineParameters {}.tie())> * sizeof (float),
+               "every EngineParameters field must be listed in EngineParameters::tie()");
 
 // Snapshot of the drum for the editor's head display. Produced on the audio
 // thread and read on the message thread through relaxed atomics, so it is kept

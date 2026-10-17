@@ -38,12 +38,25 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(TAIKOR_BUILD_PLUGIN "Build the JUCE plug-in and standalone app" ON)
+option(TAIKOR_BUILD_CLAP "Build the CLAP plug-in alongside the JUCE formats" ON)
+option(TAIKOR_ENABLE_SANITIZERS
+    "Instrument tests and DSP with address/undefined-behaviour sanitizers" OFF)
+option(TAIKOR_BUILD_FUZZER "Build the Clang libFuzzer DSP input harness" OFF)
 set(TAIKOR_JUCE_PATH "" CACHE PATH
     "Optional path to a local JUCE 8.0.14 checkout (avoids downloading JUCE)")
 set(TAIKOR_CLAP_JUCE_EXTENSIONS_PATH "" CACHE PATH
     "Optional path to a local clap-juce-extensions checkout with submodules")
 
 include(CTest)
+
+if(TAIKOR_ENABLE_SANITIZERS OR TAIKOR_BUILD_FUZZER)
+    if(MSVC OR NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        message(FATAL_ERROR "Sanitizer builds require Clang or GCC")
+    endif()
+    add_compile_options(-fsanitize=address,undefined,float-cast-overflow
+        -fno-sanitize-recover=all -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined,float-cast-overflow)
+endif()
 
 set(TAIKOR_DSP_SOURCES
     Source/DSP/ShellBoundary.cpp
@@ -79,6 +92,32 @@ else()
     target_compile_options(TaikorDSP PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+# The DSP must stay C++17 for the Rack Extension toolchain even though the
+# plug-in, tests and tools are C++20; this target proves it in every build.
+if(NOT MSVC)
+    add_library(TaikorDSPCxx17 OBJECT ${TAIKOR_DSP_SOURCES})
+    target_include_directories(TaikorDSPCxx17
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Source")
+    set_target_properties(TaikorDSPCxx17 PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF)
+    target_compile_options(TaikorDSPCxx17 PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
+if(TAIKOR_BUILD_FUZZER)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "TAIKOR_BUILD_FUZZER requires Clang's libFuzzer")
+    endif()
+    # The DSP sources are compiled in, not linked, so libFuzzer's coverage
+    # instrumentation reaches the engine and not only the harness.
+    add_executable(TaikorDspFuzz Tests/DspFuzz.cpp ${TAIKOR_DSP_SOURCES})
+    target_include_directories(TaikorDspFuzz
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Source")
+    target_compile_options(TaikorDspFuzz PRIVATE -fsanitize=fuzzer-no-link)
+    target_link_options(TaikorDspFuzz PRIVATE -fsanitize=fuzzer)
+endif()
+
 if(TAIKOR_BUILD_PLUGIN)
     include(FetchContent)
 
@@ -99,29 +138,31 @@ if(TAIKOR_BUILD_PLUGIN)
         FetchContent_MakeAvailable(JUCE)
     endif()
 
-    if(TAIKOR_CLAP_JUCE_EXTENSIONS_PATH)
-        foreach(required_file IN ITEMS CMakeLists.txt
-                clap-libs/clap/CMakeLists.txt
-                clap-libs/clap-helpers/CMakeLists.txt)
-            if(NOT EXISTS "${TAIKOR_CLAP_JUCE_EXTENSIONS_PATH}/${required_file}")
-                message(FATAL_ERROR
-                    "TAIKOR_CLAP_JUCE_EXTENSIONS_PATH is missing ${required_file}; "
-                    "use a checkout with git submodule update --init --recursive")
-            endif()
-        endforeach()
-        add_subdirectory("${TAIKOR_CLAP_JUCE_EXTENSIONS_PATH}"
-                         "${CMAKE_CURRENT_BINARY_DIR}/clap-juce-extensions"
-                         EXCLUDE_FROM_ALL)
-    else()
-        FetchContent_Declare(
-            clap_juce_extensions
-            GIT_REPOSITORY https://github.com/free-audio/clap-juce-extensions.git
-            GIT_TAG c1a5ad025f95d01e03267857fa8276ebeed16500
-            # Archive downloads omit these gitlinks. Fetch both dependencies
-            # at the immutable revisions recorded by the wrapper commit.
-            GIT_SUBMODULES clap-libs/clap clap-libs/clap-helpers
-            GIT_SUBMODULES_RECURSE TRUE)
-        FetchContent_MakeAvailable(clap_juce_extensions)
+    if(TAIKOR_BUILD_CLAP)
+        if(TAIKOR_CLAP_JUCE_EXTENSIONS_PATH)
+            foreach(required_file IN ITEMS CMakeLists.txt
+                    clap-libs/clap/CMakeLists.txt
+                    clap-libs/clap-helpers/CMakeLists.txt)
+                if(NOT EXISTS "${TAIKOR_CLAP_JUCE_EXTENSIONS_PATH}/${required_file}")
+                    message(FATAL_ERROR
+                        "TAIKOR_CLAP_JUCE_EXTENSIONS_PATH is missing ${required_file}; "
+                        "use a checkout with git submodule update --init --recursive")
+                endif()
+            endforeach()
+            add_subdirectory("${TAIKOR_CLAP_JUCE_EXTENSIONS_PATH}"
+                             "${CMAKE_CURRENT_BINARY_DIR}/clap-juce-extensions"
+                             EXCLUDE_FROM_ALL)
+        else()
+            FetchContent_Declare(
+                clap_juce_extensions
+                GIT_REPOSITORY https://github.com/free-audio/clap-juce-extensions.git
+                GIT_TAG c1a5ad025f95d01e03267857fa8276ebeed16500
+                # Archive downloads omit these gitlinks. Fetch both dependencies
+                # at the immutable revisions recorded by the wrapper commit.
+                GIT_SUBMODULES clap-libs/clap clap-libs/clap-helpers
+                GIT_SUBMODULES_RECURSE TRUE)
+            FetchContent_MakeAvailable(clap_juce_extensions)
+        endif()
     endif()
 
     if(APPLE)
@@ -132,8 +173,8 @@ if(TAIKOR_BUILD_PLUGIN)
 
     juce_add_plugin(Taikor
         VERSION ${PROJECT_VERSION}
-        COMPANY_NAME "Taikor Audio"
-        BUNDLE_ID "audio.taikor.synth"
+        COMPANY_NAME "Protocodus"
+        BUNDLE_ID "cz.protocodus.taikor"
         PLUGIN_MANUFACTURER_CODE Tkor
         PLUGIN_CODE Tko1
         PRODUCT_NAME "Taikor"
@@ -151,9 +192,11 @@ if(TAIKOR_BUILD_PLUGIN)
 
     # CLAP is supplied by the JUCE extension, outside JUCE's FORMATS list. Its
     # wrapper inherits Taikor's product name, version, and artefacts directory.
-    clap_juce_extensions_plugin(TARGET Taikor
-        CLAP_ID "audio.taikor.synth"
-        CLAP_FEATURES instrument synthesizer drum stereo)
+    if(TAIKOR_BUILD_CLAP)
+        clap_juce_extensions_plugin(TARGET Taikor
+            CLAP_ID "cz.protocodus.taikor"
+            CLAP_FEATURES instrument synthesizer drum stereo)
+    endif()
 
     juce_generate_juce_header(Taikor)
 
@@ -190,8 +233,8 @@ if(TAIKOR_BUILD_PLUGIN)
         Source/PluginProcessor.h
         Source/PluginEditor.cpp
         Source/PluginEditor.h
-        Source/DSP/IRReverb.cpp
-        Source/DSP/IRReverb.h)
+        Source/IRReverb.cpp
+        Source/IRReverb.h)
 
     target_link_libraries(Taikor
         PRIVATE
@@ -304,6 +347,14 @@ if(BUILD_TESTING)
                  COMMAND "${Python3_EXECUTABLE}"
                          "${CMAKE_CURRENT_SOURCE_DIR}/Tools/BenchmarkPublishedModes.py"
                          --self-test)
+        # The packaging and publishing scripts are bash and POSIX tar/git
+        # driven, so their contracts run where those scripts do.
+        if(NOT WIN32)
+            add_test(NAME Taikor.Packaging
+                     COMMAND "${Python3_EXECUTABLE}" -m unittest discover
+                             -s "${CMAKE_CURRENT_SOURCE_DIR}/Tests"
+                             -p test_packaging.py)
+        endif()
     endif()
 
     add_executable(TaikorEnsembleEngineTests Tests/EnsembleEngineTests.cpp)
@@ -332,8 +383,12 @@ if(BUILD_TESTING)
     add_test(NAME Taikor.TaikoEngine COMMAND TaikorTaikoEngineTests)
     # Includes broad physical-control scans and voice-bank builds at four sample
     # rates through the 296-resonator head, cavity and shell bank; keep a
-    # generous ceiling for slower CI workers.
-    set_tests_properties(Taikor.TaikoEngine PROPERTIES TIMEOUT 600)
+    # generous ceiling for slower CI workers. Sanitizers make it ~2x slower.
+    if(TAIKOR_ENABLE_SANITIZERS OR TAIKOR_BUILD_FUZZER)
+        set_tests_properties(Taikor.TaikoEngine PROPERTIES TIMEOUT 1800)
+    else()
+        set_tests_properties(Taikor.TaikoEngine PROPERTIES TIMEOUT 600)
+    endif()
 
     if(TAIKOR_BUILD_TOOLS)
         # Exercise every benchmark score and its deterministic audio
@@ -363,6 +418,18 @@ if(BUILD_TESTING)
                  COMMAND TaikorValidateCalibrationCapture --self-test)
         set_tests_properties(Taikor.ValidateCalibrationCapture PROPERTIES
             TIMEOUT 30)
+
+        # Renders the complete README demo set twice and requires identical
+        # bytes. Adding or removing a take means updating the count here.
+        if(Python3_Interpreter_FOUND)
+            add_test(NAME Taikor.AudioDemos
+                     COMMAND "${Python3_EXECUTABLE}"
+                             "${CMAKE_CURRENT_SOURCE_DIR}/Tests/check_audio_demos.py"
+                             "$<TARGET_FILE:TaikorRenderDemos>"
+                             "${CMAKE_CURRENT_BINARY_DIR}/audio-demos" 27)
+            set_tests_properties(Taikor.AudioDemos PROPERTIES
+                LABELS audio TIMEOUT 1800)
+        endif()
     endif()
 
     if(TAIKOR_BUILD_PLUGIN)
@@ -400,5 +467,36 @@ if(BUILD_TESTING)
 
         add_test(NAME Taikor.PluginProcessor COMMAND TaikorPluginProcessorTests)
         set_tests_properties(Taikor.PluginProcessor PROPERTIES TIMEOUT 60)
+
+        # The processor suite renders the README screenshot when asked to; this
+        # tier runs it for that image and checks what landed.
+        if(Python3_Interpreter_FOUND)
+            add_test(NAME Taikor.EditorScreenshot
+                     COMMAND "${Python3_EXECUTABLE}"
+                             "${CMAKE_CURRENT_SOURCE_DIR}/Tests/check_editor_screenshot.py"
+                             "$<TARGET_FILE:TaikorPluginProcessorTests>"
+                             "${CMAKE_CURRENT_BINARY_DIR}/screenshots/taikor-standalone.png"
+                             "${CMAKE_CURRENT_SOURCE_DIR}/Docs/screenshots/taikor-standalone.png")
+            set_tests_properties(Taikor.EditorScreenshot PROPERTIES
+                LABELS render TIMEOUT 120)
+        endif()
     endif()
+
+    if(TAIKOR_BUILD_FUZZER)
+        # A short, seeded run; CI's main build runs the same harness for longer.
+        add_test(NAME Taikor.DspFuzz
+                 COMMAND TaikorDspFuzz -seed=20261017 -max_total_time=60
+                         -max_len=4096 -timeout=30 -rss_limit_mb=4096)
+        set_tests_properties(Taikor.DspFuzz PROPERTIES LABELS fuzz TIMEOUT 300)
+    endif()
+
+    # Every test carries exactly one tier label so CI selects tiers with
+    # ctest -L; anything not given a tier above is a unit contract.
+    get_property(TAIKOR_TESTS DIRECTORY PROPERTY TESTS)
+    foreach(test IN LISTS TAIKOR_TESTS)
+        get_test_property(${test} LABELS tier)
+        if(NOT tier)
+            set_tests_properties(${test} PROPERTIES LABELS unit)
+        endif()
+    endforeach()
 endif()

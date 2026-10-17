@@ -55,51 +55,22 @@ jobs:
   build-macos:
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     name: macOS universal VST3, AU, CLAP and standalone
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # Build-time FetchContent code must not inherit the write credential.
           persist-credentials: false
 
-      # Removing the committed image first is what makes the check after the
-      # build meaningful: the file can only be there afterwards because this
-      # run's suite rendered it, so a suite that quietly stopped writing its
-      # snapshot fails the build instead of republishing a stale editor.
-      - name: Clear the committed screenshot before rendering
-        run: rm -f Docs/screenshots/taikor-standalone.png
+      # Full arm64 + x86_64 universal build (script default) plus the unit and
+      # render tiers; the render tier draws the README screenshot and checks it.
+      - name: Build and run unit and render tests
+        env:
+          CTEST_LABELS: "unit|render"
+        run: ./scripts/build-macos.sh
 
-      # Full arm64 + x86_64 universal build (script default) plus the project's
-      # tests. The suite renders the committed editor screenshot while it runs,
-      # so the image in the README tracks the real editor.
-      - name: Build and run tests
-        run: |
-          set -euo pipefail
-          export "TAIKOR_EDITOR_SNAPSHOT=${GITHUB_WORKSPACE}/Docs/screenshots/taikor-standalone.png"
-          ./scripts/build-macos.sh
-
-      - name: Check that the editor screenshot was rendered
-        run: |
-          set -euo pipefail
-          screenshot="Docs/screenshots/taikor-standalone.png"
-          if [[ ! -s "$screenshot" ]]; then
-            echo "error: the suite did not render $screenshot" >&2
-            echo "The suite must honour TAIKOR_EDITOR_SNAPSHOT." >&2
-            exit 1
-          fi
-          if [[ "$(head -c 8 "$screenshot" | od -An -tx1 | tr -d ' \n')" != "89504e470d0a1a0a" ]]; then
-            echo "error: $screenshot does not carry the PNG signature" >&2
-            exit 1
-          fi
-          # The signature alone only proves the write started: a PNG truncated
-          # part way through still carries it. Every PNG ends with a zero-length
-          # IEND chunk and its constant CRC, so the trailer is what proves the
-          # encoder ran to completion and a whole image landed.
-          if [[ "$(tail -c 8 "$screenshot" | od -An -tx1 | tr -d ' \n')" != "49454e44ae426082" ]]; then
-            echo "error: $screenshot has no terminating IEND chunk, so the write did not finish" >&2
-            exit 1
-          fi
-          echo "Rendered $screenshot ($(wc -c < "$screenshot") bytes)."
+      - name: Validate with pluginval and auval
+        run: ./scripts/validate-plugins.sh build-macos
 
       # Uploaded before packaging so that a packaging failure cannot cost the
       # run the screenshot it has already rendered, and handed to the commit job
@@ -107,15 +78,15 @@ jobs:
       #
       # It stays gated on the suite passing, and deliberately so. The processor
       # suite counts its failures rather than stopping at the first one, so a run
-      # whose editor assertions failed -- a blank render, buttons that overlap, a
-      # control strip that lost its buttons -- still writes the PNG before
-      # reporting the failure. Publishing that image is the one outcome worse
-      # than leaving yesterday's in place.
+      # whose editor assertions failed -- buttons that overlap, a control strip
+      # that lost its buttons -- still writes the PNG before reporting the
+      # failure. Publishing that image is the one outcome worse than leaving
+      # yesterday's in place.
       - name: Upload the rendered screenshot
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: generated-screenshot
-          path: Docs/screenshots/taikor-standalone.png
+          path: build-macos/screenshots/taikor-standalone.png
           if-no-files-found: error
           retention-days: 30
 
@@ -134,8 +105,8 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           packages=(
-            build-macos/dist/Taikor-*-build-${GITHUB_RUN_NUMBER}-macOS-universal.zip
-            build-macos/dist/Taikor-*-build-${GITHUB_RUN_NUMBER}-macOS-universal.pkg
+            build-macos/dist/Taikor-*-build.${GITHUB_RUN_NUMBER}-macOS-universal.zip
+            build-macos/dist/Taikor-*-build.${GITHUB_RUN_NUMBER}-macOS-universal.pkg
           )
           if (( ${#packages[@]} != 2 )); then
             echo "error: expected one zip and one pkg, found ${#packages[@]}" >&2
@@ -150,8 +121,8 @@ jobs:
         with:
           name: distribution-packages-build-${{ github.run_number }}-macos
           path: |
-            build-macos/dist/Taikor-*-build-${{ github.run_number }}-macOS-universal.zip
-            build-macos/dist/Taikor-*-build-${{ github.run_number }}-macOS-universal.pkg
+            build-macos/dist/Taikor-*-build.${{ github.run_number }}-macOS-universal.zip
+            build-macos/dist/Taikor-*-build.${{ github.run_number }}-macOS-universal.pkg
           if-no-files-found: error
           retention-days: 30
 
@@ -172,7 +143,8 @@ jobs:
             libasound2-dev \
             libfreetype-dev libfontconfig1-dev \
             libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
-            libxinerama-dev libxrandr-dev libxrender-dev
+            libxinerama-dev libxrandr-dev libxrender-dev \
+            xvfb
 
       - name: Configure
         run: |
@@ -189,14 +161,17 @@ jobs:
           cmake --build build-linux --parallel \
             --target Taikor_VST3 Taikor_CLAP Taikor_Standalone
 
+      - name: Validate with pluginval
+        run: ./scripts/validate-plugins.sh build-linux
+
       - name: Package (Linux x64 tarball)
-        run: bash scripts/package-linux.sh
+        run: python3 scripts/package-linux.py --build-dir build-linux
 
       - name: Upload the distributable Linux package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: distribution-packages-build-${{ github.run_number }}-linux
-          path: build-linux/dist/Taikor-*-build-${{ github.run_number }}-Linux-x64.tar.gz
+          path: build-linux/dist/Taikor-*-build.${{ github.run_number }}-Linux-x64.tar.gz
           if-no-files-found: error
           retention-days: 30
 
@@ -217,6 +192,10 @@ jobs:
         run: |
           cmake --build build-win --config Release --parallel --target Taikor_VST3 Taikor_CLAP Taikor_Standalone
 
+      - name: Validate with pluginval
+        shell: bash
+        run: ./scripts/validate-plugins.sh build-win
+
       - name: Package (Windows x64 ZIP)
         run: python scripts/package-windows.py --build-dir build-win
 
@@ -224,7 +203,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: distribution-packages-build-${{ github.run_number }}-win
-          path: build-win/dist/Taikor-*-build-${{ github.run_number }}-Windows-x64.zip
+          path: build-win/dist/Taikor-*-build.${{ github.run_number }}-Windows-x64.zip
           if-no-files-found: error
           retention-days: 30
 
@@ -288,7 +267,7 @@ jobs:
           shopt -s nullglob
           # Deliberately expand this glob so the array contains every match.
           # shellcheck disable=SC2206
-          mac_zips=(dist/Taikor-*-build-${GITHUB_RUN_NUMBER}-macOS-universal.zip)
+          mac_zips=(dist/Taikor-*-build.${GITHUB_RUN_NUMBER}-macOS-universal.zip)
           if (( ${#mac_zips[@]} != 1 )); then
             echo "error: expected exactly one macOS zip, found ${#mac_zips[@]}" >&2
             printf '  %s\n' "${mac_zips[@]:-(none)}" >&2
@@ -296,16 +275,16 @@ jobs:
           fi
           filename="${mac_zips[0]##*/}"
           version="${filename#Taikor-}"
-          version="${version%-build-${GITHUB_RUN_NUMBER}-macOS-universal.zip}"
+          version="${version%-build.${GITHUB_RUN_NUMBER}-macOS-universal.zip}"
           if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+){1,3}$ ]]; then
             echo "error: invalid version in $filename" >&2
             exit 1
           fi
           expected=(
-            "dist/Taikor-${version}-build-${GITHUB_RUN_NUMBER}-macOS-universal.zip"
-            "dist/Taikor-${version}-build-${GITHUB_RUN_NUMBER}-macOS-universal.pkg"
-            "dist/Taikor-${version}-build-${GITHUB_RUN_NUMBER}-Linux-x64.tar.gz"
-            "dist/Taikor-${version}-build-${GITHUB_RUN_NUMBER}-Windows-x64.zip"
+            "dist/Taikor-${version}-build.${GITHUB_RUN_NUMBER}-macOS-universal.zip"
+            "dist/Taikor-${version}-build.${GITHUB_RUN_NUMBER}-macOS-universal.pkg"
+            "dist/Taikor-${version}-build.${GITHUB_RUN_NUMBER}-Linux-x64.tar.gz"
+            "dist/Taikor-${version}-build.${GITHUB_RUN_NUMBER}-Windows-x64.zip"
           )
           for asset in "${expected[@]}"; do
             if [[ ! -s "$asset" ]]; then
@@ -342,8 +321,8 @@ jobs:
         run: |
           set -euo pipefail
           printf 'Repository: %s\nCommit: %s\nBuild number: %s\nBuild: %s\n' \
-            "$SOURCE_REPOSITORY" "$SOURCE_SHA" "$GITHUB_RUN_NUMBER" "$RUN_URL" > BUILD-INFO.txt
-          find Taikor-* previews -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+            "$SOURCE_REPOSITORY" "$SOURCE_SHA" "$GITHUB_RUN_NUMBER" "$RUN_URL" > BUILD.txt
+          find Taikor-* previews -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
 
       # Retained on the workflow run itself, downloadable by anyone with repo
       # access, as one complete cross-platform set.
@@ -351,7 +330,55 @@ jobs:
         id: distribution
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: taikor-distribution-build-${{ github.run_number }}-${{ github.sha }}
+          name: taikor-main-build-${{ github.run_number }}
           path: dist
           if-no-files-found: error
+          retention-days: 30
+
+  # The long run of the harness CI runs briefly on every push. It stands apart
+  # from the package jobs, so a finding fails the run without holding back the
+  # downloads of an otherwise good build.
+  fuzz:
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    name: Long DSP fuzz run under ASan + UBSan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Install Clang and Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang ninja-build
+
+      - name: Build the fuzzer
+        run: |
+          cmake -S . -B build-sanitize -G Ninja \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DTAIKOR_BUILD_PLUGIN=OFF -DTAIKOR_BUILD_TOOLS=OFF -DBUILD_TESTING=OFF \
+            -DTAIKOR_BUILD_FUZZER=ON
+          cmake --build build-sanitize --parallel --target TaikorDspFuzz
+
+      - name: Fuzz for 30 minutes
+        env:
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: |
+          mkdir -p build-sanitize/corpus build-sanitize/fuzz-artifacts
+          build-sanitize/TaikorDspFuzz build-sanitize/corpus \
+            -seed=${{ github.run_number }} -max_total_time=1800 -max_len=4096 \
+            -timeout=30 -rss_limit_mb=4096 \
+            -artifact_prefix=build-sanitize/fuzz-artifacts/
+
+      - name: Preserve corpus and reproducers
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: taikor-fuzz-${{ github.run_number }}
+          path: |
+            build-sanitize/corpus
+            build-sanitize/fuzz-artifacts
+          if-no-files-found: ignore
           retention-days: 30

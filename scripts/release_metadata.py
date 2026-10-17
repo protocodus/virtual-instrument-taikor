@@ -18,7 +18,7 @@ def build_number() -> str:
 def package_prefix(version: str) -> str:
     if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){1,3}", version):
         raise ValueError("Expected a valid project version")
-    return f"Taikor-{version}-build-{build_number()}"
+    return f"Taikor-{version}-build.{build_number()}"
 
 
 if __name__ == "__main__":

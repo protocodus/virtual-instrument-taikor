@@ -3,7 +3,7 @@
 #include <JuceHeader.h>
 
 #include "DSP/EnsembleEngine.h"
-#include "DSP/IRReverb.h"
+#include "IRReverb.h"
 
 #include <array>
 #include <atomic>
