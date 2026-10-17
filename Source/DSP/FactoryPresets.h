@@ -13,10 +13,10 @@ namespace taikor
 // are dry: the plug-in's convolution room is switched off when one is loaded.
 struct FactoryPreset
 {
+    // Also names the preset's MIDI phrase and demo: the shared renderer reads
+    // Docs/audio/midi/<NN>-<slug of name>.mid ("Single O-daiko" ->
+    // 06-single-o-daiko.mid), so renaming a preset renames its files.
     const char* name;
-    // Stable file stem for the preset's MIDI phrase and demo,
-    // Docs/audio/midi/<NN>-<slug>.mid. Never rename a shipped slug.
-    const char* slug;
     EngineParameters parameters;
 };
 

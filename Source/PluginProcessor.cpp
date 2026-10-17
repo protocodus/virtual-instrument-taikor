@@ -61,15 +61,6 @@ constexpr std::array<const char*, slotCount> parameterIds {
     ids::ensembleSize, ids::ensembleVariation, ids::reverbRoom, ids::reverbMix
 };
 
-float bipolarControllerValue (int rawValue) noexcept
-{
-    // MIDI's conventional centre is the exact value 64: 64 steps below it,
-    // 63 above it.
-    return rawValue < 64
-        ? static_cast<float> (rawValue - 64) / 64.0f
-        : static_cast<float> (rawValue - 64) / 63.0f;
-}
-
 std::unique_ptr<juce::RangedAudioParameter> makePercentParameter (
     const juce::String& id, const juce::String& name, float defaultValue,
     int versionHint = 1)
@@ -486,10 +477,10 @@ taikor::TaikoEngine::DrumMeasurements TaikorAudioProcessor::measureDrum (
     const int azimuth = strikeAzimuthController.load (std::memory_order_relaxed);
     const int position = strikePositionController.load (std::memory_order_relaxed);
     if (azimuth >= 0)
-        current.strikeAzimuth = bipolarControllerValue (azimuth)
+        current.strikeAzimuth = taikor::bipolarControllerValue (azimuth)
                               * juce::MathConstants<float>::pi;
     if (position >= 0)
-        current.strikePosition = bipolarControllerValue (position);
+        current.strikePosition = taikor::bipolarControllerValue (position);
 
     const auto rate = displaySampleRate.load (std::memory_order_relaxed);
     return rate > 0.0
@@ -638,75 +629,27 @@ void TaikorAudioProcessor::renderAudio (juce::AudioBuffer<float>& buffer,
 void TaikorAudioProcessor::dispatchMidiData (const juce::uint8* data,
                                              int numBytes) noexcept
 {
-    if (data == nullptr || numBytes < 1)
-        return;
-
-    const auto status = static_cast<unsigned> (data[0]);
-    const auto kind = status & 0xf0u;
-
-    if (kind == 0x90u && numBytes >= 3 && data[2] != 0)
+    switch (taikor::applyMidi (engine, data, numBytes))
     {
-        const auto midiNote = static_cast<int> (data[1] & 0x7fu);
-        const auto velocity = static_cast<float> (data[2] & 0x7fu) / 127.0f;
-
-        if (engine.triggerMidi (midiNote, velocity))
-            if (const auto articulation = taikor::articulationForMidiNote (midiNote))
+        case taikor::MidiAction::struck:
+            if (const auto articulation = taikor::articulationForMidiNote (data[1] & 0x7f))
                 registerTrigger (*articulation);
-    }
-    else if (kind == 0xe0u && numBytes >= 3)
-    {
-        // Pressing the head raises its tension, so the wheel bends the drum up.
-        const auto raw = static_cast<int> (data[1] & 0x7fu)
-                       | (static_cast<int> (data[2] & 0x7fu) << 7);
-        engine.setPitchBend (static_cast<float> (raw - 8192) / 8192.0f);
-    }
-    else if (kind == 0xb0u && numBytes >= 3)
-    {
-        const auto controller = data[1] & 0x7fu;
-        const auto rawValue = static_cast<int> (data[2] & 0x7fu);
-        const auto value = static_cast<float> (rawValue) / 127.0f;
-        // Standard bipolar MIDI controls have a real centre at 64. Mapping the
-        // whole byte through raw/127 would put that value slightly positive,
-        // so use the 64 steps below centre and 63 above it explicitly.
-        const float bipolarValue = bipolarControllerValue (rawValue);
-
-        if (controller == 1u)
-        {
-            // A hand laid on the head. It damps what is still ringing without
-            // changing anything about the strokes that follow.
-            engine.setHandDamping (value);
-        }
-        else if (controller == 16u)
-        {
-            strikeAzimuthController.store (rawValue, std::memory_order_relaxed);
-            engine.setStrikeAzimuthOverride (
-                bipolarValue * juce::MathConstants<float>::pi);
-        }
-        else if (controller == 17u)
-        {
-            strikePositionController.store (rawValue, std::memory_order_relaxed);
-            engine.setStrikePositionOverride (bipolarValue);
-        }
-        else if (controller == 18u)
-        {
-            engine.setRearHeadStrike (rawValue >= 64);
-        }
-        else if (controller == 121u)
-        {
-            // Reset All Controllers returns every live gesture to its host
-            // parameter: hand off, wheel centred, and strike overrides cleared.
-            engine.setHandDamping (0.0f);
-            engine.setPitchBend (0.0f);
-            engine.clearStrikeOverrides();
-            engine.setRearHeadStrike (false);
+            break;
+        case taikor::MidiAction::strikeAzimuth:
+            strikeAzimuthController.store (data[2] & 0x7f, std::memory_order_relaxed);
+            break;
+        case taikor::MidiAction::strikePosition:
+            strikePositionController.store (data[2] & 0x7f, std::memory_order_relaxed);
+            break;
+        case taikor::MidiAction::resetControllers:
             strikeAzimuthController.store (-1, std::memory_order_relaxed);
             strikePositionController.store (-1, std::memory_order_relaxed);
-        }
-        else if (controller == 120u || controller == 123u)
-        {
-            engine.allSoundsOff();
+            break;
+        case taikor::MidiAction::allSoundsOff:
             reverb.reset();
-        }
+            break;
+        case taikor::MidiAction::none:
+            break;
     }
 }
 

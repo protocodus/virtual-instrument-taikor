@@ -4,6 +4,7 @@
 
 #include "DSP/EnsembleEngine.h"
 #include "DSP/FactoryPresets.h"
+#include "DSP/MidiInput.h"
 #include "IRReverb.h"
 
 #include <array>

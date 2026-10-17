@@ -10,17 +10,36 @@ is synthesized from the drum model; no samples or recordings are loaded.
 
 ## Audio demos
 
-Listen to the instrument's own synthesized performances:
+One demo for each factory preset, played from its committed MIDI phrase in
+[`Docs/audio/midi`](Docs/audio/midi) through the engine the plug-in runs. The
+main build renders them and refreshes this table.
+
+<!-- audio-demos-begin -->
+
+| # | Preset | Demo | Length | Peak |
+| --- | --- | --- | --- | --- |
+| 1 | Kumi-daiko Stage | [01-kumi-daiko-stage.mp3](Docs/audio/01-kumi-daiko-stage.mp3) | 15.6 s | -19.2 dBFS |
+| 2 | Festival Ensemble | [02-festival-ensemble.mp3](Docs/audio/02-festival-ensemble.mp3) | 17.1 s | -23.1 dBFS |
+| 3 | Close Studio | [03-close-studio.mp3](Docs/audio/03-close-studio.mp3) | 14.1 s | -16.2 dBFS |
+| 4 | Tight Ji-uchi | [04-tight-ji-uchi.mp3](Docs/audio/04-tight-ji-uchi.mp3) | 16.3 s | -17.9 dBFS |
+| 5 | Soft Bachi | [05-soft-bachi.mp3](Docs/audio/05-soft-bachi.mp3) | 15.1 s | -28.0 dBFS |
+| 6 | Single O-daiko | [06-single-o-daiko.mp3](Docs/audio/06-single-o-daiko.mp3) | 11.7 s | -18.2 dBFS |
+| 7 | Synthetic Heads | [07-synthetic-heads.mp3](Docs/audio/07-synthetic-heads.mp3) | 15.0 s | -17.9 dBFS |
+| 8 | Distant Pair | [08-distant-pair.mp3](Docs/audio/08-distant-pair.mp3) | 11.2 s | -25.5 dBFS |
+
+<!-- audio-demos-end -->
+
+### More demos
 
 - [The four drums](Docs/audio/02-the-four-drums.wav) — one Don on each drum.
 - [The four strokes](Docs/audio/01-stroke-vocabulary.wav) — open, edge, muted and rimshot.
 - [Ensemble piece](Docs/audio/25-ensemble-piece.wav) — a phrase across the playing grid.
 - [Performer ensemble](Docs/audio/27-performer-ensemble.wav) — repeated P1 layers, then P1–P4.
 
-[All 27 demos](Docs/audio) · [Playing guide](#how-it-is-played) ·
+[All 27 technique demos](Docs/audio) · [Playing guide](#how-it-is-played) ·
 [Controls](#controls) · [How it works](#how-it-works)
 
-### Rendered demo levels
+#### Rendered demo levels
 
 Twenty-seven takes are rendered by [`Tools/RenderDemos.cpp`](Tools/RenderDemos.cpp)
 from the same engine the plug-in runs: the four strokes, the four drums, the

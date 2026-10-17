@@ -4,7 +4,9 @@
 usage: write_preset_midi.py [output-dir]   (default: Docs/audio/midi)
 
 Writes Docs/audio/midi/<NN>-<slug>.mid, one per entry of
-Source/DSP/FactoryPresets.cpp in the same order. The files are committed; run
+Source/DSP/FactoryPresets.cpp in the same order; the slug is the preset name
+lowercased with every other character run turned into one hyphen, which is
+how Tools/PresetDemoRenderer.h finds the file. The files are committed; run
 this only when a phrase is changed on purpose, and commit that change on its
 own. Every phrase is written in kumi-daiko idiom for what its preset is for.
 
@@ -200,7 +202,7 @@ PHRASES = [
     ("close-studio", close_studio),
     ("tight-ji-uchi", tight_ji_uchi),
     ("soft-bachi", soft_bachi),
-    ("single-odaiko", single_odaiko),
+    ("single-o-daiko", single_odaiko),
     ("synthetic-heads", synthetic_heads),
     ("distant-pair", distant_pair),
 ]

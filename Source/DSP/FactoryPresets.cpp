@@ -11,9 +11,9 @@ constexpr float micDistanceFor (float centimetres) noexcept
 }
 
 template <typename Edit>
-FactoryPreset preset (const char* name, const char* slug, Edit edit) noexcept
+FactoryPreset preset (const char* name, Edit edit) noexcept
 {
-    FactoryPreset result { name, slug, {} };
+    FactoryPreset result { name, {} };
     edit (result.parameters);
     return result;
 }
@@ -27,9 +27,9 @@ const std::array<FactoryPreset, factoryPresetCount>& factoryPresets() noexcept
 {
     static const std::array<FactoryPreset, factoryPresetCount> bank {{
         // The parameter defaults: the four drums of the family as documented.
-        preset ("Kumi-daiko Stage", "kumi-daiko-stage", [] (EngineParameters&) {}),
+        preset ("Kumi-daiko Stage", [] (EngineParameters&) {}),
         // Four players on each drum, as a festival group plays in unison.
-        preset ("Festival Ensemble", "festival-ensemble", [] (EngineParameters& p)
+        preset ("Festival Ensemble", [] (EngineParameters& p)
         {
             p.ensembleSize = 4;
             p.ensembleVariation = 0.5f;
@@ -38,7 +38,7 @@ const std::array<FactoryPreset, factoryPresetCount>& factoryPresets() noexcept
             p.micSpread = 0.7f;
         }),
         // The pair just off the head, a tight player and more stick on hide.
-        preset ("Close Studio", "close-studio", [] (EngineParameters& p)
+        preset ("Close Studio", [] (EngineParameters& p)
         {
             p.micDistance = micDistanceFor (6.0f);
             p.micSpread = 0.4f;
@@ -47,7 +47,7 @@ const std::array<FactoryPreset, factoryPresetCount>& factoryPresets() noexcept
         }),
         // Heads pulled up and partly damped, hard bachi: the dry, articulate
         // sound of a ji-uchi base pattern that has to cut through.
-        preset ("Tight Ji-uchi", "tight-ji-uchi", [] (EngineParameters& p)
+        preset ("Tight Ji-uchi", [] (EngineParameters& p)
         {
             p.tension = 0.78f;
             p.headDamping = 0.68f;
@@ -55,14 +55,14 @@ const std::array<FactoryPreset, factoryPresetCount>& factoryPresets() noexcept
             p.tensionModulation = 0.3f;
         }),
         // Soft wood and a gentle controller response for quiet passages.
-        preset ("Soft Bachi", "soft-bachi", [] (EngineParameters& p)
+        preset ("Soft Bachi", [] (EngineParameters& p)
         {
             p.bachiHardness = 0.25f;
             p.strikeNoise = 0.2f;
             p.velocityCurve = -0.5f;
         }),
         // One o-daiko retuned across the keyboard instead of four drums.
-        preset ("Single O-daiko", "single-odaiko", [] (EngineParameters& p)
+        preset ("Single O-daiko", [] (EngineParameters& p)
         {
             p.octaveBody = 0.0f;
             p.tension = 0.55f;
@@ -70,7 +70,7 @@ const std::array<FactoryPreset, factoryPresetCount>& factoryPresets() noexcept
         }),
         // Synthetic film heads on light laminated shells, as many modern
         // groups use for touring and practice drums.
-        preset ("Synthetic Heads", "synthetic-heads", [] (EngineParameters& p)
+        preset ("Synthetic Heads", [] (EngineParameters& p)
         {
             p.headMaterial = 0.0f;
             p.shellMaterial = 0.3f;
@@ -78,7 +78,7 @@ const std::array<FactoryPreset, factoryPresetCount>& factoryPresets() noexcept
         }),
         // The pair at its furthest and widest: the drums as heard from the
         // front of a small stage.
-        preset ("Distant Pair", "distant-pair", [] (EngineParameters& p)
+        preset ("Distant Pair", [] (EngineParameters& p)
         {
             p.micDistance = micDistanceFor (40.0f);
             p.micSpread = 0.85f;

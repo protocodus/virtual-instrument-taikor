@@ -63,6 +63,7 @@ set(TAIKOR_DSP_SOURCES
     Source/DSP/CoupledCavity.cpp
     Source/DSP/EnsembleEngine.cpp
     Source/DSP/FactoryPresets.cpp
+    Source/DSP/MidiInput.cpp
     Source/DSP/PhysicalDrumProfile.cpp
     Source/DSP/TaikoEngine.cpp
     Source/DSP/UiMath.cpp)
@@ -72,6 +73,7 @@ set(TAIKOR_DSP_HEADERS
     Source/DSP/CoupledCavity.h
     Source/DSP/EnsembleEngine.h
     Source/DSP/FactoryPresets.h
+    Source/DSP/MidiInput.h
     Source/DSP/OutputHighPass.h
     Source/DSP/OutputLimiter.h
     Source/DSP/PhysicalDrumProfile.h
@@ -167,7 +169,12 @@ if(TAIKOR_BUILD_PLUGIN)
         endif()
     endif()
 
-    if(APPLE)
+    if(TAIKOR_ENABLE_SANITIZERS)
+        # The sanitizer runtimes link into executables only; a VST3 or AU
+        # bundle is a shared library linked with --no-undefined. The tests use
+        # the shared plug-in code, so the standalone is enough here.
+        set(TAIKOR_PLUGIN_FORMATS Standalone)
+    elseif(APPLE)
         set(TAIKOR_PLUGIN_FORMATS VST3 AU Standalone)
     else()
         set(TAIKOR_PLUGIN_FORMATS VST3 Standalone)
@@ -285,6 +292,12 @@ if(TAIKOR_BUILD_TOOLS)
     target_link_libraries(TaikorRenderDemos PRIVATE TaikorDSP)
     target_compile_features(TaikorRenderDemos PRIVATE cxx_std_20)
 
+    # The README preset demos (G3), from Docs/audio/midi through the shared
+    # Tools/PresetDemoRenderer.h.
+    add_executable(RenderTaikorPresetDemos Tools/RenderPresetDemos.cpp)
+    target_link_libraries(RenderTaikorPresetDemos PRIVATE TaikorDSP)
+    target_compile_features(RenderTaikorPresetDemos PRIVATE cxx_std_20)
+
     add_executable(TaikorValidateCalibrationCapture
         Tools/ValidateCalibrationCapture.cpp)
     target_compile_features(TaikorValidateCalibrationCapture PRIVATE cxx_std_20)
@@ -292,11 +305,13 @@ if(TAIKOR_BUILD_TOOLS)
     if(MSVC)
         target_compile_options(TaikorBenchmarkCPU PRIVATE /W4 /permissive-)
         target_compile_options(TaikorRenderDemos PRIVATE /W4 /permissive-)
+        target_compile_options(RenderTaikorPresetDemos PRIVATE /W4 /permissive-)
         target_compile_options(TaikorValidateCalibrationCapture PRIVATE
             /W4 /permissive-)
     else()
         target_compile_options(TaikorBenchmarkCPU PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(TaikorRenderDemos PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(RenderTaikorPresetDemos PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(TaikorValidateCalibrationCapture PRIVATE
             -Wall -Wextra -Wpedantic)
     endif()
@@ -421,15 +436,23 @@ if(BUILD_TESTING)
         set_tests_properties(Taikor.ValidateCalibrationCapture PROPERTIES
             TIMEOUT 30)
 
-        # Renders the complete README demo set twice and requires identical
-        # bytes. Adding or removing a take means updating the count here.
+        # One demo per factory preset from Docs/audio/midi, rendered twice and
+        # required to be bit-identical, finite, audible, 10-20 s long and
+        # below the limiter's ceiling (U2).
+        add_test(NAME Taikor.AudioDemos
+                 COMMAND RenderTaikorPresetDemos --check
+                         "${CMAKE_CURRENT_SOURCE_DIR}/Docs/audio/midi")
+        set_tests_properties(Taikor.AudioDemos PROPERTIES LABELS audio TIMEOUT 1800)
+
+        # Renders the 27 technique takes twice and requires identical bytes.
+        # Adding or removing a take means updating the count here.
         if(Python3_Interpreter_FOUND)
-            add_test(NAME Taikor.AudioDemos
+            add_test(NAME Taikor.TechniqueDemos
                      COMMAND "${Python3_EXECUTABLE}"
                              "${CMAKE_CURRENT_SOURCE_DIR}/Tests/check_audio_demos.py"
                              "$<TARGET_FILE:TaikorRenderDemos>"
                              "${CMAKE_CURRENT_BINARY_DIR}/audio-demos" 27)
-            set_tests_properties(Taikor.AudioDemos PROPERTIES
+            set_tests_properties(Taikor.TechniqueDemos PROPERTIES
                 LABELS audio TIMEOUT 1800)
         endif()
     endif()
@@ -470,6 +493,19 @@ if(BUILD_TESTING)
         add_test(NAME Taikor.PluginProcessor COMMAND TaikorPluginProcessorTests)
         set_tests_properties(Taikor.PluginProcessor PROPERTIES TIMEOUT 60)
 
+        # U4: every automatable parameter at min, mid and max, alone, in
+        # all-pairs combinations and pushed to both ends from every factory
+        # program, through the processor (Tests/ParameterMatrix.h).
+        add_executable(TaikorParameterMatrixTests Tests/ParameterMatrixTests.cpp)
+        target_link_libraries(TaikorParameterMatrixTests PRIVATE Taikor)
+        target_include_directories(TaikorParameterMatrixTests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/Source"
+            "$<TARGET_PROPERTY:Taikor,JUCE_GENERATED_SOURCES_DIRECTORY>"
+            "$<TARGET_PROPERTY:Taikor,INCLUDE_DIRECTORIES>")
+        target_compile_features(TaikorParameterMatrixTests PRIVATE cxx_std_20)
+        add_test(NAME Taikor.ParameterMatrix COMMAND TaikorParameterMatrixTests --rotate --jobs 4)
+        set_tests_properties(Taikor.ParameterMatrix PROPERTIES LABELS fuzz TIMEOUT 3600)
+
         # The processor suite renders the README screenshot when asked to; this
         # tier runs it for that image and checks what landed.
         if(Python3_Interpreter_FOUND)
@@ -483,6 +519,15 @@ if(BUILD_TESTING)
                 LABELS render TIMEOUT 120)
         endif()
     endif()
+
+    # The same harness with FuzzHarness.h's own main: seeded random inputs on
+    # every compiler and platform as a unit regression test.
+    add_executable(TaikorDspFuzzReplay Tests/DspFuzz.cpp)
+    target_link_libraries(TaikorDspFuzzReplay PRIVATE TaikorDSP)
+    target_compile_definitions(TaikorDspFuzzReplay PRIVATE PROTOCODUS_FUZZ_MAIN)
+    target_compile_features(TaikorDspFuzzReplay PRIVATE cxx_std_20)
+    add_test(NAME Taikor.DspFuzzReplay COMMAND TaikorDspFuzzReplay -seed=20261017 -runs=300)
+    set_tests_properties(Taikor.DspFuzzReplay PROPERTIES TIMEOUT 600)
 
     if(TAIKOR_BUILD_FUZZER)
         # A short, seeded run; CI's main build runs the same harness for longer.

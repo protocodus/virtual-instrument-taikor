@@ -1105,7 +1105,7 @@ void testFactoryPrograms()
     expect (processor.getNumPrograms() == static_cast<int> (bank.size()),
             "every factory preset should be a host program");
 
-    std::set<std::string> names, slugs;
+    std::set<std::string> names;
     for (int index = 0; index < processor.getNumPrograms(); ++index)
     {
         const auto& preset = bank[static_cast<std::size_t> (index)];
@@ -1113,7 +1113,6 @@ void testFactoryPrograms()
         expect (processor.getProgramName (index) == juce::String (preset.name),
                 label + "should be named after its preset");
         names.insert (preset.name);
-        slugs.insert (preset.slug);
 
         processor.setCurrentProgram (index);
         expect (processor.getCurrentProgram() == index, label + "should become current");
@@ -1156,8 +1155,8 @@ void testFactoryPrograms()
         expect (parameterValue (processor, taikor::parameters::reverbRoom) == 0.0f,
                 label + "should switch the room off");
     }
-    expect (names.size() == bank.size() && slugs.size() == bank.size(),
-            "preset names and slugs should be unique");
+    expect (names.size() == bank.size(),
+            "preset names should be unique");
 }
 
 void testStateRoundTrip()

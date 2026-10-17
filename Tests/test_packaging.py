@@ -139,7 +139,8 @@ class PackagingTests(unittest.TestCase):
             run("git", "init", "--bare", str(remote))
             run("git", "config", "user.name", "Packaging test", cwd=repo)
             run("git", "config", "user.email", "packaging@example.invalid", cwd=repo)
-            original = ("# Fixture\n<!-- build-download-begin -->\nOld link\n"
+            original = ("# Fixture\n<!-- audio-demos-begin -->\ntable\n<!-- audio-demos-end -->\n"
+                        "<!-- build-download-begin -->\nOld link\n"
                         "<!-- build-download-end -->\n"
                         "<!-- peaks-table-begin: fixture -->\nunchanged peaks\n"
                         "<!-- peaks-table-end -->\nFooter\n")
@@ -158,6 +159,9 @@ class PackagingTests(unittest.TestCase):
                 with wave.open(str(media / f"Docs/audio/{number:02}-fixture.wav"), "wb") as audio:
                     audio.setparams((2, 2, 48000, 0, "NONE", "not compressed"))
                     audio.writeframes(b"\0\0\0\0")
+            (media / "Docs/audio/01-fixture.mp3").write_bytes(b"ID3" + bytes(5000))
+            (media / "Docs/audio/demos.json").write_text(
+                '{"demos": [{"number": 1, "file": "01-fixture.mp3"}]}')
             url = "https://github.com/example/taikor/actions/runs/123456/artifacts/789012"
             environment = dict(os.environ, GITHUB_RUN_NUMBER="42", GITHUB_REPOSITORY="example/taikor")
             # A failed metadata validation must not publish the generated assets.
@@ -169,8 +173,9 @@ class PackagingTests(unittest.TestCase):
             run("bash", str(SCRIPTS / "commit-generated-assets.sh"), source,
                 str(media), "origin", url, cwd=repo, env=environment)
             published = run("git", "--git-dir", str(remote), "show", "main:README.md").stdout
-            self.assertIn(f"[Download latest distribution]({url})", published)
-            self.assertIn("build 42, built from", published)
+            self.assertIn(f"**[Download main build 42]({url})**, built from", published)
+            self.assertNotIn("demos.json", run("git", "--git-dir", str(remote), "ls-tree", "-r",
+                                               "--name-only", "main").stdout)
             self.assertIn(f"/commit/{source}", published)
             self.assertTrue(published.endswith(original.split("<!-- build-download-end -->", 1)[1]))
 

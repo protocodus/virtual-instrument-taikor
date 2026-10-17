@@ -15,12 +15,13 @@ permissions:
 # skipping distribution builds when several merges arrive close together.
 
 jobs:
-  # Render in an empty staging tree so committed WAVs cannot satisfy the count.
-  # Linux is the canonical renderer; the README copy keeps its generated peaks
-  # table beside the exact audio that will be published.
+  # Render in an empty staging tree so committed media cannot satisfy the
+  # checks. Linux is the canonical renderer; the README copy carries the preset
+  # demo table and the technique level table beside the exact audio that will
+  # be published.
   render-audio-demos:
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-    name: Render all 27 audio demos and update their level table
+    name: Render the preset demos and the 27 technique takes
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -32,12 +33,18 @@ jobs:
         with:
           python-version: "3.12"
 
+      # The preset renderer encodes its MP3s with ffmpeg's libmp3lame.
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
       - name: Render fresh demo audio
         run: |
           set -euo pipefail
           cmake -S . -B build-dsp -DCMAKE_BUILD_TYPE=Release \
             -DTAIKOR_BUILD_PLUGIN=OFF -DBUILD_TESTING=OFF
-          cmake --build build-dsp --parallel --target TaikorRenderDemos
+          cmake --build build-dsp --parallel --target TaikorRenderDemos RenderTaikorPresetDemos
           generated="build-dsp/generated-media"
           mkdir -p "$generated/Docs/audio"
           cp README.md "$generated/README.md"
@@ -47,7 +54,10 @@ jobs:
             echo "error: rendered $rendered demo WAVs, expected 27" >&2
             exit 1
           fi
-          echo "Rendered all $rendered demo WAVs."
+          echo "Rendered all $rendered technique WAVs."
+          ./build-dsp/RenderTaikorPresetDemos Docs/audio/midi "$generated/Docs/audio"
+          python3 Tools/update_readme_blocks.py demos --readme "$generated/README.md" \
+            --manifest "$generated/Docs/audio/demos.json"
 
       - name: Upload demo audio and generated level table
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -412,3 +422,39 @@ jobs:
             build-sanitize/fuzz-artifacts
           if-no-files-found: ignore
           retention-days: 30
+
+  # The standard's full U4 matrix: every case at all nine rate and block-size
+  # configurations. CI's sanitizer job runs each case at one of them in turn.
+  parameter-matrix:
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    name: Full parameter-extremes matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      # The portfolio's tools and checks run on Python 3.12.
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Install JUCE Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build pkg-config xvfb \
+            libasound2-dev \
+            libfreetype-dev libfontconfig1-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev
+
+      - name: Build the matrix
+        run: |
+          cmake -S . -B build-plugin -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DTAIKOR_BUILD_PLUGIN=ON -DTAIKOR_BUILD_CLAP=OFF -DTAIKOR_BUILD_TOOLS=OFF -DBUILD_TESTING=ON
+          cmake --build build-plugin --parallel --target TaikorParameterMatrixTests
+
+      - name: Run every case at every configuration
+        run: xvfb-run -a build-plugin/TaikorParameterMatrixTests --jobs 4

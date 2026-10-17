@@ -166,7 +166,7 @@ jobs:
           retention-days: 7
 
   sanitizers:
-    name: Unit and fuzz tests under ASan + UBSan, C++17 DSP
+    name: Unit, fuzz and parameter-matrix tests under ASan + UBSan, C++17 DSP
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -178,26 +178,33 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Clang and Ninja
+      - name: Install Clang, Ninja and JUCE Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang ninja-build
+          sudo apt-get install -y --no-install-recommends \
+            clang ninja-build pkg-config xvfb \
+            libasound2-dev \
+            libfreetype-dev libfontconfig1-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev
 
       # The default build includes TaikorDSPCxx17, the Rack-toolchain proof.
-      - name: Configure and build instrumented DSP, tests and fuzzer
+      # The plug-in is instrumented too, so the parameter matrix (U4) runs the
+      # processor under the sanitizers.
+      - name: Configure and build instrumented DSP, plug-in, tests and fuzzer
         run: |
           cmake -S . -B build-sanitize -G Ninja \
             -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DTAIKOR_BUILD_PLUGIN=OFF -DTAIKOR_BUILD_TOOLS=OFF -DBUILD_TESTING=ON \
-            -DTAIKOR_ENABLE_SANITIZERS=ON -DTAIKOR_BUILD_FUZZER=ON
+            -DTAIKOR_BUILD_PLUGIN=ON -DTAIKOR_BUILD_CLAP=OFF -DTAIKOR_BUILD_TOOLS=OFF \
+            -DBUILD_TESTING=ON -DTAIKOR_ENABLE_SANITIZERS=ON -DTAIKOR_BUILD_FUZZER=ON
           cmake --build build-sanitize --parallel
 
-      - name: Unit and fuzz tests
+      - name: Unit, fuzz and parameter-matrix tests
         env:
           UBSAN_OPTIONS: print_stacktrace=1
         working-directory: build-sanitize
-        run: ctest -L 'unit|fuzz' --no-tests=error --output-on-failure --parallel 2
+        run: xvfb-run -a ctest -L 'unit|fuzz' --no-tests=error --output-on-failure --parallel 2
 
       - name: Preserve fuzz reproducers
         if: failure()

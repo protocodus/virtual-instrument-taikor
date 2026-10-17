@@ -138,15 +138,30 @@ cmake --build build-dsp --parallel 2
 ctest --test-dir build-dsp -L unit --output-on-failure
 ```
 
-Every test is `Taikor.<Suite>` with one tier label: `unit`, `audio` (the demo
-set rendered twice, byte-identical), `render` (editor screenshot, plug-in
-build only) or `fuzz` (`-DTAIKOR_BUILD_FUZZER=ON` with Clang). A test without
-an explicit tier is labelled `unit` at the end of `CMakeLists.txt`. Select the
-suites that cover a change with `-R`, then run the full applicable tiers
-before a substantive DSP change is called done; `Taikor.TaikoEngine` is the
-long one. The plug-in build uses `build-plugin`, and
+Every test is `Taikor.<Suite>` with one tier label: `unit`, `audio` (the
+preset demos and the technique takes, each rendered twice, bit-identical),
+`render` (editor screenshot, plug-in build only) or `fuzz` (the parameter
+matrix in the plug-in build; libFuzzer with `-DTAIKOR_BUILD_FUZZER=ON` and
+Clang). A test without an explicit tier is labelled `unit` at the end of
+`CMakeLists.txt`. Select the suites that cover a change with `-R`, then run
+the full applicable tiers before a substantive DSP change is called done;
+`Taikor.TaikoEngine` is the long one. The plug-in build uses `build-plugin`, and
 `scripts/validate-plugins.sh` runs pluginval (and auval on macOS).
 
 A test is never skipped, disabled or loosened to get green. Diagnose a failed
 contract against the baseline before changing a fixture, and document why an
 assumption was stale.
+
+## Presets, demos and shared tools
+
+The factory bank is `Source/DSP/FactoryPresets.cpp`. Each preset has a MIDI
+phrase at `Docs/audio/midi/<NN>-<slug of name>.mid`, written by
+`Tools/write_preset_midi.py`; renaming a preset renames its files. The main
+build renders one MP3 per preset with `RenderTaikorPresetDemos` and rewrites
+the README's audio-demos and build-download blocks. Every front end plays the
+engine through `taikor::applyMidi` (`Source/DSP/MidiInput.*`).
+
+`Tools/PresetDemoRenderer.h`, `Tools/update_readme_blocks.py`,
+`Tests/ParameterMatrix.h` and `Tests/FuzzHarness.h` are byte-identical copies
+of the masters in `reason-rack-extensions/Tools/portfolio/`. Change them only
+there and copy them back; Taikor-specific code lives beside them.

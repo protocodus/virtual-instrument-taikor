@@ -29,8 +29,7 @@ fi
 
 README_COPY="$(mktemp "${TMPDIR:-/tmp}/taikor-readme.XXXXXX")"
 trap 'rm -f "${README_COPY}"' EXIT
-python3 - "${ASSET_DIR}" "${README_COPY}" "${SOURCE_SHA}" "${DISTRIBUTION_URL}" "$#" "${BUILD_NUMBER}" <<'PY'
-import os
+python3 - "${ASSET_DIR}" "${README_COPY}" <<'PY'
 import pathlib
 import re
 import sys
@@ -57,6 +56,22 @@ for wav in wavs:
         audio.setpos(audio.getnframes() - 1)
         if len(audio.readframes(1)) != 4:
             sys.exit(f"error: incomplete rendered WAV: {wav}")
+# The preset demos: demos.json is the renderer's own list, so every MP3 it
+# names must be beside it, and nothing else numbered may be.
+import json
+manifest = json.loads((root / "Docs/audio/demos.json").read_text(encoding="utf-8"))
+named = sorted(demo["file"] for demo in manifest["demos"])
+mp3s = sorted(p.name for p in (root / "Docs/audio").glob("[0-9][0-9]-*.mp3"))
+if not named or named != mp3s:
+    sys.exit(f"error: preset MP3s {mp3s} do not match the renderer's manifest {named}")
+for mp3 in mp3s:
+    data = (root / "Docs/audio" / mp3).read_bytes()
+    if len(data) < 4096 or not (data[:3] == b"ID3" or data[0] == 0xFF):
+        sys.exit(f"error: {mp3} is not a complete MP3")
+for marker in ("<!-- audio-demos-begin", "<!-- audio-demos-end -->"):
+    if readme.count(marker) != 1:
+        sys.exit("error: generated README has missing or repeated audio demo markers")
+
 png = root / "Docs/screenshots/taikor.png"
 with png.open("rb") as screenshot:
     header = screenshot.read(8)
@@ -65,30 +80,14 @@ with png.open("rb") as screenshot:
 if header != b"\x89PNG\r\n\x1a\n" or trailer != b"\0\0\0\0IEND\xaeB`\x82":
     sys.exit("error: screenshot is not a complete PNG")
 
-if sys.argv[5] == "4":
-    source_sha, url = sys.argv[3:5]
-    repository = os.environ.get("GITHUB_REPOSITORY", "protocodus/virtual-instrument-taikor")
-    pattern = rf"https://github\.com/{re.escape(repository)}/actions/runs/[0-9]+/artifacts/[0-9]+"
-    if not re.fullmatch(pattern, url):
-        sys.exit("error: distribution URL must be a GitHub Actions artifact URL for this repository")
-    link_begin = b"<!-- build-download-begin -->"
-    link_end = b"<!-- build-download-end -->"
-    if readme_bytes.count(link_begin) != 1 or readme_bytes.count(link_end) != 1:
-        sys.exit("error: generated README must have exactly one pair of distribution link markers")
-    start = readme_bytes.index(link_begin) + len(link_begin)
-    stop = readme_bytes.index(link_end)
-    peak_start = readme_bytes.index(begin.encode())
-    peak_stop = readme_bytes.index(end.encode()) + len(end)
-    if start > stop or (start < peak_stop and stop > peak_start):
-        sys.exit("error: distribution link markers are reversed or overlap the peaks table")
-    link = (f"\n**[Download latest distribution]({url})** — build {sys.argv[6]}, built from "
-            f"[`{source_sha[:12]}`](https://github.com/{repository}/commit/{source_sha}).\n")
-    readme_bytes = readme_bytes[:start] + link.encode("utf-8") + readme_bytes[stop:]
-
-# Keep every byte outside the link block, including the rendered peaks table.
 # This temporary copy is only installed after the source/main guard below.
 pathlib.Path(sys.argv[2]).write_bytes(readme_bytes)
 PY
+if [[ -n "${DISTRIBUTION_URL}" ]]; then
+    python3 "${SCRIPT_DIR}/../Tools/update_readme_blocks.py" download --readme "${README_COPY}" \
+        --url "${DISTRIBUTION_URL}" --build "${BUILD_NUMBER}" --commit "${SOURCE_SHA}" \
+        --repository "${GITHUB_REPOSITORY:-protocodus/virtual-instrument-taikor}"
+fi
 
 # Fetch immediately before staging so an older run cannot overwrite newer work.
 git fetch --no-tags "${REMOTE}" refs/heads/main
@@ -99,7 +98,7 @@ fi
 
 # Only numbered renderer outputs are owned here. Historical preview directories
 # and manually named top-level WAVs must remain untouched.
-git rm -q --ignore-unmatch -- ':(top,glob)Docs/audio/[0-9][0-9]-*.wav'
+git rm -q --ignore-unmatch -- ':(top,glob)Docs/audio/[0-9][0-9]-*.wav' ':(top,glob)Docs/audio/[0-9][0-9]-*.mp3'
 mkdir -p Docs/audio Docs/screenshots
 cp "${README_COPY}" README.md
 cp "${ASSET_DIR}/Docs/screenshots/taikor.png" Docs/screenshots/taikor.png
@@ -107,6 +106,11 @@ generated_paths=()
 for wav in "${ASSET_DIR}"/Docs/audio/[0-9][0-9]-*.wav; do
     destination="Docs/audio/${wav##*/}"
     cp "${wav}" "${destination}"
+    generated_paths+=("${destination}")
+done
+for mp3 in "${ASSET_DIR}"/Docs/audio/[0-9][0-9]-*.mp3; do
+    destination="Docs/audio/${mp3##*/}"
+    cp "${mp3}" "${destination}"
     generated_paths+=("${destination}")
 done
 git add -- README.md Docs/screenshots/taikor.png "${generated_paths[@]}"
