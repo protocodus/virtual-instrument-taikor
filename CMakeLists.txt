@@ -62,6 +62,7 @@ set(TAIKOR_DSP_SOURCES
     Source/DSP/ShellBoundary.cpp
     Source/DSP/CoupledCavity.cpp
     Source/DSP/EnsembleEngine.cpp
+    Source/DSP/FactoryPresets.cpp
     Source/DSP/PhysicalDrumProfile.cpp
     Source/DSP/TaikoEngine.cpp
     Source/DSP/UiMath.cpp)
@@ -70,6 +71,7 @@ set(TAIKOR_DSP_HEADERS
     Source/DSP/BachiModel.h
     Source/DSP/CoupledCavity.h
     Source/DSP/EnsembleEngine.h
+    Source/DSP/FactoryPresets.h
     Source/DSP/OutputHighPass.h
     Source/DSP/OutputLimiter.h
     Source/DSP/PhysicalDrumProfile.h

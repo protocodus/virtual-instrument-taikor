@@ -69,6 +69,9 @@ ka/chudaiko filenames remain stable after the display labels changed.
   nagado-daiko, okedo, shime) with four strokes each, a reciprocal bachi
   contact, shared head/air cavity and wooden shell, a close microphone pair,
   ensemble players, polar strike placement and rear-head strokes.
+- Eight factory presets in the host's program list, from a full kumi-daiko
+  stage to a close studio pair, a soft-bachi opening and a single retuned
+  o-daiko. Each has a committed MIDI phrase in `Docs/audio/midi/`.
 - Formats: VST3, CLAP and standalone on macOS, Windows and Linux, plus the
   Audio Unit on macOS.
 - Hosts now list Taikor under the vendor **Protocodus**; the macOS bundle and

@@ -1096,6 +1096,70 @@ void testOutputLimiterAtMaximumLevel()
     }
 }
 
+// Every factory program sets the engine exactly as its DSP preset describes,
+// to within each host parameter's step, and switches the room off.
+void testFactoryPrograms()
+{
+    TaikorAudioProcessor processor;
+    const auto& bank = taikor::factoryPresets();
+    expect (processor.getNumPrograms() == static_cast<int> (bank.size()),
+            "every factory preset should be a host program");
+
+    std::set<std::string> names, slugs;
+    for (int index = 0; index < processor.getNumPrograms(); ++index)
+    {
+        const auto& preset = bank[static_cast<std::size_t> (index)];
+        const std::string label = "program " + std::to_string (index) + " ";
+        expect (processor.getProgramName (index) == juce::String (preset.name),
+                label + "should be named after its preset");
+        names.insert (preset.name);
+        slugs.insert (preset.slug);
+
+        processor.setCurrentProgram (index);
+        expect (processor.getCurrentProgram() == index, label + "should become current");
+        const auto actual = processor.snapshotEngineParameters();
+        const auto& wanted = preset.parameters;
+        const auto near = [&] (float a, float b, float tolerance, const char* field)
+        {
+            expect (std::abs (a - b) <= tolerance, label + field + " should match its preset");
+        };
+        near (actual.headDiameter, wanted.headDiameter, 0.005f, "headDiameter");
+        for (const auto field : { &taikor::EngineParameters::bodyDepth,
+                                  &taikor::EngineParameters::tension,
+                                  &taikor::EngineParameters::headMaterial,
+                                  &taikor::EngineParameters::shellMaterial,
+                                  &taikor::EngineParameters::resonantTension,
+                                  &taikor::EngineParameters::cavityCoupling,
+                                  &taikor::EngineParameters::headDamping,
+                                  &taikor::EngineParameters::shellResonance,
+                                  &taikor::EngineParameters::bachiHardness,
+                                  &taikor::EngineParameters::strikePosition,
+                                  &taikor::EngineParameters::velocityDepth,
+                                  &taikor::EngineParameters::tensionModulation,
+                                  &taikor::EngineParameters::strikeNoise,
+                                  &taikor::EngineParameters::humanise,
+                                  &taikor::EngineParameters::octaveBody,
+                                  &taikor::EngineParameters::micDistance,
+                                  &taikor::EngineParameters::micSpread,
+                                  &taikor::EngineParameters::stereoWidth,
+                                  &taikor::EngineParameters::drive,
+                                  &taikor::EngineParameters::velocityCurve,
+                                  &taikor::EngineParameters::ensembleVariation })
+            near (actual.*field, wanted.*field, 0.01f, "a percentage control");
+        near (actual.pitch, wanted.pitch, 0.05f, "pitch");
+        near (juce::Decibels::gainToDecibels (actual.outputGain),
+              juce::Decibels::gainToDecibels (wanted.outputGain), 0.06f, "outputGain");
+        near (actual.strikeAzimuth, wanted.strikeAzimuth, 0.002f, "strikeAzimuth");
+        near (actual.outputHighPassHz, wanted.outputHighPassHz, 0.5f, "outputHighPassHz");
+        expect (actual.performer == wanted.performer, label + "performer should match");
+        expect (actual.ensembleSize == wanted.ensembleSize, label + "ensembleSize should match");
+        expect (parameterValue (processor, taikor::parameters::reverbRoom) == 0.0f,
+                label + "should switch the room off");
+    }
+    expect (names.size() == bank.size() && slugs.size() == bank.size(),
+            "preset names and slugs should be unique");
+}
+
 void testStateRoundTrip()
 {
     TaikorAudioProcessor processor;
@@ -1735,6 +1799,7 @@ int main()
     testControllersAndPitchBend();
     testParametersReachTheEngine();
     testOutputLimiterAtMaximumLevel();
+    testFactoryPrograms();
     testStateRoundTrip();
     testUiQueueAndLifecycle();
     testPadAnnouncesTheNoteItCurrentlyPlays();

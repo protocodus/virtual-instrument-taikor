@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 
 #include "DSP/EnsembleEngine.h"
+#include "DSP/FactoryPresets.h"
 #include "IRReverb.h"
 
 #include <array>
@@ -81,10 +82,12 @@ public:
     { return taikor::maximumTailSeconds + taikor::maximumEnsembleDelaySeconds
            + taikor::IRReverb::maximumTailSeconds; }
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram (int) override {}
-    const juce::String getProgramName (int) override { return {}; }
+    // The factory bank (DSP/FactoryPresets). Loading one sets every host
+    // parameter, so a session saves the result as ordinary parameter state.
+    int getNumPrograms() override;
+    int getCurrentProgram() override { return currentProgram; }
+    void setCurrentProgram (int index) override;
+    const juce::String getProgramName (int index) override;
     void changeProgramName (int, const juce::String&) override {}
 
     void getStateInformation (juce::MemoryBlock& destinationData) override;
@@ -172,6 +175,7 @@ private:
     std::atomic<bool> panicRequested { false };
     std::atomic<bool> engineReady { false };
     std::atomic<int> activeVoiceCount { 0 };
+    int currentProgram = 0;
     std::atomic<double> displaySampleRate { 0.0 };
     // Raw 7-bit live strike controllers, or -1 when the host knobs own the
     // coordinate. The message-thread readout uses the same gesture as audio.

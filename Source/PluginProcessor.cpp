@@ -425,6 +425,56 @@ taikor::EngineParameters TaikorAudioProcessor::snapshotEngineParameters() const 
     return next;
 }
 
+int TaikorAudioProcessor::getNumPrograms()
+{
+    return static_cast<int> (taikor::factoryPresetCount);
+}
+
+const juce::String TaikorAudioProcessor::getProgramName (int index)
+{
+    if (index < 0 || index >= getNumPrograms())
+        return {};
+    return taikor::factoryPresets()[static_cast<std::size_t> (index)].name;
+}
+
+void TaikorAudioProcessor::setCurrentProgram (int index)
+{
+    if (index < 0 || index >= getNumPrograms())
+        return;
+    currentProgram = index;
+    const auto& preset = taikor::factoryPresets()[static_cast<std::size_t> (index)].parameters;
+
+    const auto* reverbMix = parameters.getParameter (ids::reverbMix);
+    const float defaultReverbMix = reverbMix->convertFrom0to1 (reverbMix->getDefaultValue());
+
+    // The inverse of snapshotEngineParameters, in each parameter's host units.
+    const std::array<float, slotCount> plain {
+        preset.headDiameter * 100.0f, preset.bodyDepth, preset.tension,
+        preset.headMaterial, preset.shellMaterial, preset.resonantTension,
+        preset.cavityCoupling, preset.headDamping, preset.shellResonance,
+        preset.pitch, preset.bachiHardness, preset.strikePosition,
+        preset.velocityDepth, preset.tensionModulation, preset.strikeNoise,
+        preset.humanise, preset.octaveBody < 0.5f ? 0.0f : 1.0f,
+        juce::jmap (preset.micDistance, ids::minimumMicDistanceCentimetres,
+                    ids::maximumMicDistanceCentimetres),
+        preset.micSpread, preset.stereoWidth, preset.drive,
+        juce::Decibels::gainToDecibels (preset.outputGain),
+        juce::radiansToDegrees (preset.strikeAzimuth),
+        static_cast<float> (preset.performer), preset.velocityCurve,
+        preset.outputHighPassHz, static_cast<float> (preset.ensembleSize),
+        preset.ensembleVariation,
+        0.0f, // Reverb Room Off: presets are dry.
+        defaultReverbMix
+    };
+
+    for (int slot = 0; slot < slotCount; ++slot)
+    {
+        auto* parameter = parameters.getParameter (parameterIds[static_cast<std::size_t> (slot)]);
+        parameter->setValueNotifyingHost (
+            parameter->convertTo0to1 (plain[static_cast<std::size_t> (slot)]));
+    }
+}
+
 taikor::TaikoEngine::DrumMeasurements TaikorAudioProcessor::measureDrum (
     int octaveOffset) const noexcept
 {
