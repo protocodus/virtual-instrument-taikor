@@ -89,7 +89,7 @@ same drum splits the same way every time it is hit.
 ##### Published frequency comparison
 
 The stiffness hypothesis has an external check in
-[`Tools/BenchmarkPublishedModes.py`](../Tools/BenchmarkPublishedModes.py).
+[`Tools/BenchmarkPublishedModes.py`](../../Tools/BenchmarkPublishedModes.py).
 It compares eight measured frequencies from Suzuki et al.'s 2009 single-headed
 nagadō-daiko experiment against the published plate theories and Taikor's
 single-head frequency equation using the paper's material inputs. After
@@ -239,7 +239,7 @@ What the shell still does not have is a radiation-aware *decay* — its Q is a
 single lumped figure that already contains whatever the body radiates, so a
 derived radiation loss cannot be added on top of it without counting it twice —
 or an angular doublet. See the 2026-08-19 shell-perspective entry in
-[Docs/decisions.md](decisions.md), including why gating the shell's *level*
+[Docs/decisions.md](../decisions.md), including why gating the shell's *level*
 on `radiationEfficiency` is the wrong term in the wrong place.
 
 ##### Above the modes: the head's continuum
@@ -350,7 +350,7 @@ the same amplitude coordinates.
 
 The attack comes from the contact-driven drum and its statistical upper modes.
 The former additional differentiated-force click has been removed following a
-[listening comparison](decisions.md#2026-09-05--remove-the-additional-airborne-click).
+[listening comparison](../decisions.md#2026-09-05--remove-the-additional-airborne-click).
 Its nominal 3.5 kHz low-pass was not derived from a millimetre-sized contact
 patch: that patch is acoustically compact at these frequencies. A separate
 bachi [acceleration-noise model](https://www.cs.cornell.edu/projects/Sound/impact/)
@@ -778,7 +778,7 @@ model continuously floors the stiffness to zero rather than introducing the
 cavity mass and poles required beyond it.
 
 An experimental replacement is implemented in
-[`Source/DSP/CoupledCavity.cpp`](../Source/DSP/CoupledCavity.cpp). It uses eight
+[`Source/DSP/CoupledCavity.cpp`](../../Source/DSP/CoupledCavity.cpp). It uses eight
 physical head coordinates and two shared axial air coordinates by default,
 with up to four available for convergence checks. Integrating the air's kinetic
 and compression energies gives symmetric mass and stiffness matrices; the
