@@ -76,7 +76,7 @@ from its committed MIDI phrase in [`Docs/audio/midi/more`](Docs/audio/midi/more)
 ## Downloads
 
 <!-- build-download-begin -->
-**[Download main build 11](https://github.com/protocodus/virtual-instrument-taikor/actions/runs/39109424819/artifacts/12129969362)**, built from [`790de2426813`](https://github.com/protocodus/virtual-instrument-taikor/commit/790de242681370a2bebeb1c26045c937d78ee98e). It holds the macOS, Windows and Linux packages, `SHA256SUMS` and `BUILD.txt`.
+**[Download main build 12](https://github.com/protocodus/virtual-instrument-taikor/actions/runs/39224466098/artifacts/12176704024)**, built from [`4cfe3c93c7c3`](https://github.com/protocodus/virtual-instrument-taikor/commit/4cfe3c93c7c3566745b312aa2bb7130005fb1c9a). It holds the macOS, Windows and Linux packages, `SHA256SUMS` and `BUILD.txt`.
 <!-- build-download-end -->
 
 The download contains all platform packages, an editor screenshot, audio demos
