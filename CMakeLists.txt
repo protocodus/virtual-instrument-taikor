@@ -528,3 +528,9 @@ if(BUILD_TESTING)
         set_tests_properties(Taikor.MidiOrdering PROPERTIES TIMEOUT 120)
     endif()
 endif()
+
+option(TAIKOR_BUILD_ENGINE_CANDIDATES
+    "Build the alternative drum engines rendered in the engine-candidate listening test" OFF)
+if(TAIKOR_BUILD_ENGINE_CANDIDATES)
+    add_subdirectory(Tools/EngineCandidates)
+endif()
