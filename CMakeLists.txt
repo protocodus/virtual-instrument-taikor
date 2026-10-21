@@ -287,6 +287,10 @@ if(TAIKOR_BUILD_TOOLS)
     target_link_libraries(TaikorRenderDemos PRIVATE TaikorDSP)
     target_compile_features(TaikorRenderDemos PRIVATE cxx_std_20)
 
+    add_executable(TaikorRenderSuite Tools/RenderSuite.cpp)
+    target_link_libraries(TaikorRenderSuite PRIVATE TaikorDSP)
+    target_compile_features(TaikorRenderSuite PRIVATE cxx_std_20)
+
     add_executable(TaikorValidateCalibrationCapture
         Tools/ValidateCalibrationCapture.cpp)
     target_compile_features(TaikorValidateCalibrationCapture PRIVATE cxx_std_20)
@@ -294,6 +298,7 @@ if(TAIKOR_BUILD_TOOLS)
     if(MSVC)
         target_compile_options(TaikorBenchmarkCPU PRIVATE /W4 /permissive-)
         target_compile_options(TaikorRenderDemos PRIVATE /W4 /permissive-)
+        target_compile_options(TaikorRenderSuite PRIVATE /W4 /permissive-)
         target_compile_options(TaikorValidateCalibrationCapture PRIVATE
             /W4 /permissive-)
     else()
@@ -301,6 +306,7 @@ if(TAIKOR_BUILD_TOOLS)
         target_compile_options(TaikorBenchmarkEnsembleParallel PRIVATE
             -Wall -Wextra -Wpedantic)
         target_compile_options(TaikorRenderDemos PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(TaikorRenderSuite PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(TaikorValidateCalibrationCapture PRIVATE
             -Wall -Wextra -Wpedantic)
     endif()
@@ -447,6 +453,10 @@ if(BUILD_TESTING)
                  COMMAND TaikorRenderDemos --smoke
                          "${CMAKE_CURRENT_BINARY_DIR}/demo-smoke")
         set_tests_properties(Taikor.RenderDemos PROPERTIES TIMEOUT 60)
+        add_test(NAME Taikor.SuiteScore
+                 COMMAND TaikorRenderSuite --score-only
+                         "${CMAKE_CURRENT_BINARY_DIR}/suite-score-test")
+        set_tests_properties(Taikor.SuiteScore PROPERTIES TIMEOUT 15)
 
         add_test(NAME Taikor.ValidateCalibrationCapture
                  COMMAND TaikorValidateCalibrationCapture --self-test)

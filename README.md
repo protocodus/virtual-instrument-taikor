@@ -38,6 +38,24 @@ On Linux, copy the VST3 bundle to `~/.vst3` and the CLAP file to `~/.clap`.
 
 ## Audio demos
 
+**[Resonance — the one-minute taiko suite](Docs/audio/suite/taikor-suite.mp3)**
+builds from a low-drum call through interlocking rhythms, an intimate solo break
+and a full ensemble finale. Four independently played instances bring out open,
+edge, muted and rimshot strokes across every drum, with flams, accelerating
+rolls, press contacts, front/rear-head answers, palm damping and pitch pressure.
+
+[Lossless 96 kHz / 24-bit WAV](Docs/audio/suite/taikor-suite-96k24.wav) ·
+[Four-part MIDI](Docs/audio/suite/taikor-suite.mid) ·
+[Performance score](Docs/audio/suite/taikor-suite-score.csv)
+
+The performance is rendered at the engine's maximum supported **384 kHz** with
+the shipping physical model, then mixed with a restrained theater room. The
+archival master preserves the full played dynamics. The listening editions
+receive a constant level lift and linked peak limiting for easier auditioning.
+Hear the rear-head dialogue at **0:16**, the
+palm and pitch-pressure passage at **0:24**, the roll build at **0:32**, and
+the final ensemble unison at **0:55**, followed by natural resonance.
+
 Listen to the instrument's own synthesized performances:
 
 - [The four drums](Docs/audio/02-the-four-drums.wav) — one Don on each drum.
@@ -45,7 +63,7 @@ Listen to the instrument's own synthesized performances:
 - [Ensemble piece](Docs/audio/25-ensemble-piece.wav) — a phrase across the playing grid.
 - [Performer ensemble](Docs/audio/27-performer-ensemble.wav) — repeated P1 layers, then P1–P4.
 
-[All 27 demos](Docs/audio) · [Playing guide](#how-it-is-played) ·
+[27 technique demonstrations](Docs/audio) · [Playing guide](#how-it-is-played) ·
 [Controls](#controls) · [Technical details](#technical-details)
 
 ## Release history
@@ -762,7 +780,7 @@ is computed.
 
 ### Rendered demo levels
 
-Twenty-seven takes are rendered by [`Tools/RenderDemos.cpp`](Tools/RenderDemos.cpp)
+Twenty-seven short technique takes are rendered by [`Tools/RenderDemos.cpp`](Tools/RenderDemos.cpp)
 from the same engine the plug-in runs: the four strokes, the four drums, the
 whole sixteen-note grid, and the physical controls swept across their ranges.
 The main build refreshes the committed set and this level table together.
@@ -812,6 +830,32 @@ cmake --build build-dsp --parallel
 ctest --test-dir build-dsp --output-on-failure
 ./build-dsp/TaikorRenderDemos Docs/audio
 ```
+
+The one-minute suite has a separate score and production tool. With Python
+NumPy/SciPy and FFmpeg installed, render it with:
+
+```bash
+cmake --build build-dsp --parallel --target TaikorRenderSuite
+python3 Tools/ProduceSuite.py --renderer build-dsp/TaikorRenderSuite \
+  --output build-dsp/suite-master
+```
+
+This produces the native 384 kHz stereo float32 master, a dithered 96 kHz/24-bit
+WAV, a 320 kbps MP3, four-part MIDI, the full event score and a
+[measurement report](Docs/audio/suite/taikor-suite-qa.json). The theater impulse
+is processed at 96 kHz with a high-pass on the room return, then interpolated
+into the master; the dry instrument stays at 384 kHz. The listening editions
+use stereo-linked lookahead limiting; the float master remains uncompressed.
+Only the listening files,
+MIDI, score and report are included in the committed demos and distribution.
+The large master stays in the build output.
+
+For MIDI playback, use four Taikor instances, one per track, with performers
+P1–P4, Humanise 22% and Ensemble Variation 32%. The score's `ensemble_size`
+events require host automation: one player initially, two at 0:32, then four
+at 0:40 (Shime stays at two). MIDI includes all notes, strike placement,
+front/rear selection, palm damping and pitch pressure. The renderer source
+records the output trims and stage positions used for the mix.
 
 The same build produces `TaikorValidateCalibrationCapture`, the inventory
 preflight for the controlled capture described under

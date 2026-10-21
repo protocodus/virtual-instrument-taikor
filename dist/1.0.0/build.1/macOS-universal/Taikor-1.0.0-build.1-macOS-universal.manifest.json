@@ -1,0 +1,103 @@
+{
+  "product": "Taikor",
+  "version": "1.0.0",
+  "build_number": "1",
+  "source_revision": "9dce017d0b2d84674869c3c026bb8dce64f76a3b",
+  "source_dirty": false,
+  "binary_identity": "PROTOCODUS_BUILD_IDENTITY=Taikor|1.0.0|1|9dce017d0b2d84674869c3c026bb8dce64f76a3b",
+  "platform": "macOS",
+  "architecture": "universal",
+  "configuration": "Release",
+  "compiler_binaries": [
+    {
+      "format": "VST3",
+      "bundle": "/Users/vojta/Dev/virtual-instrument-taikor-main-build-20261006/build-main-20261006/Taikor_artefacts/Release/VST3/Taikor.vst3",
+      "binary": "/Users/vojta/Dev/virtual-instrument-taikor-main-build-20261006/build-main-20261006/Taikor_artefacts/Release/VST3/Taikor.vst3/Contents/MacOS/Taikor",
+      "binary_sha256": "0634bd6e6592a9cf5340801728d82319687d37acb3e3d5ee10cfdda0ddd5b2b4",
+      "architectures": [
+        "arm64",
+        "x64"
+      ]
+    },
+    {
+      "format": "Standalone",
+      "bundle": "/Users/vojta/Dev/virtual-instrument-taikor-main-build-20261006/build-main-20261006/Taikor_artefacts/Release/Standalone/Taikor.app",
+      "binary": "/Users/vojta/Dev/virtual-instrument-taikor-main-build-20261006/build-main-20261006/Taikor_artefacts/Release/Standalone/Taikor.app/Contents/MacOS/Taikor",
+      "binary_sha256": "a8a36995d693eb68c8ef309c892b53d0567b373ec8a8f7aa169f1f42b70da1a2",
+      "architectures": [
+        "arm64",
+        "x64"
+      ]
+    },
+    {
+      "format": "AU",
+      "bundle": "/Users/vojta/Dev/virtual-instrument-taikor-main-build-20261006/build-main-20261006/Taikor_artefacts/Release/AU/Taikor.component",
+      "binary": "/Users/vojta/Dev/virtual-instrument-taikor-main-build-20261006/build-main-20261006/Taikor_artefacts/Release/AU/Taikor.component/Contents/MacOS/Taikor",
+      "binary_sha256": "b85cfaaf9862501572a042a2fc143066b0c20ce83241513ef02120d946886411",
+      "architectures": [
+        "arm64",
+        "x64"
+      ]
+    },
+    {
+      "format": "CLAP",
+      "bundle": "/Users/vojta/Dev/virtual-instrument-taikor-main-build-20261006/build-main-20261006/Taikor_artefacts/Release/CLAP/Taikor.clap",
+      "binary": "/Users/vojta/Dev/virtual-instrument-taikor-main-build-20261006/build-main-20261006/Taikor_artefacts/Release/CLAP/Taikor.clap/Contents/MacOS/Taikor",
+      "binary_sha256": "0c3c93d800836d4a47e1552b6732f77b12b6f6074744436f1e18b89cda919e54",
+      "architectures": [
+        "arm64",
+        "x64"
+      ]
+    }
+  ],
+  "packaged_binaries": [
+    {
+      "package": "Taikor-1.0.0-build.1-macOS-universal.zip",
+      "path": "Library/Audio/Plug-Ins/VST3/Taikor.vst3/Contents/MacOS/Taikor",
+      "sha256": "65a259e7b3c16fc6b2c9b5f1699e94c30a7ccc2e516e1108c24618e5428c9bb4",
+      "architectures": [
+        "arm64",
+        "x64"
+      ]
+    },
+    {
+      "package": "Taikor-1.0.0-build.1-macOS-universal.zip",
+      "path": "Applications/Taikor.app/Contents/MacOS/Taikor",
+      "sha256": "fbe903faa3b1ea9b90769d6f1fd19dd86f26139e2c787e31b2a65680baa11511",
+      "architectures": [
+        "arm64",
+        "x64"
+      ]
+    },
+    {
+      "package": "Taikor-1.0.0-build.1-macOS-universal.zip",
+      "path": "Library/Audio/Plug-Ins/Components/Taikor.component/Contents/MacOS/Taikor",
+      "sha256": "74e37ffa3203edb06a75dc7dd551428a38da10e320beed3d28eb6ee7f4f0c60c",
+      "architectures": [
+        "arm64",
+        "x64"
+      ]
+    },
+    {
+      "package": "Taikor-1.0.0-build.1-macOS-universal.zip",
+      "path": "Library/Audio/Plug-Ins/CLAP/Taikor.clap/Contents/MacOS/Taikor",
+      "sha256": "89a9ecde971160264811a4a102ce7ae27ba4beba84a0c51e58bbdbaa926a69a4",
+      "architectures": [
+        "arm64",
+        "x64"
+      ]
+    }
+  ],
+  "packages": [
+    {
+      "path": "Taikor-1.0.0-build.1-macOS-universal.pkg",
+      "sha256": "381e24422fd9444a9b92a7a7980eeca8e4dc2ea593647e3eb591f6646cfc6c76",
+      "bytes": 65833724
+    },
+    {
+      "path": "Taikor-1.0.0-build.1-macOS-universal.zip",
+      "sha256": "d778cf3c34971fad50cf8602c8853b29506028381f8fd64cbb65ab7e7c1b1409",
+      "bytes": 65840962
+    }
+  ]
+}

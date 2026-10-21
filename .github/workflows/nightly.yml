@@ -20,19 +20,24 @@ jobs:
   # table beside the exact audio that will be published.
   render-audio-demos:
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-    name: Render all 27 audio demos and update their level table
+    name: Render 27 audio demos and the one-minute flagship suite
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
 
+      - name: Install suite production dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-numpy python3-scipy ffmpeg
+
       - name: Render fresh demo audio
         run: |
           set -euo pipefail
           cmake -S . -B build-dsp -DCMAKE_BUILD_TYPE=Release \
             -DTAIKOR_BUILD_PLUGIN=OFF -DBUILD_TESTING=OFF
-          cmake --build build-dsp --parallel --target TaikorRenderDemos
+          cmake --build build-dsp --parallel --target TaikorRenderDemos TaikorRenderSuite
           generated="build-dsp/generated-media"
           mkdir -p "$generated/Docs/audio"
           cp README.md "$generated/README.md"
@@ -43,6 +48,21 @@ jobs:
             exit 1
           fi
           echo "Rendered all $rendered demo WAVs."
+
+      - name: Produce and stage the one-minute suite
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 Tools/ProduceSuite.py \
+            --renderer build-dsp/TaikorRenderSuite --output build-dsp/suite-master
+          suite="build-dsp/generated-media/Docs/audio/suite"
+          mkdir -p "$suite"
+          # Large dry and float masters stay in the build tree. Publish only
+          # listening formats, the editable performance and its provenance.
+          for name in taikor-suite-96k24.wav taikor-suite.mp3 taikor-suite.mid \
+                      taikor-suite-score.csv taikor-suite-qa.json; do
+            test -s "build-dsp/suite-master/$name"
+            cp "build-dsp/suite-master/$name" "$suite/$name"
+          done
 
       - name: Upload demo audio and generated level table
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

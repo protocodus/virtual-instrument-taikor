@@ -1,0 +1,547 @@
+{
+  "schema_version": 1,
+  "created_utc": "2026-09-14T21:35:58.684822+00:00",
+  "status": "passed",
+  "software": {
+    "python": "3.11.0",
+    "numpy": "1.26.4",
+    "scipy": "1.14.1",
+    "ffmpeg": "ffmpeg version 8.1.1 Copyright (c) 2000-2026 the FFmpeg developers"
+  },
+  "production_script": {
+    "path": "/Users/vojta/Dev/virtual-instrument-taikor/Tools/ProduceSuite.py",
+    "sha256": "ca98b0d966c289dd2b2c720265eb738a0e66114c8fe498db5d7fae05560662ce"
+  },
+  "source_files": {
+    "Source/DSP/AudioCpuMeter.h": "92a34e9bd7f71707405b6483c85682d7a0e755f36ec715435f75a5e39a3f6313",
+    "Source/DSP/BachiModel.h": "3554a51ca8a2f018ed2e48ea20df2faa1d80d77e4b3c434c2bae356bf980572a",
+    "Source/DSP/CoupledCavity.cpp": "ad8cd69e8be96239a54ee11fe5b911b45ec3dffd1d7c66f9eedb2ef94cea65dc",
+    "Source/DSP/CoupledCavity.h": "faf0ba62b8175a85dcda3f7920fcafa8f23d491d5d4544ab7175d8d465f7439a",
+    "Source/DSP/EnsembleEngine.cpp": "7879da12db5fd2dff53316df4bd0adbe1ce0331ff7a432c309e5d0b157f418b3",
+    "Source/DSP/EnsembleEngine.h": "d0e1f13bc9d14ba6fd46c4e1ec54d4098608f1baa6b78b473987dc33e33db1fb",
+    "Source/DSP/IRReverb.cpp": "4096c02c930040d36d73f6e2d0d4210e762c50795f634512fc70883ecc8462a2",
+    "Source/DSP/IRReverb.h": "7f297f070323945b4c20c80d321a151fd126093df343200b6e176bf1f8f6fd35",
+    "Source/DSP/OutputHighPass.h": "3b371f59b4ab654afb45100c80b4311ec45714c186075ac713fe614d975d144c",
+    "Source/DSP/OutputLimiter.h": "e7e1cceef5f884290383b5f9b2719e6832c330f8b174bb6dfbf65b6aae62aadd",
+    "Source/DSP/PackedModalBank.h": "d274fd1d671fe15a73c8fa4a373575defc344725d3ee5d015bc13e9b60c3d133",
+    "Source/DSP/PhysicalDrumProfile.cpp": "2664a872a64227124cffb78c3a21de394537ea4394904fa5bfd0316a75dccd3a",
+    "Source/DSP/PhysicalDrumProfile.h": "85a1b9f9e2ad121b0d8ce3bdd887bb3336cfdd7134c09d7910e2660adabf71f8",
+    "Source/DSP/ShellBoundary.cpp": "7650d34b435d4b5d0f8a0e9f9043fd49119fc5f32b8c4a06acd9bd2c2240d7ca",
+    "Source/DSP/ShellBoundary.h": "ca543ade17c52ea021d776eef4c0aac68610dca913b2cc5b4508207a1d33a1fd",
+    "Source/DSP/StereoPan.h": "804dbb642cd523f83a8a49d6396a03a4de7cf018bda173225f298558e7600464",
+    "Source/DSP/TaikoEngine.cpp": "b21f5b0c52171f560c07b013362dabf98fd922c817f108e68fa88dd9952566cf",
+    "Source/DSP/TaikoEngine.h": "10775c9c25d0cc57158cd30632e85d0113d5c2e741ff839673ea82d6b90e90f9",
+    "Source/DSP/UiMath.cpp": "594cc30e56bf60451a9bd04af9eee373a68c9ad5894a8723a91322c7816595a5",
+    "Source/DSP/UiMath.h": "763c3e86c884019e903bd281aa68da61b186269b985f433c25b45a2c373f8e9b",
+    "Tools/RenderSuite.cpp": "972cd854b3f858c338618d8f588d1c5e9943c6caa99f26aa3affe5e3a0762bdb"
+  },
+  "renderer": {
+    "skipped": true,
+    "path": "/Users/vojta/Dev/virtual-instrument-taikor/build-demo-suite/TaikorRenderSuite",
+    "sha256": "90cc15f26fa1c026e5fb3d2379cc587e87691f2f2bc6ef6470f9591be7c95f7e"
+  },
+  "source": {
+    "file": "/Users/vojta/Dev/virtual-instrument-taikor/build-demo-suite/master/taikor-suite-dry.wav",
+    "sha256": "6de8e357f30bd1d7c8cc6711005d7df35278393d68db10eb5c48963726aca4bf",
+    "format": {
+      "encoding": "IEEE float",
+      "bits_per_sample": 32,
+      "channels": 2,
+      "sample_rate_hz": 384000,
+      "byte_rate": 3072000,
+      "block_alignment_bytes": 8
+    },
+    "sample_rate_hz": 384000,
+    "channels": 2,
+    "frames": 23040000,
+    "duration_seconds": 60.0,
+    "sample_peak": 0.0410241074860096,
+    "sample_peak_dbfs": -27.73921717228225,
+    "channel_peak_dbfs": [
+      -27.73921717228225,
+      -29.35926122956273
+    ],
+    "rms_dbfs": -51.917427977543,
+    "channel_rms_dbfs": [
+      -52.0008446967811,
+      -51.83558332939057
+    ],
+    "crest_factor_db": 24.178210805260743,
+    "channel_dc_offset": [
+      5.2571217185008325e-11,
+      -4.967088194321062e-11
+    ],
+    "stereo_correlation": 0.7812298757390307,
+    "clipped_sample_count": 0,
+    "nonfinite_sample_count": 0,
+    "first_frame": [
+      0.0,
+      0.0
+    ],
+    "last_frame": [
+      2.0500853281646414e-07,
+      7.539456987615267e-07
+    ]
+  },
+  "processing": {
+    "engine_sample_rate_hz": 384000,
+    "master_sample_rate_hz": 384000,
+    "room_processing_sample_rate_hz": 96000,
+    "room_ir": "/Users/vojta/Dev/virtual-instrument-taikor/Assets/ImpulseResponses/theater.wav",
+    "room_ir_sha256": "64859ca8475c33e771a38f3122f2069a111da9e3acdd8ffbb4e36cb6fb012d38",
+    "room_ir_original_sample_rate_hz": 44100,
+    "room_ir_original_onset_seconds": 9.070294784580499e-05,
+    "room_added_predelay_seconds": 0.01990625,
+    "room_highpass_hz": 80.0,
+    "room_highpass_order": 2,
+    "room_ir_energy_normalization_factor": 2.9429109436300074,
+    "wet_to_dry_rms_ratio_before_master_fades": 0.15,
+    "dry_gain_before_mastering": 1.0,
+    "resampling": "SciPy polyphase FIR; 64 taps per branch; Kaiser beta 12; float32",
+    "entrance_fade_seconds": 0.005,
+    "tail_fade_seconds": 0.3,
+    "fade_shape": "half cosine; first and last master frames are zero",
+    "mastering": "384 kHz float master: one constant linear gain; no compression, limiting, or loudness normalization",
+    "target_true_peak_dbtp": -1.2,
+    "true_peak_estimation": "8x FIR interpolation of 96 kHz delivery with overlapping blocks",
+    "wav_delivery": "96 kHz stereo PCM 24-bit; triangular dither at 24-bit precision",
+    "mp3_delivery": "48 kHz stereo; libmp3lame 320 kbps CBR; compression_level 0",
+    "wet_gain_after_ir_normalization": 0.07056309850231383,
+    "master_linear_gain": 20.74903284153024,
+    "master_gain_db": 26.339957161804936,
+    "pre_master_peak_dbfs_or_dbtp": -27.539957161804935,
+    "listening_mastering": {
+      "method": "Stereo-linked lookahead peak limiter; identical gain for both channels; no hard clipping",
+      "presentation_gain_db": 8.0,
+      "lookahead_seconds": 0.003,
+      "attack_time_constant_seconds": 0.00025,
+      "release_time_constant_seconds": 0.07,
+      "detector": "Maximum absolute L/R sample, future-window maximum, asymmetric one-pole attenuation in dB",
+      "nominal_maximum_reduction_db": 8.0,
+      "maximum_limiter_reduction_db": 7.999979019165039,
+      "mean_limiter_reduction_db": 0.12481886784974458,
+      "active_fraction_above_0_1_db_reduction": 0.11126180555555555,
+      "final_true_peak_trim_db": -0.010030252207692268,
+      "maximum_total_reduction_including_peak_trim_db": 8.01000927137273,
+      "target_true_peak_dbtp": -1.2,
+      "section_gain_reduction": [
+        {
+          "name": "Opening",
+          "maximum_db": 1.813423991203308,
+          "mean_db": 0.035588603020246815,
+          "active_fraction_above_0_1_db": 0.06616927083333334
+        },
+        {
+          "name": "Groove",
+          "maximum_db": 2.908545970916748,
+          "mean_db": 0.052404466827997265,
+          "active_fraction_above_0_1_db": 0.07318880208333334
+        },
+        {
+          "name": "Dialogue",
+          "maximum_db": 2.7183330059051514,
+          "mean_db": 0.03757718019924032,
+          "active_fraction_above_0_1_db": 0.07340755208333333
+        },
+        {
+          "name": "Intimate break",
+          "maximum_db": 1.3663445711135864,
+          "mean_db": 0.00014109963899287928,
+          "active_fraction_above_0_1_db": 0.0001328125
+        },
+        {
+          "name": "Rebuild",
+          "maximum_db": 1.387108564376831,
+          "mean_db": 0.015287258423415122,
+          "active_fraction_above_0_1_db": 0.03344401041666667
+        },
+        {
+          "name": "Tutti",
+          "maximum_db": 5.773326873779297,
+          "mean_db": 0.3863100940377386,
+          "active_fraction_above_0_1_db": 0.34884635416666665
+        },
+        {
+          "name": "Coda",
+          "maximum_db": 7.999979019165039,
+          "mean_db": 0.40883278089819974,
+          "active_fraction_above_0_1_db": 0.23927473958333334
+        },
+        {
+          "name": "Resonance",
+          "maximum_db": 2.9514665129681816e-06,
+          "mean_db": 5.1654508457452727e-08,
+          "active_fraction_above_0_1_db": 0.0
+        }
+      ],
+      "input_integrated_loudness_lufs": -26.0,
+      "output_integrated_loudness_lufs": -18.9,
+      "measured_loudness_increase_lu": 7.100000000000001,
+      "input_loudness_range_lu": 10.3,
+      "output_loudness_range_lu": 9.5
+    },
+    "mp3_only_linear_gain": 1.0,
+    "mp3_only_gain_db": 0.0
+  },
+  "artifacts": {
+    "taikor-suite-master-384k-float.wav": {
+      "sample_rate_hz": 384000,
+      "channels": 2,
+      "frames": 23040000,
+      "duration_seconds": 60.0,
+      "sample_peak": 0.8709635734558105,
+      "sample_peak_dbfs": -1.2000001645528333,
+      "channel_peak_dbfs": [
+        -1.2000001645528333,
+        -3.0200184510275134
+      ],
+      "rms_dbfs": -25.488517203842697,
+      "channel_rms_dbfs": [
+        -25.553191221616007,
+        -25.424792180022067
+      ],
+      "crest_factor_db": 24.28851703928986,
+      "channel_dc_offset": [
+        8.422425463306278e-10,
+        -1.3787757634050631e-09
+      ],
+      "stereo_correlation": 0.7743727896399066,
+      "clipped_sample_count": 0,
+      "nonfinite_sample_count": 0,
+      "first_frame": [
+        0.0,
+        0.0
+      ],
+      "last_frame": [
+        0.0,
+        0.0
+      ],
+      "file": "/Users/vojta/Dev/virtual-instrument-taikor/build-demo-suite/master/taikor-suite-master-384k-float.wav",
+      "bytes": 184320058,
+      "sha256": "b1adb5e9fe21d1fd72d47ed85812d8f9e2f362dbcccf1354351604dce9e28e5b",
+      "ebur128": {
+        "integrated_loudness_lufs": -26.0,
+        "loudness_range_lu": 10.3,
+        "true_peak_dbtp": -1.2,
+        "measurement": "FFmpeg ebur128=peak=true; summary precision 0.1 dB"
+      },
+      "format": {
+        "encoding": "IEEE float",
+        "bits_per_sample": 32,
+        "channels": 2,
+        "sample_rate_hz": 384000,
+        "byte_rate": 3072000,
+        "block_alignment_bytes": 8
+      },
+      "sections": [
+        {
+          "name": "Opening",
+          "start_seconds": 0.0,
+          "end_seconds": 8.0,
+          "rms_dbfs": -29.872178225645598,
+          "sample_peak_dbfs": -7.381719465588516,
+          "crest_factor_db": 22.49045876005708
+        },
+        {
+          "name": "Groove",
+          "start_seconds": 8.0,
+          "end_seconds": 16.0,
+          "rms_dbfs": -27.268987263170832,
+          "sample_peak_dbfs": -6.29099367150345,
+          "crest_factor_db": 20.977993591667378
+        },
+        {
+          "name": "Dialogue",
+          "start_seconds": 16.0,
+          "end_seconds": 24.0,
+          "rms_dbfs": -29.035742570718057,
+          "sample_peak_dbfs": -8.64450567674021,
+          "crest_factor_db": 20.391236893977847
+        },
+        {
+          "name": "Intimate break",
+          "start_seconds": 24.0,
+          "end_seconds": 32.0,
+          "rms_dbfs": -35.832585152751165,
+          "sample_peak_dbfs": -12.034238256168576,
+          "crest_factor_db": 23.798346896582586
+        },
+        {
+          "name": "Rebuild",
+          "start_seconds": 32.0,
+          "end_seconds": 40.0,
+          "rms_dbfs": -28.951782644121423,
+          "sample_peak_dbfs": -7.812865337101541,
+          "crest_factor_db": 21.138917307019884
+        },
+        {
+          "name": "Tutti",
+          "start_seconds": 40.0,
+          "end_seconds": 48.0,
+          "rms_dbfs": -20.538040026749258,
+          "sample_peak_dbfs": -3.426502952478442,
+          "crest_factor_db": 17.111537074270814
+        },
+        {
+          "name": "Coda",
+          "start_seconds": 48.0,
+          "end_seconds": 56.0,
+          "rms_dbfs": -21.75857587475038,
+          "sample_peak_dbfs": -1.2000001645528333,
+          "crest_factor_db": 20.558575710197545
+        },
+        {
+          "name": "Resonance",
+          "start_seconds": 56.0,
+          "end_seconds": 60.0,
+          "rms_dbfs": -57.71849797064544,
+          "sample_peak_dbfs": -38.99110525920064,
+          "crest_factor_db": 18.727392711444804
+        }
+      ]
+    },
+    "taikor-suite-96k24.wav": {
+      "sample_rate_hz": 96000,
+      "channels": 2,
+      "frames": 5760000,
+      "duration_seconds": 60.0,
+      "sample_peak": 0.8699597120285034,
+      "sample_peak_dbfs": -1.210017183233206,
+      "channel_peak_dbfs": [
+        -1.210017183233206,
+        -1.210021944092829
+      ],
+      "rms_dbfs": -19.064659934877138,
+      "channel_rms_dbfs": [
+        -19.23708627069558,
+        -18.898818761879415
+      ],
+      "crest_factor_db": 17.85464275164393,
+      "channel_dc_offset": [
+        6.310162598060237e-05,
+        7.299907873902056e-05
+      ],
+      "stereo_correlation": 0.7345239149395284,
+      "clipped_sample_count": 0,
+      "nonfinite_sample_count": 0,
+      "first_frame": [
+        0.0,
+        0.0
+      ],
+      "last_frame": [
+        -1.1920928955078125e-07,
+        -1.1920928955078125e-07
+      ],
+      "file": "/Users/vojta/Dev/virtual-instrument-taikor/build-demo-suite/master/taikor-suite-96k24.wav",
+      "bytes": 34560222,
+      "sha256": "90598f9cda9e2b513cc61fc204ade9b8b4d4ec4b25a281c43db603c5692e1137",
+      "ebur128": {
+        "integrated_loudness_lufs": -18.9,
+        "loudness_range_lu": 9.5,
+        "true_peak_dbtp": -1.2,
+        "measurement": "FFmpeg ebur128=peak=true; summary precision 0.1 dB"
+      },
+      "format": {
+        "encoding": "PCM",
+        "bits_per_sample": 24,
+        "channels": 2,
+        "sample_rate_hz": 96000,
+        "byte_rate": 576000,
+        "block_alignment_bytes": 6
+      },
+      "estimated_true_peak_dbtp": -1.2000013533956682,
+      "true_peak_oversampling_factor": 8,
+      "sections": [
+        {
+          "name": "Opening",
+          "start_seconds": 0.0,
+          "end_seconds": 8.0,
+          "rms_dbfs": -22.20045348307247,
+          "sample_peak_dbfs": -1.210021944092829,
+          "crest_factor_db": 20.990431538979642
+        },
+        {
+          "name": "Groove",
+          "start_seconds": 8.0,
+          "end_seconds": 16.0,
+          "rms_dbfs": -19.873192935133538,
+          "sample_peak_dbfs": -1.210024324523619,
+          "crest_factor_db": 18.66316861060992
+        },
+        {
+          "name": "Dialogue",
+          "start_seconds": 16.0,
+          "end_seconds": 24.0,
+          "rms_dbfs": -21.339269398167392,
+          "sample_peak_dbfs": -1.2100267049550615,
+          "crest_factor_db": 20.129242693212333
+        },
+        {
+          "name": "Intimate break",
+          "start_seconds": 24.0,
+          "end_seconds": 32.0,
+          "rms_dbfs": -27.84321279339308,
+          "sample_peak_dbfs": -4.0442650312830475,
+          "crest_factor_db": 23.798947762110032
+        },
+        {
+          "name": "Rebuild",
+          "start_seconds": 32.0,
+          "end_seconds": 40.0,
+          "rms_dbfs": -21.031885071458976,
+          "sample_peak_dbfs": -1.210024324523619,
+          "crest_factor_db": 19.821860746935357
+        },
+        {
+          "name": "Tutti",
+          "start_seconds": 40.0,
+          "end_seconds": 48.0,
+          "rms_dbfs": -14.241581257161824,
+          "sample_peak_dbfs": -1.2100183734478673,
+          "crest_factor_db": 13.031562883713956
+        },
+        {
+          "name": "Coda",
+          "start_seconds": 48.0,
+          "end_seconds": 56.0,
+          "rms_dbfs": -16.543106505710366,
+          "sample_peak_dbfs": -1.210017183233206,
+          "crest_factor_db": 15.33308932247716
+        },
+        {
+          "name": "Resonance",
+          "start_seconds": 56.0,
+          "end_seconds": 60.0,
+          "rms_dbfs": -49.728503285606195,
+          "sample_peak_dbfs": -31.001215992437984,
+          "crest_factor_db": 18.727287293168217
+        }
+      ]
+    },
+    "taikor-suite.mp3": {
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "frames": 2880000,
+      "duration_seconds": 60.0,
+      "sample_peak": 0.8766699433326721,
+      "sample_peak_dbfs": -1.1432776599143086,
+      "channel_peak_dbfs": [
+        -1.1432776599143086,
+        -1.1912505293418292
+      ],
+      "rms_dbfs": -19.0643486603303,
+      "channel_rms_dbfs": [
+        -19.236762110407263,
+        -18.89851940754249
+      ],
+      "crest_factor_db": 17.921071000415992,
+      "channel_dc_offset": [
+        6.386380253482318e-05,
+        7.322453105307123e-05
+      ],
+      "stereo_correlation": 0.7345062822579881,
+      "clipped_sample_count": 0,
+      "nonfinite_sample_count": 0,
+      "first_frame": [
+        0.0,
+        0.0
+      ],
+      "last_frame": [
+        3.528016212506202e-10,
+        -6.695686227686792e-10
+      ],
+      "file": "/Users/vojta/Dev/virtual-instrument-taikor/build-demo-suite/master/taikor-suite.mp3",
+      "bytes": 2402039,
+      "sha256": "9d2996b8b4d279bb8af307b631f65d7fd6cc46f358885b0cc799ef223bd6173e",
+      "ebur128": {
+        "integrated_loudness_lufs": -18.9,
+        "loudness_range_lu": 9.5,
+        "true_peak_dbtp": -1.1,
+        "measurement": "FFmpeg ebur128=peak=true; summary precision 0.1 dB"
+      },
+      "estimated_true_peak_dbtp": -1.1410503825931353,
+      "true_peak_oversampling_factor": 8,
+      "sections": [
+        {
+          "name": "Opening",
+          "start_seconds": 0.0,
+          "end_seconds": 8.0,
+          "rms_dbfs": -22.200261210721166,
+          "sample_peak_dbfs": -1.2020244051963032,
+          "crest_factor_db": 20.998236805524865
+        },
+        {
+          "name": "Groove",
+          "start_seconds": 8.0,
+          "end_seconds": 16.0,
+          "rms_dbfs": -19.872585470243735,
+          "sample_peak_dbfs": -1.1574039290025069,
+          "crest_factor_db": 18.71518154124123
+        },
+        {
+          "name": "Dialogue",
+          "start_seconds": 16.0,
+          "end_seconds": 24.0,
+          "rms_dbfs": -21.339779031795537,
+          "sample_peak_dbfs": -1.1912505293418292,
+          "crest_factor_db": 20.148528502453704
+        },
+        {
+          "name": "Intimate break",
+          "start_seconds": 24.0,
+          "end_seconds": 32.0,
+          "rms_dbfs": -27.843402015055702,
+          "sample_peak_dbfs": -4.035500184334309,
+          "crest_factor_db": 23.807901830721395
+        },
+        {
+          "name": "Rebuild",
+          "start_seconds": 32.0,
+          "end_seconds": 40.0,
+          "rms_dbfs": -21.03135569832293,
+          "sample_peak_dbfs": -1.200998255387241,
+          "crest_factor_db": 19.83035744293569
+        },
+        {
+          "name": "Tutti",
+          "start_seconds": 40.0,
+          "end_seconds": 48.0,
+          "rms_dbfs": -14.24099208874329,
+          "sample_peak_dbfs": -1.1432776599143086,
+          "crest_factor_db": 13.09771442882898
+        },
+        {
+          "name": "Coda",
+          "start_seconds": 48.0,
+          "end_seconds": 56.0,
+          "rms_dbfs": -16.54314108840872,
+          "sample_peak_dbfs": -1.1921632830870763,
+          "crest_factor_db": 15.35097780532164
+        },
+        {
+          "name": "Resonance",
+          "start_seconds": 56.0,
+          "end_seconds": 60.0,
+          "rms_dbfs": -49.72800319291537,
+          "sample_peak_dbfs": -31.000856598638016,
+          "crest_factor_db": 18.72714659427735
+        }
+      ]
+    }
+  },
+  "master_sha256": "b1adb5e9fe21d1fd72d47ed85812d8f9e2f362dbcccf1354351604dce9e28e5b",
+  "failures": [],
+  "qa_scope": "Automated format, duration, finite-sample, silence, clipping, loudness and stereo measurements. These measurements do not certify musical or subjective listening quality. MP3 duration and sample metrics are measured after gapless FFmpeg decoding.",
+  "performance_files": {
+    "taikor-suite.mid": {
+      "file": "/Users/vojta/Dev/virtual-instrument-taikor/build-demo-suite/master/taikor-suite.mid",
+      "sha256": "c6a815ed043028aec97966e68a2fcce39ce889706e4085fc7213c4ff58671d59",
+      "bytes": 10882
+    },
+    "taikor-suite-score.csv": {
+      "file": "/Users/vojta/Dev/virtual-instrument-taikor/build-demo-suite/master/taikor-suite-score.csv",
+      "sha256": "a5a6730252c0aab2015ac90a116b3323872d824de8675af0d4e71952237dab39",
+      "bytes": 28404
+    }
+  }
+}

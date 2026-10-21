@@ -1,0 +1,507 @@
+seconds,instance,drum,event,stroke,value,position_cc17,azimuth_cc16,rear,technique
+0.020052,1,O-daiko,note,Don,123,64,74,0,opening
+2.000000,1,O-daiko,note,Don,114,64,54,0,low anchor
+4.000000,1,O-daiko,note,Don,116,64,74,0,low anchor
+6.000000,1,O-daiko,note,Don,116,64,54,0,low anchor
+8.000000,1,O-daiko,note,Don,117,64,74,0,low anchor
+9.497396,1,O-daiko,note,Muted,88,64,54,0,low answer
+10.000000,1,O-daiko,note,Don,117,64,74,0,low anchor
+11.495573,1,O-daiko,note,Don,88,64,54,0,low answer
+12.000000,1,O-daiko,note,Don,117,64,74,0,low anchor
+13.501823,1,O-daiko,note,Muted,88,64,54,0,low answer
+14.000000,1,O-daiko,note,Don,117,64,74,0,low anchor
+15.504687,1,O-daiko,note,Don,88,64,54,0,low answer
+16.000000,1,O-daiko,note,Don,103,64,74,0,dialogue anchor
+18.000000,1,O-daiko,note,Don,103,64,54,0,dialogue anchor
+20.000000,1,O-daiko,note,Don,103,64,74,0,dialogue anchor
+22.000000,1,O-daiko,note,Don,103,64,54,0,dialogue anchor
+24.000000,1,O-daiko,note,Don,112,64,74,0,open before palm
+24.425000,1,O-daiko,CC1,,112,64,64,0,palm choke
+24.746354,1,O-daiko,note,Don,80,64,54,0,palm held
+25.125000,1,O-daiko,CC1,,0,64,64,0,palm release
+25.496094,1,O-daiko,note,Don,95,64,74,0,open after release
+32.000000,1,O-daiko,ensemble_size,,2,64,64,0,two players per part
+32.000000,1,O-daiko,note,Don,110,64,54,0,rebuild anchor
+34.000000,1,O-daiko,note,Don,110,64,74,0,rebuild anchor
+36.000000,1,O-daiko,note,Don,110,64,54,0,rebuild anchor
+38.000000,1,O-daiko,note,Don,110,64,74,0,rebuild anchor
+40.000000,1,O-daiko,ensemble_size,,4,64,64,0,tutti players
+40.000000,1,O-daiko,note,Don,123,64,54,0,tutti anchor
+40.745312,1,O-daiko,note,Edge,102,64,74,0,low edge answer
+41.252083,1,O-daiko,note,Muted,89,64,54,0,low muted answer
+41.501302,1,O-daiko,note,Don,114,64,74,0,low cadence
+42.000000,1,O-daiko,note,Don,123,64,54,0,tutti anchor
+42.754948,1,O-daiko,note,Edge,102,64,74,0,low edge answer
+43.247135,1,O-daiko,note,Muted,89,64,54,0,low muted answer
+43.499479,1,O-daiko,note,Rimshot,77,64,74,0,low cadence
+44.000000,1,O-daiko,note,Don,123,64,54,0,tutti anchor
+44.745052,1,O-daiko,note,Edge,102,64,74,0,low edge answer
+45.253646,1,O-daiko,note,Muted,89,64,54,0,low muted answer
+45.499740,1,O-daiko,note,Don,114,64,74,0,low cadence
+46.000000,1,O-daiko,note,Don,123,64,54,0,tutti anchor
+46.754948,1,O-daiko,note,Edge,102,64,74,0,low edge answer
+47.245833,1,O-daiko,note,Muted,89,64,54,0,low muted answer
+47.501042,1,O-daiko,note,Rimshot,77,64,74,0,low cadence
+48.000000,1,O-daiko,note,Don,124,64,54,0,coda anchor
+49.495312,1,O-daiko,note,Rimshot,84,64,74,0,coda accent
+50.000000,1,O-daiko,note,Don,118,64,54,0,roll anchor
+52.500000,1,O-daiko,note,Don,118,64,74,0,stop time
+53.250000,1,O-daiko,note,Don,118,64,54,0,stop time
+54.970052,1,O-daiko,note,Don,63,67,74,0,flam grace
+55.000000,1,O-daiko,note,Don,126,64,54,0,flam accent
+56.000000,1,O-daiko,pitch_wheel,,8192,64,64,0,neutral tail
+0.754948,2,Nagado-daiko,note,Don,103,64,74,0,answer
+1.495833,2,Nagado-daiko,note,Edge,86,64,54,0,answer
+2.000000,2,Nagado-daiko,note,Don,107,64,74,0,theme
+2.377604,2,Nagado-daiko,note,Muted,50,64,54,0,ghost
+2.745312,2,Nagado-daiko,note,Don,95,64,74,0,theme
+3.254427,2,Nagado-daiko,note,Edge,70,64,54,0,edge answer
+3.498177,2,Nagado-daiko,note,Don,101,64,74,0,theme cadence
+4.000000,2,Nagado-daiko,note,Don,110,64,54,0,theme
+4.379427,2,Nagado-daiko,note,Muted,52,64,74,0,ghost
+4.745312,2,Nagado-daiko,note,Don,98,64,54,0,theme
+5.252604,2,Nagado-daiko,note,Edge,73,64,74,0,edge answer
+5.501042,2,Nagado-daiko,note,Don,105,64,54,0,theme cadence
+6.000000,2,Nagado-daiko,note,Don,110,64,74,0,theme
+6.379948,2,Nagado-daiko,note,Muted,52,64,54,0,ghost
+6.746615,2,Nagado-daiko,note,Don,98,64,74,0,theme
+7.250000,2,Nagado-daiko,note,Edge,73,64,54,0,edge answer
+7.503385,2,Nagado-daiko,note,Rimshot,77,64,74,0,theme cadence
+7.745052,2,Nagado-daiko,note,Edge,70,64,54,0,turnaround
+8.000000,2,Nagado-daiko,note,Don,112,64,74,0,theme
+8.374219,2,Nagado-daiko,note,Muted,53,64,54,0,ghost
+8.747135,2,Nagado-daiko,note,Don,99,64,74,0,theme
+9.254948,2,Nagado-daiko,note,Edge,74,64,54,0,edge answer
+9.495573,2,Nagado-daiko,note,Don,106,64,74,0,theme cadence
+10.000000,2,Nagado-daiko,note,Don,112,64,54,0,theme
+10.377083,2,Nagado-daiko,note,Muted,53,64,74,0,ghost
+10.745313,2,Nagado-daiko,note,Don,99,64,54,0,theme
+11.254687,2,Nagado-daiko,note,Edge,74,64,74,0,edge answer
+11.497656,2,Nagado-daiko,note,Rimshot,78,64,54,0,theme cadence
+11.748698,2,Nagado-daiko,note,Edge,70,64,74,0,turnaround
+12.000000,2,Nagado-daiko,note,Don,112,64,54,0,theme
+12.370052,2,Nagado-daiko,note,Muted,53,64,74,0,ghost
+12.753125,2,Nagado-daiko,note,Don,99,64,54,0,theme
+13.250260,2,Nagado-daiko,note,Edge,74,64,74,0,edge answer
+13.496354,2,Nagado-daiko,note,Don,106,64,54,0,theme cadence
+14.000000,2,Nagado-daiko,note,Don,112,64,74,0,theme
+14.371354,2,Nagado-daiko,note,Muted,53,64,54,0,ghost
+14.750521,2,Nagado-daiko,note,Don,99,64,74,0,theme
+15.253125,2,Nagado-daiko,note,Edge,74,64,54,0,edge answer
+15.495052,2,Nagado-daiko,note,Rimshot,78,64,74,0,theme cadence
+15.754167,2,Nagado-daiko,note,Edge,70,64,54,0,turnaround
+16.998698,2,Nagado-daiko,note,Muted,74,64,74,0,muted support
+18.997656,2,Nagado-daiko,note,Muted,74,64,54,0,muted support
+21.004687,2,Nagado-daiko,note,Muted,74,64,74,0,muted support
+22.995313,2,Nagado-daiko,note,Muted,74,64,54,0,muted support
+28.000000,2,Nagado-daiko,note,Don,108,64,74,0,pitch pressure
+28.090104,2,Nagado-daiko,pitch_wheel,,8192,64,64,0,pressure arch
+28.120052,2,Nagado-daiko,pitch_wheel,,8449,64,64,0,pressure arch
+28.150000,2,Nagado-daiko,pitch_wheel,,8701,64,64,0,pressure arch
+28.179948,2,Nagado-daiko,pitch_wheel,,8944,64,64,0,pressure arch
+28.209896,2,Nagado-daiko,pitch_wheel,,9175,64,64,0,pressure arch
+28.240104,2,Nagado-daiko,pitch_wheel,,9389,64,64,0,pressure arch
+28.270052,2,Nagado-daiko,pitch_wheel,,9582,64,64,0,pressure arch
+28.300000,2,Nagado-daiko,pitch_wheel,,9752,64,64,0,pressure arch
+28.329948,2,Nagado-daiko,pitch_wheel,,9894,64,64,0,pressure arch
+28.359896,2,Nagado-daiko,pitch_wheel,,10008,64,64,0,pressure arch
+28.390104,2,Nagado-daiko,pitch_wheel,,10091,64,64,0,pressure arch
+28.420052,2,Nagado-daiko,pitch_wheel,,10141,64,64,0,pressure arch
+28.450000,2,Nagado-daiko,pitch_wheel,,10158,64,64,0,pressure arch
+28.479948,2,Nagado-daiko,pitch_wheel,,10141,64,64,0,pressure arch
+28.509896,2,Nagado-daiko,pitch_wheel,,10091,64,64,0,pressure arch
+28.540104,2,Nagado-daiko,pitch_wheel,,10008,64,64,0,pressure arch
+28.570052,2,Nagado-daiko,pitch_wheel,,9894,64,64,0,pressure arch
+28.600000,2,Nagado-daiko,pitch_wheel,,9752,64,64,0,pressure arch
+28.629948,2,Nagado-daiko,pitch_wheel,,9582,64,64,0,pressure arch
+28.659896,2,Nagado-daiko,pitch_wheel,,9389,64,64,0,pressure arch
+28.690104,2,Nagado-daiko,pitch_wheel,,9175,64,64,0,pressure arch
+28.720052,2,Nagado-daiko,pitch_wheel,,8944,64,64,0,pressure arch
+28.750000,2,Nagado-daiko,pitch_wheel,,8701,64,64,0,pressure arch
+28.779948,2,Nagado-daiko,pitch_wheel,,8449,64,64,0,pressure arch
+28.809896,2,Nagado-daiko,pitch_wheel,,8192,64,64,0,pressure arch
+29.000000,2,Nagado-daiko,pitch_wheel,,8192,64,64,0,pressure released
+29.253385,2,Nagado-daiko,note,Don,74,64,54,0,soft answer
+32.000000,2,Nagado-daiko,ensemble_size,,2,64,64,0,two players per part
+32.000000,2,Nagado-daiko,note,Don,104,64,74,0,theme
+32.374219,2,Nagado-daiko,note,Muted,49,64,54,0,ghost
+32.747135,2,Nagado-daiko,note,Don,93,64,74,0,theme
+33.254948,2,Nagado-daiko,note,Edge,69,64,54,0,edge answer
+33.495573,2,Nagado-daiko,note,Don,99,64,74,0,theme cadence
+34.000000,2,Nagado-daiko,note,Don,107,64,54,0,theme
+34.377083,2,Nagado-daiko,note,Muted,50,64,74,0,ghost
+34.745312,2,Nagado-daiko,note,Don,96,64,54,0,theme
+35.254688,2,Nagado-daiko,note,Edge,71,64,74,0,edge answer
+35.497656,2,Nagado-daiko,note,Rimshot,75,64,54,0,theme cadence
+35.748698,2,Nagado-daiko,note,Edge,68,64,74,0,turnaround
+36.000000,2,Nagado-daiko,note,Don,110,64,54,0,theme
+36.370052,2,Nagado-daiko,note,Muted,52,64,74,0,ghost
+36.753125,2,Nagado-daiko,note,Don,98,64,54,0,theme
+37.250260,2,Nagado-daiko,note,Edge,73,64,74,0,edge answer
+37.496354,2,Nagado-daiko,note,Don,105,64,54,0,theme cadence
+38.000000,2,Nagado-daiko,note,Don,114,64,74,0,theme
+38.371354,2,Nagado-daiko,note,Muted,53,64,54,0,ghost
+38.750521,2,Nagado-daiko,note,Don,101,64,74,0,theme
+39.253125,2,Nagado-daiko,note,Edge,75,64,54,0,edge answer
+39.495052,2,Nagado-daiko,note,Rimshot,80,64,74,0,theme cadence
+39.754167,2,Nagado-daiko,note,Edge,72,64,54,0,turnaround
+40.000000,2,Nagado-daiko,ensemble_size,,4,64,64,0,tutti players
+40.000000,2,Nagado-daiko,note,Don,119,64,74,0,theme
+40.379688,2,Nagado-daiko,note,Muted,56,64,54,0,ghost
+40.745312,2,Nagado-daiko,note,Don,106,64,74,0,theme
+41.252083,2,Nagado-daiko,note,Edge,79,64,54,0,edge answer
+41.501562,2,Nagado-daiko,note,Don,113,64,74,0,theme cadence
+42.000000,2,Nagado-daiko,note,Don,119,64,54,0,theme
+42.379948,2,Nagado-daiko,note,Muted,56,64,74,0,ghost
+42.747135,2,Nagado-daiko,note,Don,106,64,54,0,theme
+43.249219,2,Nagado-daiko,note,Edge,79,64,74,0,edge answer
+43.503906,2,Nagado-daiko,note,Rimshot,84,64,54,0,theme cadence
+43.745052,2,Nagado-daiko,note,Edge,75,64,74,0,turnaround
+44.000000,2,Nagado-daiko,note,Don,119,64,54,0,theme
+44.374740,2,Nagado-daiko,note,Muted,56,64,74,0,ghost
+44.746875,2,Nagado-daiko,note,Don,106,64,54,0,theme
+45.254948,2,Nagado-daiko,note,Edge,79,64,74,0,edge answer
+45.495833,2,Nagado-daiko,note,Don,113,64,54,0,theme cadence
+46.000000,2,Nagado-daiko,note,Don,119,64,74,0,theme
+46.377604,2,Nagado-daiko,note,Muted,56,64,54,0,ghost
+46.745312,2,Nagado-daiko,note,Don,106,64,74,0,theme
+47.254427,2,Nagado-daiko,note,Edge,79,64,54,0,edge answer
+47.498177,2,Nagado-daiko,note,Rimshot,84,64,74,0,theme cadence
+47.748177,2,Nagado-daiko,note,Edge,75,64,54,0,turnaround
+48.000000,2,Nagado-daiko,note,Don,121,64,74,0,theme
+48.370312,2,Nagado-daiko,note,Muted,57,64,54,0,ghost
+48.752604,2,Nagado-daiko,note,Don,107,64,74,0,theme
+49.251042,2,Nagado-daiko,note,Edge,80,64,54,0,edge answer
+49.496094,2,Nagado-daiko,note,Rimshot,84,64,74,0,theme cadence
+49.754948,2,Nagado-daiko,note,Edge,76,64,54,0,turnaround
+50.000000,2,Nagado-daiko,note,Don,71,67,74,0,final rising roll
+50.125000,2,Nagado-daiko,note,Don,73,67,54,0,final rising roll
+50.500000,2,Nagado-daiko,note,Don,79,67,74,0,final rising roll
+50.625000,2,Nagado-daiko,note,Don,81,67,54,0,final rising roll
+51.000000,2,Nagado-daiko,note,Don,86,67,74,0,final rising roll
+51.125000,2,Nagado-daiko,note,Don,88,67,54,0,final rising roll
+51.500000,2,Nagado-daiko,note,Don,94,67,74,0,final rising roll
+51.625000,2,Nagado-daiko,note,Don,96,67,54,0,final rising roll
+52.000000,2,Nagado-daiko,note,Don,102,67,74,0,final rising roll
+52.062500,2,Nagado-daiko,note,Don,104,67,54,0,final rising roll
+52.250000,2,Nagado-daiko,note,Don,109,67,74,0,final rising roll
+52.312500,2,Nagado-daiko,note,Don,111,67,54,0,final rising roll
+52.500000,2,Nagado-daiko,note,Rimshot,85,64,74,0,stop time
+53.250000,2,Nagado-daiko,note,Rimshot,85,64,54,0,stop time
+54.970052,2,Nagado-daiko,note,Don,63,67,74,0,flam grace
+55.000000,2,Nagado-daiko,note,Don,126,64,54,0,flam accent
+56.000000,2,Nagado-daiko,pitch_wheel,,8192,64,64,0,neutral tail
+3.748698,3,Okedo,note,Muted,70,64,74,0,pickup
+4.997656,3,Okedo,note,Don,88,64,54,0,cross answer
+7.004688,3,Okedo,note,Don,88,64,74,0,cross answer
+7.720052,3,Okedo,note,Don,53,67,54,0,flam grace
+7.750000,3,Okedo,note,Don,107,64,74,0,flam accent
+8.501563,3,Okedo,note,Don,97,64,54,0,interlock
+9.370573,3,Okedo,note,Muted,56,64,74,0,ghost
+9.754948,3,Okedo,note,Edge,84,64,54,0,interlock
+10.497135,3,Okedo,note,Don,97,64,74,0,interlock
+11.374219,3,Okedo,note,Muted,56,64,54,0,ghost
+11.753906,3,Okedo,note,Edge,84,64,74,0,interlock
+12.495052,3,Okedo,note,Don,97,64,54,0,interlock
+13.378385,3,Okedo,note,Muted,56,64,74,0,ghost
+13.749740,3,Okedo,note,Edge,84,64,54,0,interlock
+14.496615,3,Okedo,note,Don,97,64,74,0,interlock
+15.379948,3,Okedo,note,Muted,56,64,54,0,ghost
+15.745833,3,Okedo,note,Edge,84,64,74,0,interlock
+15.845052,3,Okedo,note,Don,52,67,54,0,flam grace
+15.875000,3,Okedo,note,Rimshot,104,64,74,0,flam accent
+15.995313,3,Okedo,note,Don,104,69,54,0,front-head call
+16.254427,3,Okedo,note,Don,104,69,74,0,front-head call
+16.498177,3,Okedo,note,Edge,104,69,54,0,front-head call
+16.748177,3,Okedo,note,Don,112,69,74,1,rear-head answer
+17.004427,3,Okedo,note,Don,112,69,54,1,rear-head answer
+17.245313,3,Okedo,note,Edge,112,69,74,1,rear-head answer
+18.002604,3,Okedo,note,Don,104,69,54,0,front-head call
+18.251042,3,Okedo,note,Don,104,69,74,0,front-head call
+18.495833,3,Okedo,note,Edge,104,69,54,0,front-head call
+18.754948,3,Okedo,note,Don,112,69,74,1,rear-head answer
+18.996615,3,Okedo,note,Don,112,69,54,1,rear-head answer
+19.249740,3,Okedo,note,Edge,112,69,74,1,rear-head answer
+20.003385,3,Okedo,note,Don,104,69,54,0,front-head call
+20.245052,3,Okedo,note,Don,104,69,74,0,front-head call
+20.503906,3,Okedo,note,Edge,104,69,54,0,front-head call
+20.749219,3,Okedo,note,Don,112,69,74,1,rear-head answer
+20.997135,3,Okedo,note,Don,112,69,54,1,rear-head answer
+21.254948,3,Okedo,note,Edge,112,69,74,1,rear-head answer
+21.995573,3,Okedo,note,Don,104,69,54,0,front-head call
+22.251562,3,Okedo,note,Don,104,69,74,0,front-head call
+22.502083,3,Okedo,note,Edge,104,69,54,0,front-head call
+22.745313,3,Okedo,note,Don,112,69,74,1,rear-head answer
+23.004687,3,Okedo,note,Don,112,69,54,1,rear-head answer
+23.247656,3,Okedo,note,Edge,112,69,74,1,rear-head answer
+25.998698,3,Okedo,note,Don,41,45,54,0,position and velocity phrase
+26.254167,3,Okedo,note,Don,48,52,74,0,position and velocity phrase
+26.495052,3,Okedo,note,Don,55,58,54,0,position and velocity phrase
+26.753125,3,Okedo,note,Don,62,65,74,0,position and velocity phrase
+27.000521,3,Okedo,note,Don,69,72,54,0,position and velocity phrase
+27.246354,3,Okedo,note,Muted,76,78,74,0,position and velocity phrase
+27.504948,3,Okedo,note,Don,83,85,54,0,position and velocity phrase
+29.750000,3,Okedo,note,Muted,86,69,74,0,press contacts
+29.771615,3,Okedo,note,Muted,75,69,54,0,press contacts
+29.789844,3,Okedo,note,Muted,65,69,74,0,press contacts
+29.805208,3,Okedo,note,Muted,57,69,54,0,press contacts
+29.818490,3,Okedo,note,Muted,49,69,74,0,press contacts
+29.829687,3,Okedo,note,Muted,43,69,54,0,press contacts
+29.839323,3,Okedo,note,Muted,37,69,74,0,press contacts
+31.995313,3,Okedo,note,Don,61,59,54,0,accelerating roll
+32.000000,3,Okedo,ensemble_size,,2,64,64,0,two players per part
+32.252083,3,Okedo,note,Don,62,60,74,0,accelerating roll
+32.501562,3,Okedo,note,Don,64,60,54,0,accelerating roll
+32.745573,3,Okedo,note,Edge,65,61,74,0,accelerating roll
+33.004948,3,Okedo,note,Don,66,62,54,0,accelerating roll
+33.247135,3,Okedo,note,Don,68,63,74,0,accelerating roll
+33.499219,3,Okedo,note,Don,69,63,54,0,accelerating roll
+33.753906,3,Okedo,note,Edge,70,64,74,0,accelerating roll
+33.995052,3,Okedo,note,Don,72,65,54,0,accelerating roll
+34.170052,3,Okedo,note,Don,73,65,74,0,accelerating roll
+34.333073,3,Okedo,note,Don,74,66,54,0,accelerating roll
+34.496615,3,Okedo,note,Edge,74,66,74,0,accelerating roll
+34.671615,3,Okedo,note,Don,75,67,54,0,accelerating roll
+34.829167,3,Okedo,note,Don,76,67,74,0,accelerating roll
+35.001042,3,Okedo,note,Don,77,68,54,0,accelerating roll
+35.169271,3,Okedo,note,Edge,78,68,74,0,accelerating roll
+35.328646,3,Okedo,note,Don,79,69,54,0,accelerating roll
+35.504427,3,Okedo,note,Don,80,69,74,0,accelerating roll
+35.664844,3,Okedo,note,Don,81,70,54,0,accelerating roll
+35.831510,3,Okedo,note,Edge,82,70,74,0,accelerating roll
+36.004427,3,Okedo,note,Don,83,71,54,0,accelerating roll
+36.161979,3,Okedo,note,Don,83,71,74,0,accelerating roll
+36.335938,3,Okedo,note,Don,84,72,54,0,accelerating roll
+36.501042,3,Okedo,note,Edge,85,72,74,0,accelerating roll
+36.662500,3,Okedo,note,Don,86,73,54,0,accelerating roll
+36.838281,3,Okedo,note,Don,87,73,74,0,accelerating roll
+36.996615,3,Okedo,note,Don,88,74,54,0,accelerating roll
+37.166406,3,Okedo,note,Edge,89,74,74,0,accelerating roll
+37.336719,3,Okedo,note,Don,90,75,54,0,accelerating roll
+37.495052,3,Okedo,note,Don,91,75,74,0,accelerating roll
+37.670573,3,Okedo,note,Don,92,76,54,0,accelerating roll
+37.832552,3,Okedo,note,Edge,92,76,74,0,accelerating roll
+37.997135,3,Okedo,note,Don,93,77,54,0,accelerating roll
+38.129948,3,Okedo,note,Don,94,77,74,0,accelerating roll
+38.245573,3,Okedo,note,Don,95,78,54,0,accelerating roll
+38.376562,3,Okedo,note,Edge,95,78,74,0,accelerating roll
+38.502083,3,Okedo,note,Don,96,78,54,0,accelerating roll
+38.620312,3,Okedo,note,Don,97,79,74,0,accelerating roll
+38.754688,3,Okedo,note,Don,97,79,54,0,accelerating roll
+38.872656,3,Okedo,note,Edge,98,80,74,0,accelerating roll
+38.998698,3,Okedo,note,Don,99,80,54,0,accelerating roll
+39.129167,3,Okedo,note,Don,99,80,74,0,accelerating roll
+39.245052,3,Okedo,note,Don,100,81,54,0,accelerating roll
+39.378125,3,Okedo,note,Edge,101,81,74,0,accelerating roll
+39.500521,3,Okedo,note,Don,101,81,54,0,accelerating roll
+39.621354,3,Okedo,note,Don,102,82,74,0,accelerating roll
+39.754948,3,Okedo,note,Don,103,82,54,0,accelerating roll
+39.871354,3,Okedo,note,Edge,103,83,74,0,accelerating roll
+40.000000,3,Okedo,ensemble_size,,4,64,64,0,tutti players
+40.250000,3,Okedo,note,Don,104,64,54,0,theme
+40.620052,3,Okedo,note,Muted,49,64,74,0,ghost
+41.004167,3,Okedo,note,Don,93,64,54,0,theme
+41.498698,3,Okedo,note,Edge,69,64,74,0,edge answer
+41.747656,3,Okedo,note,Rimshot,73,64,54,0,theme cadence
+42.004688,3,Okedo,note,Edge,66,64,74,0,turnaround
+42.250000,3,Okedo,note,Don,104,64,54,0,theme
+42.627083,3,Okedo,note,Muted,49,64,74,0,ghost
+43.001562,3,Okedo,note,Don,93,64,54,0,theme
+43.495573,3,Okedo,note,Edge,69,64,74,0,edge answer
+43.754948,3,Okedo,note,Don,99,64,54,0,theme cadence
+44.250000,3,Okedo,note,Don,104,64,74,0,theme
+44.624219,3,Okedo,note,Muted,49,64,54,0,ghost
+45.003906,3,Okedo,note,Don,93,64,74,0,theme
+45.495052,3,Okedo,note,Edge,69,64,54,0,edge answer
+45.753385,3,Okedo,note,Rimshot,73,64,74,0,theme cadence
+46.000000,3,Okedo,note,Edge,66,64,54,0,turnaround
+46.250000,3,Okedo,note,Don,104,64,74,0,theme
+46.629948,3,Okedo,note,Muted,49,64,54,0,ghost
+46.996094,3,Okedo,note,Don,93,64,74,0,theme
+47.501042,3,Okedo,note,Edge,69,64,54,0,edge answer
+47.752604,3,Okedo,note,Don,99,64,74,0,theme cadence
+48.250000,3,Okedo,note,Don,110,64,54,0,theme
+48.629427,3,Okedo,note,Muted,52,64,74,0,ghost
+48.998177,3,Okedo,note,Don,98,64,54,0,theme
+49.498177,3,Okedo,note,Edge,73,64,74,0,edge answer
+49.750000,3,Okedo,note,Muted,94,69,54,0,press contacts
+49.754427,3,Okedo,note,Rimshot,77,64,74,0,theme cadence
+49.771615,3,Okedo,note,Muted,82,69,54,0,press contacts
+49.789844,3,Okedo,note,Muted,71,69,74,0,press contacts
+49.805208,3,Okedo,note,Muted,62,69,54,0,press contacts
+49.818490,3,Okedo,note,Muted,54,69,74,0,press contacts
+49.829687,3,Okedo,note,Muted,47,69,54,0,press contacts
+49.839323,3,Okedo,note,Muted,41,69,74,0,press contacts
+49.995312,3,Okedo,note,Edge,70,64,54,0,turnaround
+50.250000,3,Okedo,note,Don,75,67,74,0,final rising roll
+50.375000,3,Okedo,note,Edge,77,67,54,0,final rising roll
+50.750000,3,Okedo,note,Don,83,67,74,0,final rising roll
+50.875000,3,Okedo,note,Edge,84,67,54,0,final rising roll
+51.250000,3,Okedo,note,Don,90,67,74,0,final rising roll
+51.375000,3,Okedo,note,Edge,92,67,54,0,final rising roll
+51.750000,3,Okedo,note,Don,98,67,74,0,final rising roll
+51.875000,3,Okedo,note,Edge,100,67,54,0,final rising roll
+52.125000,3,Okedo,note,Don,105,67,74,0,final rising roll
+52.187500,3,Okedo,note,Edge,107,67,54,0,final rising roll
+52.375000,3,Okedo,note,Don,113,67,74,0,final rising roll
+52.437500,3,Okedo,note,Edge,115,67,54,0,final rising roll
+52.500000,3,Okedo,note,Don,118,64,74,0,stop time
+53.250000,3,Okedo,note,Don,118,64,54,0,stop time
+54.970052,3,Okedo,note,Don,63,67,74,0,flam grace
+55.000000,3,Okedo,note,Don,126,64,54,0,flam accent
+56.000000,3,Okedo,pitch_wheel,,8192,64,64,0,neutral tail
+4.000000,4,Shime,note,Edge,74,64,74,0,alternating hands
+4.254688,4,Shime,note,Edge,56,64,54,0,alternating hands
+4.497656,4,Shime,note,Edge,74,64,74,0,alternating hands
+4.748698,4,Shime,note,Muted,56,64,54,0,alternating hands
+5.004167,4,Shime,note,Edge,74,64,74,0,alternating hands
+5.245052,4,Shime,note,Edge,56,64,54,0,alternating hands
+5.503125,4,Shime,note,Edge,74,64,74,0,alternating hands
+5.750521,4,Shime,note,Muted,56,64,54,0,alternating hands
+6.000000,4,Shime,note,Edge,74,64,74,0,alternating hands
+6.254948,4,Shime,note,Edge,56,64,54,0,alternating hands
+6.496354,4,Shime,note,Edge,74,64,74,0,alternating hands
+6.750260,4,Shime,note,Muted,56,64,54,0,alternating hands
+7.003125,4,Shime,note,Edge,74,64,74,0,alternating hands
+7.245052,4,Shime,note,Edge,56,64,54,0,alternating hands
+7.504167,4,Shime,note,Edge,74,64,74,0,alternating hands
+7.748698,4,Shime,note,Muted,56,64,54,0,alternating hands
+8.000000,4,Shime,note,Edge,81,64,74,0,alternating hands
+8.254687,4,Shime,note,Edge,62,64,54,0,alternating hands
+8.495313,4,Shime,note,Edge,81,64,74,0,alternating hands
+8.752083,4,Shime,note,Muted,62,64,54,0,alternating hands
+9.001563,4,Shime,note,Edge,81,64,74,0,alternating hands
+9.245573,4,Shime,note,Edge,62,64,54,0,alternating hands
+9.504948,4,Shime,note,Edge,81,64,74,0,alternating hands
+9.747135,4,Shime,note,Muted,62,64,54,0,alternating hands
+10.000000,4,Shime,note,Edge,81,64,74,0,alternating hands
+10.253906,4,Shime,note,Edge,62,64,54,0,alternating hands
+10.495052,4,Shime,note,Edge,81,64,74,0,alternating hands
+10.753385,4,Shime,note,Muted,62,64,54,0,alternating hands
+11.000000,4,Shime,note,Edge,81,64,74,0,alternating hands
+11.246615,4,Shime,note,Edge,62,64,54,0,alternating hands
+11.504948,4,Shime,note,Edge,81,64,74,0,alternating hands
+11.746094,4,Shime,note,Muted,62,64,54,0,alternating hands
+12.000000,4,Shime,note,Edge,81,64,74,0,alternating hands
+12.252604,4,Shime,note,Edge,62,64,54,0,alternating hands
+12.495313,4,Shime,note,Edge,81,64,74,0,alternating hands
+12.754427,4,Shime,note,Muted,62,64,54,0,alternating hands
+12.998177,4,Shime,note,Edge,81,64,74,0,alternating hands
+13.248177,4,Shime,note,Edge,62,64,54,0,alternating hands
+13.504427,4,Shime,note,Edge,81,64,74,0,alternating hands
+13.745313,4,Shime,note,Muted,62,64,54,0,alternating hands
+14.000000,4,Shime,note,Edge,81,64,74,0,alternating hands
+14.251042,4,Shime,note,Edge,62,64,54,0,alternating hands
+14.495833,4,Shime,note,Edge,81,64,74,0,alternating hands
+14.754948,4,Shime,note,Muted,62,64,54,0,alternating hands
+14.996875,4,Shime,note,Edge,81,64,74,0,alternating hands
+15.249740,4,Shime,note,Edge,62,64,54,0,alternating hands
+15.503646,4,Shime,note,Edge,81,64,74,0,alternating hands
+15.745052,4,Shime,note,Muted,62,64,54,0,alternating hands
+17.503906,4,Shime,note,Don,97,64,74,0,shime answer
+17.750000,4,Shime,note,Muted,84,69,54,0,press contacts
+17.771615,4,Shime,note,Muted,73,69,74,0,press contacts
+17.789844,4,Shime,note,Muted,63,69,54,0,press contacts
+17.805208,4,Shime,note,Muted,55,69,74,0,press contacts
+17.818490,4,Shime,note,Muted,48,69,54,0,press contacts
+17.829687,4,Shime,note,Muted,42,69,74,0,press contacts
+17.839323,4,Shime,note,Muted,36,69,54,0,press contacts
+19.504687,4,Shime,note,Don,97,64,74,0,shime answer
+19.720052,4,Shime,note,Don,43,67,54,0,flam grace
+19.750000,4,Shime,note,Rimshot,86,64,74,0,flam accent
+21.504167,4,Shime,note,Don,97,64,54,0,shime answer
+21.750000,4,Shime,note,Muted,84,69,74,0,press contacts
+21.771615,4,Shime,note,Muted,73,69,54,0,press contacts
+21.789844,4,Shime,note,Muted,63,69,74,0,press contacts
+21.805208,4,Shime,note,Muted,55,69,54,0,press contacts
+21.818490,4,Shime,note,Muted,48,69,74,0,press contacts
+21.829687,4,Shime,note,Muted,42,69,54,0,press contacts
+21.839323,4,Shime,note,Muted,36,69,74,0,press contacts
+23.503125,4,Shime,note,Don,97,64,54,0,shime answer
+23.720052,4,Shime,note,Don,43,67,74,0,flam grace
+23.750000,4,Shime,note,Rimshot,86,64,54,0,flam accent
+29.998698,4,Shime,note,Edge,51,64,74,0,pickup crescendo
+30.247656,4,Shime,note,Muted,55,64,54,0,pickup crescendo
+30.504687,4,Shime,note,Edge,60,64,74,0,pickup crescendo
+30.745313,4,Shime,note,Muted,65,64,54,0,pickup crescendo
+31.002083,4,Shime,note,Edge,70,64,74,0,pickup crescendo
+31.251562,4,Shime,note,Muted,74,64,54,0,pickup crescendo
+31.495573,4,Shime,note,Edge,79,64,74,0,pickup crescendo
+31.754948,4,Shime,note,Muted,84,64,54,0,pickup crescendo
+32.000000,4,Shime,ensemble_size,,2,64,64,0,two players per part
+32.000000,4,Shime,note,Edge,75,64,74,0,alternating hands
+32.253906,4,Shime,note,Edge,57,64,54,0,alternating hands
+32.495052,4,Shime,note,Edge,75,64,74,0,alternating hands
+32.753385,4,Shime,note,Muted,57,64,54,0,alternating hands
+33.000000,4,Shime,note,Edge,75,64,74,0,alternating hands
+33.246615,4,Shime,note,Edge,57,64,54,0,alternating hands
+33.504948,4,Shime,note,Edge,75,64,74,0,alternating hands
+33.746094,4,Shime,note,Muted,57,64,54,0,alternating hands
+34.000000,4,Shime,note,Edge,78,64,74,0,alternating hands
+34.252604,4,Shime,note,Edge,59,64,54,0,alternating hands
+34.495052,4,Shime,note,Edge,78,64,74,0,alternating hands
+34.754427,4,Shime,note,Muted,59,64,54,0,alternating hands
+34.998177,4,Shime,note,Edge,78,64,74,0,alternating hands
+35.248177,4,Shime,note,Edge,59,64,54,0,alternating hands
+35.504427,4,Shime,note,Edge,78,64,74,0,alternating hands
+35.745312,4,Shime,note,Muted,59,64,54,0,alternating hands
+36.000000,4,Shime,note,Edge,81,64,74,0,alternating hands
+36.251042,4,Shime,note,Edge,62,64,54,0,alternating hands
+36.495833,4,Shime,note,Edge,81,64,74,0,alternating hands
+36.754948,4,Shime,note,Muted,62,64,54,0,alternating hands
+36.996875,4,Shime,note,Edge,81,64,74,0,alternating hands
+37.249740,4,Shime,note,Edge,62,64,54,0,alternating hands
+37.503646,4,Shime,note,Edge,81,64,74,0,alternating hands
+37.745052,4,Shime,note,Muted,62,64,54,0,alternating hands
+38.000000,4,Shime,note,Edge,84,64,74,0,alternating hands
+38.249479,4,Shime,note,Edge,64,64,54,0,alternating hands
+38.497135,4,Shime,note,Edge,84,64,74,0,alternating hands
+38.754948,4,Shime,note,Muted,64,64,54,0,alternating hands
+38.995573,4,Shime,note,Edge,84,64,74,0,alternating hands
+39.251562,4,Shime,note,Edge,64,64,54,0,alternating hands
+39.502083,4,Shime,note,Edge,84,64,74,0,alternating hands
+39.745312,4,Shime,note,Muted,64,64,54,0,alternating hands
+40.000000,4,Shime,ensemble_size,,2,64,64,0,tutti players
+40.000000,4,Shime,note,Edge,89,64,74,0,alternating hands
+40.248698,4,Shime,note,Edge,68,64,54,0,alternating hands
+40.504167,4,Shime,note,Edge,89,64,74,0,alternating hands
+40.745052,4,Shime,note,Muted,68,64,54,0,alternating hands
+41.002865,4,Shime,note,Edge,89,64,74,0,alternating hands
+41.250521,4,Shime,note,Edge,68,64,54,0,alternating hands
+41.496354,4,Shime,note,Don,110,64,74,0,high accent
+42.000000,4,Shime,note,Edge,89,64,54,0,alternating hands
+42.246354,4,Shime,note,Edge,68,64,74,0,alternating hands
+42.500260,4,Shime,note,Edge,89,64,54,0,alternating hands
+42.753125,4,Shime,note,Muted,68,64,74,0,alternating hands
+42.995052,4,Shime,note,Edge,89,64,54,0,alternating hands
+43.254167,4,Shime,note,Edge,68,64,74,0,alternating hands
+43.498698,4,Shime,note,Don,110,64,54,0,high accent
+43.747656,4,Shime,note,Rimshot,81,64,74,0,high rim cadence
+44.000000,4,Shime,note,Edge,89,64,54,0,alternating hands
+44.245312,4,Shime,note,Edge,68,64,74,0,alternating hands
+44.502083,4,Shime,note,Edge,89,64,54,0,alternating hands
+44.751562,4,Shime,note,Muted,68,64,74,0,alternating hands
+44.995573,4,Shime,note,Edge,89,64,54,0,alternating hands
+45.254948,4,Shime,note,Edge,68,64,74,0,alternating hands
+45.497135,4,Shime,note,Don,110,64,54,0,high accent
+46.000000,4,Shime,note,Edge,89,64,74,0,alternating hands
+46.253906,4,Shime,note,Edge,68,64,54,0,alternating hands
+46.495052,4,Shime,note,Edge,89,64,74,0,alternating hands
+46.753385,4,Shime,note,Muted,68,64,54,0,alternating hands
+47.000000,4,Shime,note,Edge,89,64,74,0,alternating hands
+47.246615,4,Shime,note,Edge,68,64,54,0,alternating hands
+47.504948,4,Shime,note,Don,110,64,74,0,high accent
+47.746094,4,Shime,note,Rimshot,81,64,54,0,high rim cadence
+48.000000,4,Shime,note,Edge,90,64,74,0,alternating hands
+48.252604,4,Shime,note,Edge,69,64,54,0,alternating hands
+48.495052,4,Shime,note,Edge,90,64,74,0,alternating hands
+48.754427,4,Shime,note,Muted,69,64,54,0,alternating hands
+48.998177,4,Shime,note,Edge,90,64,74,0,alternating hands
+49.248177,4,Shime,note,Edge,69,64,54,0,alternating hands
+49.504427,4,Shime,note,Edge,90,64,74,0,alternating hands
+49.745312,4,Shime,note,Muted,69,64,54,0,alternating hands
+52.500000,4,Shime,note,Don,118,64,74,0,stop time
+53.250000,4,Shime,note,Don,118,64,54,0,stop time
+54.970052,4,Shime,note,Don,55,67,74,0,flam grace
+55.000000,4,Shime,note,Don,109,64,54,0,flam accent
+56.000000,4,Shime,pitch_wheel,,8192,64,64,0,neutral tail
